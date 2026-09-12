@@ -1,0 +1,12 @@
+# 批处理必须 CRLF：cmd.exe 解析 LF-only 的 .cmd 会跳行，goto 与括号块直接失效
+# （实测：LF 版本会把不该执行的分支跑掉）。这条防止再被编辑器改回 LF。
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 图片与索引是二进制，别做行尾转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.npz binary
+*.ttf binary
+*.ico binary

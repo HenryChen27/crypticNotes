@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "purpose": "evaluation_only",
+  "source": "Assistant visual correspondence annotation on original paired images using coordinate ruler views; no predicted pose used to generate points",
+  "quality": "provisional manual labels, not externally reviewed ground truth",
+  "reference_click_uncertainty_px": 2.0,
+  "screenshot_click_uncertainty_px": 3.0,
+  "coordinate_system": "original full image pixels, wall intersection centers",
+  "samples": [
+    {
+      "screenshot": "examples/0/example.png", "reference": "examples/0/北-T门.jpg", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "room_top_left", "reference": [161,579], "screenshot": [947,702]},
+        {"name": "room_top_right", "reference": [261,579], "screenshot": [1105,702]},
+        {"name": "room_bottom_left", "reference": [161,629], "screenshot": [947,780]},
+        {"name": "room_bottom_right", "reference": [261,629], "screenshot": [1105,780]},
+        {"name": "exit_bottom_left", "reference": [356,655], "screenshot": [1259,822]},
+        {"name": "exit_bottom_right", "reference": [393,655], "screenshot": [1317,822]}
+      ]
+    },
+    {
+      "screenshot": "examples/1/example2.png", "reference": "examples/1/北-T门.jpg", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "room_top_left", "reference": [161,579], "screenshot": [1190,917]},
+        {"name": "room_top_right", "reference": [261,579], "screenshot": [1532,917]},
+        {"name": "room_bottom_left", "reference": [161,629], "screenshot": [1190,1087]},
+        {"name": "room_bottom_right", "reference": [261,629], "screenshot": [1532,1087]},
+        {"name": "exit_bottom_left", "reference": [356,655], "screenshot": [1864,1174]},
+        {"name": "exit_bottom_right", "reference": [393,655], "screenshot": [1990,1174]}
+      ]
+    },
+    {
+      "screenshot": "examples/2/example.png", "reference": "examples/2/北-1门.jpg", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "left_u_left", "reference": [299,630], "screenshot": [1380,735]},
+        {"name": "left_u_right", "reference": [351,630], "screenshot": [1584,735]},
+        {"name": "left_foot_left", "reference": [351,679], "screenshot": [1584,925]},
+        {"name": "left_foot_right", "reference": [375,679], "screenshot": [1675,925]},
+        {"name": "exit_bottom_left", "reference": [395,679], "screenshot": [1755,925]},
+        {"name": "exit_bottom_right", "reference": [432,679], "screenshot": [1898,925]},
+        {"name": "exit_right_shoulder", "reference": [432,655], "screenshot": [1898,830]},
+        {"name": "right_u_right", "reference": [477,630], "screenshot": [2073,735]}
+      ]
+    },
+    {
+      "screenshot": "examples/3/example.png", "reference": "examples/3/北-1门.jpg", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "left_u_left", "reference": [299,630], "screenshot": [1080,839]},
+        {"name": "left_u_right", "reference": [351,630], "screenshot": [1165,839]},
+        {"name": "left_foot_left", "reference": [351,679], "screenshot": [1165,917]},
+        {"name": "left_foot_right", "reference": [375,679], "screenshot": [1205,917]},
+        {"name": "exit_bottom_left", "reference": [395,679], "screenshot": [1237,917]},
+        {"name": "exit_bottom_right", "reference": [432,679], "screenshot": [1295,917]},
+        {"name": "exit_right_shoulder", "reference": [432,655], "screenshot": [1295,878]},
+        {"name": "right_u_right", "reference": [477,630], "screenshot": [1367,839]}
+      ]
+    },
+    {
+      "screenshot": "examples/4/example.png", "reference": "examples/4/右-双L门.jpg", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "room_top_right", "reference": [261,566], "screenshot": [1353,532]},
+        {"name": "room_bottom_right", "reference": [261,638], "screenshot": [1353,650]},
+        {"name": "left_lower_corner", "reference": [237,715], "screenshot": [1315,770]},
+        {"name": "exit_bottom_left", "reference": [306,740], "screenshot": [1427,812]},
+        {"name": "exit_bottom_right", "reference": [343,740], "screenshot": [1487,812]},
+        {"name": "u_bottom_right", "reference": [287,691], "screenshot": [1396,733]},
+        {"name": "u_top_right", "reference": [287,641], "screenshot": [1396,652]}
+      ]
+    },
+    {
+      "screenshot": "examples/5/example.png", "reference": "examples/5/左-对角门.png", "floor": 1,
+      "floor_source": "visible 1 selector and corresponding reference 1F main region",
+      "points": [
+        {"name": "room_top_left", "reference": [246,439], "screenshot": [1269,303]},
+        {"name": "room_top_right", "reference": [295,439], "screenshot": [1345,303]},
+        {"name": "room_bottom_left", "reference": [246,538], "screenshot": [1269,463]},
+        {"name": "room_bottom_right", "reference": [295,538], "screenshot": [1345,463]},
+        {"name": "exit_bottom_left", "reference": [339,740], "screenshot": [1418,790]},
+        {"name": "exit_bottom_right", "reference": [377,740], "screenshot": [1477,790]}
+      ]
+    }
+  ]
+}

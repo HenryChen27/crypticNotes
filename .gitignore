@@ -1,0 +1,23 @@
+.claude/
+.codex/
+.agents/
+.ui-deps/
+.build-deps/
+.venv/
+build/
+dist/
+release/
+out/
+__pycache__/
+*.py[cod]
+*.spec
+*.zip
+.env
+.env.*
+*.log
+
+# `maps/` 里的原图和登记表是**源**，要进版本库；下面这三个是派生物或本机状态。
+# 少了它们，一次录入就会往库里塞几十 MB 的 npz。
+maps/index.json
+maps/evidence/
+maps/disabled.json

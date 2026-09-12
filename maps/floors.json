@@ -1,0 +1,3164 @@
+{
+  "schema_version": 2,
+  "scope": "maps/ 下所有已录入的地图；有条目即参与匹配，缺 include_regions 表示按 exclude_regions 取特征",
+  "references": [
+    {
+      "map_id": "nightmare/solo/北 - b门",
+      "name": "北 - b门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - b门.png",
+      "sha256": "a46547249710423bc68aa072245cac7743cf888d14fa515959322b6902d6f0c6",
+      "size": [
+        1000,
+        3000
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            975
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            975,
+            1000,
+            1935
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1935,
+            1000,
+            2700
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2700,
+          1000,
+          3000
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "f8197931039c46cb4ca9984817c89cdf52a918078186104acacbc4c7fcd9a2c2"
+    },
+    {
+      "map_id": "nightmare/solo/北 - Z1门",
+      "name": "北 - Z1门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - Z1门.jpg",
+      "sha256": "6d20193d9681ce326ed5d958a01f2a16c801309db5a29ff69e0c9b7adb4a99bc",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            871
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            871,
+            1000,
+            1680
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1680,
+            1000,
+            2240
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2240,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "48f3beb8b2bdcb5d2ed7b93e02e9b3320ce2d4a975274dc58540d124058e5076"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 仙人掌门",
+      "name": "北 - 仙人掌门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - 仙人掌门.jpg",
+      "sha256": "48d46077b8fdd0c5a2d5a65ecf23af78bec25d37a9fb4edf916d4204d2bb59e2",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            660
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            660,
+            1000,
+            1506
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1506,
+            1000,
+            2203
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2203,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "6827fd2e716581b01681118fb0b4f5d9e85b2aecb486c06e856cb16b889f03ea"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 回门",
+      "name": "北 - 回门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - 回门.jpg",
+      "sha256": "099110e75f8124793c10f654bc2a1c5cc70ad2952c11b2e2c05a122d34f86b68",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            784
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            784,
+            1000,
+            1593
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1593,
+            1000,
+            2203
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2203,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "37608f2c387106e596ffb8df172aec553a5258ed166b81ecbf7c97b8445c8321"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 骑士门",
+      "name": "北 - 骑士门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - 骑士门.jpg",
+      "sha256": "70d593fb68aac868c3c996671ed5334d3f808374ebbe961905b6f5d79ef37093",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            747
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            747,
+            1000,
+            1543
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1543,
+            1000,
+            2178
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2178,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "e94b329236a6bce261c65215d1bd0c3bc22e23e560ef0519d32ff25d318c5f3c"
+    },
+    {
+      "map_id": "nightmare/solo/南 - 3红门路线图",
+      "name": "南 - 3红门路线图",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/南 - 3红门路线图.png",
+      "sha256": "f664a449f44db3b67c7f3d038f1133c87f3d4e333cea9268663c953925fa6391",
+      "size": [
+        1000,
+        2655
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            996
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            996,
+            1000,
+            1805
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1805,
+            1000,
+            2416
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2416,
+          1000,
+          2655
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "0a389ad83445272df45f13ecfde415445ac22550e133a730f8f47ccfb03b6bb1"
+    },
+    {
+      "map_id": "nightmare/solo/南 - H门",
+      "name": "南 - H门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/南 - H门.jpg",
+      "sha256": "90c679d01d3066d7a7225bc4f45c2b2c4e9e1032ff5f9f827e31abde0e3139e4",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            660
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            660,
+            1000,
+            1568
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1568,
+            1000,
+            2203
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2203,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "7f9b369ff5e57496c163bd0e904dec1ba708170a42d63a0b26de6d662979b4b0"
+    },
+    {
+      "map_id": "nightmare/solo/右 - C门路线图",
+      "name": "右 - C门路线图",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - C门路线图.png",
+      "sha256": "cad4011d685cf530aefd68d71a5d660cc138cfd2f8ab6e9fefc0b91178acaf1a",
+      "size": [
+        1000,
+        2926
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            878
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            878,
+            1000,
+            1990
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1990,
+            1000,
+            2663
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2663,
+          1000,
+          2926
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "4f0c1cd650418367ffe44413ce05bd52134d92d3d209e320b4e8a08e6a4d558a"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 一闪电 门",
+      "name": "右 - 一闪电 门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - 一闪电 门.jpg",
+      "sha256": "8e125b7c39f31d74d34f2abf64b91253aca1b5615f956597492a25a86b6a26d8",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            821
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            821,
+            1000,
+            1643
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1643,
+            1000,
+            2215
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2215,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "440fed9dc728fd604dd7418f37c7a4bb8e974ebf381d563e3f3aba5e70d3c1af"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 仙人掌门路线图",
+      "name": "右 - 仙人掌门路线图",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - 仙人掌门路线图.png",
+      "sha256": "eafbeed9bc9ea94007febbddd39d92f0de4e30e196f792b0bbadd2ce8a4d1ed3",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            921
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            921,
+            1000,
+            1867
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1867,
+            1000,
+            2290
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2290,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "e36f8094d7a6d0aaf3021f7656554a37fac97aeff9a8bf0d992066bdaff40314"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 断C门 路线图",
+      "name": "右 - 断C门 路线图",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - 断C门 路线图.jpg",
+      "sha256": "9c3429a44a9cf3b4ac861dbed65035668d967717ea76a35e4490a6093f8b1ccc",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            796
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            796,
+            1000,
+            1668
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1668,
+            1000,
+            2215
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2215,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "152f00f1fd0f8bb3e70664851325cb152d3238552e2315bb275fd52d8087c8d5"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 短T门",
+      "name": "右 - 短T门",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - 短T门.jpg",
+      "sha256": "5116ba0b27582bcad3c9cfdb022d207fd5e6a7558985cd182c9949af440e2601",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            821
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            821,
+            1000,
+            1693
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1693,
+            1000,
+            2265
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2265,
+          1000,
+          2489
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "f4528b6495bf095ccc34a8a33de6acbc65fad666f23ebc5bc62e8f91f4680380"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 长Z门路线图",
+      "name": "右 - 长Z门路线图",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/右 - 长Z门路线图.png",
+      "sha256": "265db6712aa1526f23787cc742f937ff55714518f96359094a845c136dbd4044",
+      "size": [
+        1000,
+        2207
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            772
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            772,
+            1000,
+            1468
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1468,
+            1000,
+            2008
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2008,
+          1000,
+          2207
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "3a9680f5ceeb16d41bfb0672e6550452f07300842be5c709cc9172ea7b7ed486"
+    },
+    {
+      "map_id": "nightmare/duo/北-B门",
+      "name": "北-B门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/北-B门.png",
+      "sha256": "ac03fd652d3a976092507d84dd09b5a914d42286b5edd8c108e83c33d16954dc",
+      "size": [
+        1000,
+        3176
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            1032
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            1032,
+            1000,
+            2112
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            2112,
+            1000,
+            2922
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2922,
+          1000,
+          3176
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "4b358674b545f9532358707aae21247a46239eb11528059e8526acd7fb7339d3"
+    },
+    {
+      "map_id": "nightmare/duo/北-Z1门 ",
+      "name": "北-Z1门 ",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/北-Z1门 .png",
+      "sha256": "346fd7ede62ca5a829af3ef7eb7c5c78ed52d26ee93181f581a3fd040cc7d7de",
+      "size": [
+        1000,
+        2204
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            617
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            617,
+            1000,
+            1433
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1433,
+            1000,
+            2039
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2039,
+          1000,
+          2204
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "ec4ad7fb254f3d9ec90efe56ffc0cf0d03a52f9093d223f7e08267842bc706a5"
+    },
+    {
+      "map_id": "nightmare/duo/北-仙人掌",
+      "name": "北-仙人掌",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/北-仙人掌.png",
+      "sha256": "ac583ae66063f528887751dcd2ce84a2af550cfdbbe6e01047bf687ffc8646ef",
+      "size": [
+        1000,
+        2204
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            595
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            595,
+            1000,
+            1466
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1466,
+            1000,
+            2039
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2039,
+          1000,
+          2204
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "0954a8956aa60df513fa5689fe8c537dd67a30fb04d898c759b3042c018c72df"
+    },
+    {
+      "map_id": "nightmare/duo/北-回门",
+      "name": "北-回门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/北-回门.png",
+      "sha256": "ceab874f620945d72a403da1cd0b00f7939dfffdbdcb666858d5c53e388245fc",
+      "size": [
+        1000,
+        2204
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            617
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            617,
+            1000,
+            1422
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1422,
+            1000,
+            2039
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2039,
+          1000,
+          2204
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "1fe2bd2a48257d470ba3ab395f89ed6bbd187a18d05043755e229f92f7de8e9a"
+    },
+    {
+      "map_id": "nightmare/duo/北-骑士门",
+      "name": "北-骑士门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/北-骑士门.png",
+      "sha256": "d00b876be0713bfad6a7919df6d6e17f0aa5637cb10d5fff903706199c97bfee",
+      "size": [
+        1000,
+        2341
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            667
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            667,
+            1000,
+            1580
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1580,
+            1000,
+            2119
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2119,
+          1000,
+          2341
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "c3002f3a6303fe646eec4ff77fd0d901dd4f0b1af4b180746289cc934a381421"
+    },
+    {
+      "map_id": "nightmare/duo/南-3红门",
+      "name": "南-3红门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/南-3红门.png",
+      "sha256": "8b3f6d939fe2b7d3186c98e08c2956c712b9cc9290a4b603ce26fb4e7043e8a5",
+      "size": [
+        1000,
+        2412
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            904
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            904,
+            1000,
+            1700
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1700,
+            1000,
+            2195
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2195,
+          1000,
+          2412
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "b521f56bba8a2e891a1de3122d49643e862ee4780ce2c9563dacb2419e6aefc3"
+    },
+    {
+      "map_id": "nightmare/duo/南-H门",
+      "name": "南-H门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/南-H门.png",
+      "sha256": "5e71c55fd910b00a12948bade2425a4ecf42c51e5ad0ce82cee52f3d7643fa4c",
+      "size": [
+        1000,
+        2204
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            628
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            628,
+            1000,
+            1565
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1565,
+            1000,
+            2039
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2039,
+          1000,
+          2204
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "755f3ba62e356e07b9108b3206f08c889c7540b68e1f83830a99326fd9d98855"
+    },
+    {
+      "map_id": "nightmare/duo/右-C门",
+      "name": "右-C门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-C门.png",
+      "sha256": "a3f8b9ff2fc6432d29f88f721e622fce81539be41f549942842f2cf39eb0cf8a",
+      "size": [
+        1000,
+        2547
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            853
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            853,
+            1000,
+            1783
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1783,
+            1000,
+            2331
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2331,
+          1000,
+          2547
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "2ba250bb9300b8d88aab4b27bdf4974a368e5d7bf715caf0e2c11a79502a5931"
+    },
+    {
+      "map_id": "nightmare/duo/右-仙人掌门",
+      "name": "右-仙人掌门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-仙人掌门.png",
+      "sha256": "f14e2e5cd561d265c2bda137142cd640c76f25ecb8a70525bef78acafddd051a",
+      "size": [
+        1000,
+        2197
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            758
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            758,
+            1000,
+            1560
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1560,
+            1000,
+            1966
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          1966,
+          1000,
+          2197
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "e23752003a2861731a0d1cd4a0c1e84d1da6882291170e6e2246aab8b3bde004"
+    },
+    {
+      "map_id": "nightmare/duo/右-断C门",
+      "name": "右-断C门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-断C门.png",
+      "sha256": "efe503d398cebcdcf8109bd2d588e019ea85c7fc2062373d82f43bb30f0eed3f",
+      "size": [
+        1000,
+        3312
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            1043
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            1043,
+            1000,
+            2120
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            2120,
+            1000,
+            2964
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2964,
+          1000,
+          3312
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "1dcb48386b12b198e42394a9083954146f5ceebe51f705a1588a71bb76dffe0a"
+    },
+    {
+      "map_id": "nightmare/duo/右-短T",
+      "name": "右-短T",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-短T.png",
+      "sha256": "e05752c76b652bfd809092caa0d15ff8c2b74237ef07b97d37732d03304917fd",
+      "size": [
+        1000,
+        3197
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            1023
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            1023,
+            1000,
+            2126
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            2126,
+            1000,
+            2893
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2893,
+          1000,
+          3197
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "662ac7d63cc34704c8c07083be22cc9168d9e819fc81adfd674de0fb368aa7bb"
+    },
+    {
+      "map_id": "nightmare/duo/右-长Z门",
+      "name": "右-长Z门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-长Z门.png",
+      "sha256": "5cb58d42f326a8c46ea550618ba833a6b91ba4aa936511a11ddd5a46628ec412",
+      "size": [
+        1000,
+        2188
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            711
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            711,
+            1000,
+            1400
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1400,
+            1000,
+            1958
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          1958,
+          1000,
+          2188
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "69a7387250fb8a61fec06435a4b60aff857120f35fb87d04ff3c8df66b449dc0"
+    },
+    {
+      "map_id": "nightmare/duo/右-闪电门",
+      "name": "右-闪电门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/右-闪电门.png",
+      "sha256": "0d90cc0aa38c2ee3f45c7ac7bc91385109b53a91a5d5c50534e5f3ae40eea61a",
+      "size": [
+        1000,
+        3279
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            0,
+            1000,
+            1000
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            1000,
+            1000,
+            2066
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            2066,
+            1000,
+            2967
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          2967,
+          1000,
+          3279
+        ]
+      ],
+      "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
+      "pixel_sha256": "802f74e2790c19a817af96914496c431af94933be428d25cf5555a304496c008"
+    },
+    {
+      "map_id": "hard/北-1沙发门（新增）",
+      "name": "北-1沙发门（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-1沙发门（新增）.png",
+      "sha256": "4b109f5ee98884c4aea79a35b82c8a4aab423b324b5a29dbfc1aabf9d3088e1d",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            744
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            744,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          649,
+          643,
+          870,
+          889
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          740,
+          125,
+          816
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "117effa1cae3aa77726d0bd0b9ee57f9427b73f301731f48d8f40c656c1f7c45"
+    },
+    {
+      "map_id": "hard/北-1门",
+      "name": "北-1门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-1门.jpg",
+      "sha256": "792a139b1df93df51bc7d0d7695f1118183ff1a0658a2034b290c6d652b4bbc8",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            740
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            740,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          495,
+          195,
+          719
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          736,
+          125,
+          812
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "5162d94ed1f2c1d6aec80541923b705cac91d6c079d8a240ba9dc55b6b6111ce"
+    },
+    {
+      "map_id": "hard/北-4安全门（新增）",
+      "name": "北-4安全门（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-4安全门（新增）.png",
+      "sha256": "c1bf90e13ebb9cceb39f6116894bab87a2b6aa7be8d1b9248fbbf209481ec702",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            748
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            748,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          682,
+          0,
+          899,
+          241
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          744,
+          125,
+          820
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "f816ebf1c4be6a72a908154fe71d1b5275efcf9e987c7310dff93908bda4fb28"
+    },
+    {
+      "map_id": "hard/北-4门",
+      "name": "北-4门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-4门.jpg",
+      "sha256": "42820438ee0f04259d4e6e3e9d48dc77b33c893a97373e84651c761cbc46295c",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            759
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            759,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          646,
+          0,
+          900,
+          278
+        ],
+        [
+          0,
+          1,
+          125,
+          76
+        ],
+        [
+          0,
+          755,
+          125,
+          830
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "732d2beba30d037995b5f93c01eb9c1dad4ddca72de6e42ef859b37eb7a9ae24"
+    },
+    {
+      "map_id": "hard/北-T门",
+      "name": "北-T门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-T门.jpg",
+      "sha256": "d15b69cae87c2ab79b5ff1a732d9077bbcac9ce8b1372cdc6599995ae89906a0",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            739
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            739,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          738,
+          0,
+          900,
+          188
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          735,
+          125,
+          811
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "5fd8b1425f6c7f99d8d519240c6dbff75e7903af6f18874e34651a56bf6a2627"
+    },
+    {
+      "map_id": "hard/北-凹门",
+      "name": "北-凹门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-凹门.jpg",
+      "sha256": "a9d1ca40ec1d1a4b13cb2dc33b4557e7d07ee65ad820d4568fa772de45443738",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            731
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            731,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          715,
+          0,
+          900,
+          209
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          727,
+          125,
+          802
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "676282583c6c3755f2ee6e22592a84aa0803672db1aec24e8638640a567477ed"
+    },
+    {
+      "map_id": "hard/北-红对角门",
+      "name": "北-红对角门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-红对角门.jpg",
+      "sha256": "1a4993de0a01ff8ddc32674475e32a8b2ac9139a7215a450971e90c48b1930ab",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            818
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            818,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          732,
+          0,
+          900,
+          193
+        ],
+        [
+          0,
+          0,
+          125,
+          75
+        ],
+        [
+          0,
+          814,
+          125,
+          890
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "c363116267a8e5c9f19f05492d277b940cf306631cf66199327b8ee892a61d59"
+    },
+    {
+      "map_id": "hard/北-红门",
+      "name": "北-红门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/北-红门.jpg",
+      "sha256": "dd065a40f76e8d563410049e769971c8f80ab32128e8cd320498f0191876a5d1",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            733
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            733,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          657,
+          451,
+          856,
+          676
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          729,
+          125,
+          805
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "4e4c4ba32abd5c3a641bc10cf2ca18f873792ce7c7e640f3d622ff1869bedec6"
+    },
+    {
+      "map_id": "hard/南-L门",
+      "name": "南-L门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/南-L门.jpg",
+      "sha256": "efa8395f9145adbd465bec4821497bbd659f53aa71d731dac972dd6f014cc7db",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            702
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            702,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          454,
+          191,
+          674
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          698,
+          125,
+          774
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "11cac2e0d139f9ed585d27a0ab18d125436e758404966b33036d4bf131182e5d"
+    },
+    {
+      "map_id": "hard/南-orz门（新增）",
+      "name": "南-orz门（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/南-orz门（新增）.png",
+      "sha256": "4999e8ab147641bc37ce7acd0369ef0be30cc9da8ecfd1f2eb5ad22e32a06278",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            754
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            754,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          696,
+          0,
+          900,
+          230
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          750,
+          125,
+          826
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "a88c4e85bb94474073e558acb39f329a5b7ac3c29c64c52d5aa85a5fe5622294"
+    },
+    {
+      "map_id": "hard/南-三缺一门",
+      "name": "南-三缺一门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/南-三缺一门.jpg",
+      "sha256": "f35dcf8f904f934a97fc4f5acac746f78b40d50951d6ec9fea46ae51a843fbeb",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            834
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            834,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          715,
+          0,
+          900,
+          212
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          830,
+          125,
+          906
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "eb021d0c340bcb1b8e210dcadeec77dd31e7dcb0357ea305b9ba5f64fabfaf30"
+    },
+    {
+      "map_id": "hard/南-十字门",
+      "name": "南-十字门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/南-十字门.jpg",
+      "sha256": "7c916d104db380c983d0c292a5684733d9f70d2f60ec3c2ed9e9928d1279ca44",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            715
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            715,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          657,
+          0,
+          900,
+          270
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          711,
+          125,
+          813
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "6cd9114e25d22844ee96f6821cbc14c92cbbb066cb842f8c49c558a04dd64c7f"
+    },
+    {
+      "map_id": "hard/南-红门",
+      "name": "南-红门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/南-红门.png",
+      "sha256": "9d184a65c3cb66f1e11239b3e5b7aae4606cbaf99bb206e80200bcd26e748595",
+      "size": [
+        900,
+        1800
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            904
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            904,
+            900,
+            1800
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          760,
+          1,
+          898,
+          165
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          900,
+          125,
+          976
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "80666b37d934bf4aaf40fabde9cb3973ef035a5c47a5c6126d40382e026fc56e"
+    },
+    {
+      "map_id": "hard/右-L门",
+      "name": "右-L门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-L门.png",
+      "sha256": "85ed1d5b0d2e7ecd6ec073951fb5472b9ac84890af8e48d40e2f71e60b2bd5ca",
+      "size": [
+        900,
+        1650
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            904
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            904,
+            900,
+            1650
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          709,
+          3,
+          895,
+          216
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          900,
+          125,
+          976
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "5d74c828394a83211caf57e813edba1af513832e28496f0508845cc32482ff83"
+    },
+    {
+      "map_id": "hard/右-三L门（新增）",
+      "name": "右-三L门（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-三L门（新增）.png",
+      "sha256": "090481cb3a2c2ea0d74bec7c9a663063204f845ecbb6c62e2199e12f721a7826",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            754
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            754,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          64,
+          120,
+          288,
+          370
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          750,
+          125,
+          826
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "4f2d731c3b993d5452930ffa5892e2565d7a11c7f41312746e5a97db36d65c6d"
+    },
+    {
+      "map_id": "hard/右-双L门",
+      "name": "右-双L门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-双L门.jpg",
+      "sha256": "a832f3438f2f60d1faa2fc92e745a6bae43e39a7b86916aafbe610a19ad59981",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            754
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            754,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          669,
+          0,
+          900,
+          255
+        ],
+        [
+          0,
+          0,
+          125,
+          75
+        ],
+        [
+          0,
+          750,
+          125,
+          826
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "3aed448b7672f93df29b0058aa0e8184b1b4cbdc06300c21f1669275014e3f4d"
+    },
+    {
+      "map_id": "hard/右-左上右下门",
+      "name": "右-左上右下门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-左上右下门.jpg",
+      "sha256": "b5bdd9120a441f1d1eadf8d6dae1dc6c58f9f7c19dfa4fa3d83bb6aec5c2009c",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            727
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            727,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          667,
+          3,
+          900,
+          262
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          723,
+          125,
+          799
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "1d8247d3642c2656ea9bbfc98af1bbfed221dbe6d897172f50e2a449a825493a"
+    },
+    {
+      "map_id": "hard/右-锤子门",
+      "name": "右-锤子门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-锤子门.jpg",
+      "sha256": "0e44f7428582362911abb76cb0cedd6598d30cb7817a46186b6ea4d425563038",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            783
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            783,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          670,
+          0,
+          900,
+          254
+        ],
+        [
+          0,
+          1,
+          125,
+          76
+        ],
+        [
+          0,
+          779,
+          125,
+          854
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "4b6978d87c29b3de41d276f10029ae076959e728e2519cf580f8ebbf6e5688e3"
+    },
+    {
+      "map_id": "hard/右-骑士门",
+      "name": "右-骑士门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/右-骑士门.png",
+      "sha256": "6bfdc1ed03615af5187ada57d22473cfa7edca8e249307d2f1f079181e8b44f7",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            690
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            690,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          757,
+          3,
+          900,
+          178
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          686,
+          125,
+          762
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "73dcdb2a79c6cb056c5d699ce60cb4e159b240a5f1cd83ec078211d07e3a6980"
+    },
+    {
+      "map_id": "hard/左-Y门",
+      "name": "左-Y门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-Y门.jpg",
+      "sha256": "4214bfeaaee8116c9e74331bfeff0abc808fc978e481a98e25132b9a06b1706a",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            754
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            754,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          668,
+          0,
+          900,
+          258
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          750,
+          125,
+          826
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "f6853bd2d9114d2ec3a7c545f1a33318452521e5883dc0bad5638bfff2950fff"
+    },
+    {
+      "map_id": "hard/左-Y青蛙房（新增）",
+      "name": "左-Y青蛙房（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-Y青蛙房（新增）.png",
+      "sha256": "9fa6199ce6589aa54dbeff829f1ac78fc1f0390dd8df75b6a497850e8d8d5149",
+      "size": [
+        900,
+        1600
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            786
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            786,
+            900,
+            1600
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          666,
+          566,
+          883,
+          808
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          782,
+          125,
+          858
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "92a0c89dfe47b4fa08ff834cabddeb1bca6a84d3dd7f792ab2070be8b63b8002"
+    },
+    {
+      "map_id": "hard/左-倒T门",
+      "name": "左-倒T门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-倒T门.jpg",
+      "sha256": "b874bc918efd560f731b110a6c8e433e45bf861fda5dc9e55271caae5f4af165",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            780
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            780,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          681,
+          0,
+          900,
+          243
+        ],
+        [
+          0,
+          0,
+          125,
+          75
+        ],
+        [
+          0,
+          776,
+          125,
+          852
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "d650709b993eec60d5f7383d9a11c76f1572961fe17025b4420bf6279f881f0a"
+    },
+    {
+      "map_id": "hard/左-对T门",
+      "name": "左-对T门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-对T门.png",
+      "sha256": "bbff2f2348fb362b54ef0c0851d4ebeb7fbcc4bf2e22ac1861f3b6c4c9ffacf9",
+      "size": [
+        900,
+        1700
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            904
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            904,
+            900,
+            1700
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          757,
+          0,
+          900,
+          169
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          900,
+          125,
+          976
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "cd5a2d489121ebacb85ef4ece518dea6dfe8292fe197c8157cebe0c0befc5b74"
+    },
+    {
+      "map_id": "hard/左-对角门",
+      "name": "左-对角门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-对角门.png",
+      "sha256": "b118d44a8522c2a6b53886efc46f901e440594862df4d1d942d8f55c79939f4c",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            750
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            750,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          1,
+          342,
+          175,
+          541
+        ],
+        [
+          0,
+          0,
+          125,
+          72
+        ],
+        [
+          0,
+          746,
+          125,
+          822
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "14ba4eca2b89f733a92e33b2846aee87f43302f4cc7738c76d160428cf653760"
+    },
+    {
+      "map_id": "hard/左-罐子门",
+      "name": "左-罐子门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-罐子门.png",
+      "sha256": "cf9a4168d62885ddfb9880f8bb01a397ad4ce888cf7c343afe8cad5982d59880",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            782
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            782,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          717,
+          0,
+          900,
+          208
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          778,
+          125,
+          854
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "3785921f428983da65225c9bb3034490903ff9193c0aaaa0536621096c5d5662"
+    },
+    {
+      "map_id": "hard/左-锤子门",
+      "name": "左-锤子门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-锤子门.jpg",
+      "sha256": "304d2865a0915d641671987e1c66216a9e5622695985746bd517a531e9d355a6",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            801
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            801,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          708,
+          0,
+          900,
+          216
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          797,
+          125,
+          873
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "9dd1cd1babed4295456eea4d840857377c0d0dc52e25e6e9ac2369f5c496267b"
+    },
+    {
+      "map_id": "hard/左-锤灯笼门（新增）",
+      "name": "左-锤灯笼门（新增）",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-锤灯笼门（新增）.png",
+      "sha256": "343ae7b2ca79e82c808d678bca5ebd9aa2a631b416c04624d769fe132647fa72",
+      "size": [
+        900,
+        1600
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            786
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            786,
+            900,
+            1600
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          712,
+          0,
+          900,
+          215
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          782,
+          125,
+          858
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "58f65779eb27e14defa396d1e54b7843a6893d9087e94cd8b69dd160d50a2454"
+    },
+    {
+      "map_id": "hard/左-音叉门",
+      "name": "左-音叉门",
+      "difficulty": "hard",
+      "mode": null,
+      "source": "maps/hard/左-音叉门.jpg",
+      "sha256": "9aa6337180d016489fdc54d23e5f4ce22755aa24e95a5ac539a75b2547f16b88",
+      "size": [
+        900,
+        1500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            0,
+            900,
+            723
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            0,
+            723,
+            900,
+            1500
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          707,
+          200,
+          900,
+          419
+        ],
+        [
+          0,
+          0,
+          125,
+          76
+        ],
+        [
+          0,
+          719,
+          125,
+          795
+        ]
+      ],
+      "review": "Reference-only label-band and framed-inset visual review; floor rows are metadata, not foreground segmentation",
+      "pixel_sha256": "3cb2c259db1eecb264f3083d3daa19cd580e2165bdefb44cb2d435b6da7978e9"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖L门（09.10更新）",
+      "name": "左 - 竖L门（09.10更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 竖L门（09.10更新）.png",
+      "sha256": "ac3b1c594b9210587140dcae5619928309cbab222bfa08d871cf9df6a682a1bd",
+      "size": [
+        829,
+        1915
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            9,
+            610,
+            829,
+            1110
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            27,
+            107,
+            800,
+            583
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            11,
+            1140,
+            776,
+            1645
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          9,
+          610,
+          829,
+          1110
+        ],
+        [
+          27,
+          107,
+          800,
+          583
+        ],
+        [
+          11,
+          1140,
+          776,
+          1645
+        ]
+      ],
+      "review": "迁移自 user_maps/111c3fd8541c46ebad2d094ebcea10fe",
+      "pixel_sha256": "d9094a1220d367d70eec0de0b591c15cdd18f4054e5344c84f051fcb4cb7738e"
+    },
+    {
+      "map_id": "nightmare/solo/南 - 悬空桌门（09.10更新）",
+      "name": "南 - 悬空桌门（09.10更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/南 - 悬空桌门（09.10更新）.png",
+      "sha256": "e55df170b46a41b30823b57447bd84c319914023d0afacd6d308783d26d4c055",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            26,
+            7,
+            1000,
+            783
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            1546,
+            987,
+            2140
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            788,
+            994,
+            1535
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          26,
+          7,
+          1000,
+          783
+        ],
+        [
+          0,
+          1546,
+          987,
+          2140
+        ],
+        [
+          0,
+          788,
+          994,
+          1535
+        ]
+      ],
+      "review": "迁移自 user_maps/4b428fabf2af4141896d23bf0a1f6bda",
+      "pixel_sha256": "dd5e83e658c47ba5d67fb5ddcdf6556351c6c17289ef40a656090e9ed2fcaa8c"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖1图书走廊门（09.10更新）",
+      "name": "左 - 竖1图书走廊门（09.10更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 竖1图书走廊门（09.10更新）.png",
+      "sha256": "2b393c4e61b0451da0dd8fae162bbb31521e8a2cd1aaed7c4c2663a8fcee8213",
+      "size": [
+        829,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            2,
+            545,
+            829,
+            1020
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            14,
+            17,
+            829,
+            528
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            2,
+            1024,
+            829,
+            1546
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          2,
+          545,
+          829,
+          1020
+        ],
+        [
+          14,
+          17,
+          829,
+          528
+        ],
+        [
+          2,
+          1024,
+          829,
+          1546
+        ]
+      ],
+      "review": "迁移自 user_maps/5e3a1c8ccbca462b938dd59f85a2c158",
+      "pixel_sha256": "ee3c21ec77fc67f6e34a1ee516dd050572b01a5b9054ba19c26a9bea5765e36e"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 倒T门(09.10更新）",
+      "name": "左 - 倒T门(09.10更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 倒T门(09.10更新）.png",
+      "sha256": "ed34126f95ee25ad183d63a0f4e24e8c44f73a4725812dc6b9887600df290907",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 2,
+          "bbox": [
+            27,
+            21,
+            1000,
+            787
+          ]
+        },
+        {
+          "floor": 1,
+          "bbox": [
+            18,
+            788,
+            1000,
+            1475
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            15,
+            1483,
+            1000,
+            2211
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          27,
+          21,
+          1000,
+          787
+        ],
+        [
+          18,
+          788,
+          1000,
+          1475
+        ],
+        [
+          15,
+          1483,
+          1000,
+          2211
+        ]
+      ],
+      "review": "迁移自 user_maps/5e8b2bd65b8541d083b543ddd8b978f6",
+      "pixel_sha256": "bf24390463d004425020596d4f2fbdad5b547568b34cc11dc6425b6f6545fed3"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖1图书门（09.10更新）",
+      "name": "左 - 竖1图书门（09.10更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 竖1图书门（09.10更新）.png",
+      "sha256": "76ec89222e5f8e1f6446f18189db2a8c52922edc9219b006d37eaecb1ed56f4e",
+      "size": [
+        829,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            0,
+            566,
+            829,
+            1071
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            33,
+            14,
+            829,
+            552
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            5,
+            1077,
+            829,
+            1609
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          0,
+          566,
+          829,
+          1071
+        ],
+        [
+          33,
+          14,
+          829,
+          552
+        ],
+        [
+          5,
+          1077,
+          829,
+          1609
+        ]
+      ],
+      "review": "迁移自 user_maps/822d4a6a7e124f578ee265d697d0885e",
+      "pixel_sha256": "76907916c29dde9d723f76d96859a2281bfb0bb0572cd99f00554adaadc708a5"
+    }
+  ]
+}

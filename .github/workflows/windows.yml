@@ -1,0 +1,23 @@
+name: Windows portable build
+on:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          architecture: x64
+      - run: python -m pip install -r requirements-build.txt
+      - run: python scripts/build_windows.py
+      - name: Pack complete folder
+        shell: pwsh
+        run: Compress-Archive -Path dist/IdentityVMapAssistant -DestinationPath dist/IdentityVMapAssistant-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IdentityVMapAssistant-Windows-x64
+          path: dist/IdentityVMapAssistant-Windows-x64.zip
