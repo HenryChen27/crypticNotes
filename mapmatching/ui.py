@@ -501,6 +501,10 @@ class Companion(W.QWidget):
         hide.clicked.connect(self.close_map)
         buttons.addWidget(retry)
         buttons.addWidget(hide)
+        hide_pencil=EditButton()
+        hide_pencil.clicked.connect(self.edit_hide_hotkey)
+        hide_pencil.setToolTip('修改隐藏叠图快捷键')
+        buttons.addWidget(hide_pencil)
         box.addLayout(buttons)
         box.addSpacing(6)
         box.addWidget(self.delay_label)
@@ -989,8 +993,13 @@ class Companion(W.QWidget):
             edges = set()
         foreground = win32gui.GetForegroundWindow()
         if self.enabled.isChecked():
-            if 0x1B in edges or self.keys.hide_key in edges:
+            if 0x1B in edges:
                 self.close_map()
+            elif self.keys.hide_key in edges:
+                if self.state.opened:
+                    self.close_map()
+                elif self.is_game(foreground) or self.demo_window is not None:
+                    self.open_map()
             elif self.keys.toggle_key in edges and self.is_game(foreground):
                 # A game can close its map through multiple inputs. Never invert
                 # a guessed boolean: inspect the screen after this key instead.
