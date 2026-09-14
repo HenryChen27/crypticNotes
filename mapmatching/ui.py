@@ -648,6 +648,9 @@ class Companion(W.QWidget):
         self.close_map()
         dialog=HotkeyDialog(self.hotkey,self)
         if dialog.exec()==W.QDialog.Accepted:
+            if dialog.selected == self.hide_hotkey:
+                self.notify('快捷键冲突：不能与隐藏叠图快捷键相同')
+                return
             self.hotkey=dialog.selected
             self.keys.toggle_key=HOTKEYS[self.hotkey]
             self.hotkey_label.setText(f'启用快捷键({self.hotkey}/esc)')
@@ -656,7 +659,10 @@ class Companion(W.QWidget):
 
     def edit_hide_hotkey(self):
         dialog=HotkeyDialog(self.hide_hotkey,self)
-        if dialog.exec() and dialog.selected != self.hotkey:
+        if dialog.exec():
+            if dialog.selected == self.hotkey:
+                self.notify('快捷键冲突：不能与地图开关快捷键相同')
+                return
             self.hide_hotkey=dialog.selected
             self.keys.hide_key=HOTKEYS[self.hide_hotkey]
             self.hide_hotkey_label.setText(f'隐藏叠图({self.hide_hotkey})')
