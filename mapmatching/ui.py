@@ -8,9 +8,14 @@ import sys
 import time
 
 from .paths import ROOT, DATA_ROOT
-for dependency_root in (ROOT/'.venv/Lib/site-packages', ROOT/'.ui-deps'):
-    if dependency_root.exists() and str(dependency_root) not in sys.path:
-        sys.path.insert(0,str(dependency_root))
+_venv_deps = ROOT/'.venv/Lib/site-packages'
+_fallback_deps = ROOT/'.ui-deps'
+# Prefer the real virtualenv even when an older bundled dependency directory
+# is present beside the source tree.
+if _venv_deps.exists():
+    sys.path.insert(0, str(_venv_deps))
+elif _fallback_deps.exists():
+    sys.path.insert(0, str(_fallback_deps))
 
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .src.live import ToggleState, worker

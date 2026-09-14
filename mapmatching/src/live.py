@@ -1,5 +1,5 @@
 """Live presentation policy and raw source rendering (no example/GT access)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import cv2
 import numpy as np
 
@@ -72,6 +72,32 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=()):
     return layer
 
 
+def centered_floor_layer(shape, original, reference, floor, margin=.10):
+    """Show a known floor centered when screen geometry is too sparse to align.
+
+    This is deliberately a presentation fallback: identity comes from the
+    cached map and the floor comes from the latest recognition result.  It
+    never invents a screen-space pose or updates the alignment cache.
+    """
+    region = next((r for r in reference.regions if r['floor'] == floor), None)
+    if region is None:
+        return None
+    x0, y0, x1, y1 = map(int, region['bbox'])
+    crop = original[max(0,y0):min(original.shape[0],y1),
+                    max(0,x0):min(original.shape[1],x1)]
+    if crop.size == 0:
+        return None
+    h, w = shape[:2]
+    scale = min((w*(1-2*margin))/crop.shape[1], (h*(1-2*margin))/crop.shape[0])
+    nw, nh = max(1, int(crop.shape[1]*scale)), max(1, int(crop.shape[0]*scale))
+    resized = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA)
+    layer = np.zeros((h,w,4), np.uint8)
+    left, top = (w-nw)//2, (h-nh)//2
+    layer[top:top+nh, left:left+nw, :3] = cv2.cvtColor(resized, cv2.COLOR_BGR2BGRA)[:,:,:3]
+    layer[top:top+nh, left:left+nw, 3] = 255
+    return layer
+
+
 def composite(screenshot, layer, opacity=.30):
     alpha = layer[:,:,3:4].astype(np.float32)/255 * opacity
     return np.rint(screenshot*(1-alpha)+layer[:,:,:3]*alpha).clip(0,255).astype(np.uint8)
@@ -132,6 +158,21 @@ def worker(connection, root, difficulty, mode):
                 ref = next(r for r in matcher.references if r.map_id == candidate.map_id)
                 layer = raw_layer(pixels.shape, read_image(root/ref.source), ref, candidate,
                                   result.diagnostics.get('excluded_panel_boxes',[]))
+            elif cached is not None and result.candidates:
+                # Sparse/zoomed screenshots may reject alignment. Keep the
+                # remembered identity, but re-read the floor and present the
+                # matching floor map in the center at a readable scale.
+                observed = result.candidates[0]
+                floor = observed.floor
+                if floor is not None:
+                    ref = next((r for r in matcher.references if r.map_id == cached.map_id), None)
+                    if ref is not None:
+                        layer = centered_floor_layer(pixels.shape, read_image(root/ref.source), ref, floor)
+                        if layer is not None:
+                            # Retain the last valid pose in the cache while
+                            # borrowing only the newly observed floor.
+                            candidate = replace(cached, floor=floor)
+                            message = '地图内容较少，已居中显示本楼层'
             connection.send(('result', (generation, layer, message, candidate,
                                        (time.perf_counter()-start)*1000, result.to_dict())))
     except (EOFError, BrokenPipeError):
