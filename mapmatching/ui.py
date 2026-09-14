@@ -216,10 +216,15 @@ TOAST_BRIEF = {
 }
 
 
+def hotkey_text(name):
+    return {'BACKSPACE':'退格键','TAB':'Tab','SPACE':'空格','ENTER':'回车','RETURN':'回车'}.get(name,name)
+
+
 class HotkeyDialog(W.QDialog):
-    def __init__(self,current,parent):
+    def __init__(self,current,parent,default='G'):
         super().__init__(parent,C.Qt.Dialog | C.Qt.FramelessWindowHint)
         self.selected=current
+        self.default=default
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setFixedWidth(320)
         outer=W.QVBoxLayout(self)
@@ -232,7 +237,7 @@ class HotkeyDialog(W.QDialog):
         title=W.QLabel('修改快捷键')
         title.setObjectName('title')
         layout.addWidget(title)
-        self.readout=W.QLabel(current)
+        self.readout=W.QLabel(hotkey_text(current))
         self.readout.setAlignment(C.Qt.AlignCenter)
         self.readout.setStyleSheet('font-size:28px;padding:12px;')
         layout.addWidget(self.readout)
@@ -248,8 +253,8 @@ class HotkeyDialog(W.QDialog):
         layout.addLayout(row)
 
     def reset(self):
-        self.selected='G'
-        self.readout.setText('G')
+            self.selected=self.default
+            self.readout.setText(hotkey_text(self.default))
 
     def keyPressEvent(self,event):
         if event.key()==C.Qt.Key_Escape:
@@ -258,7 +263,7 @@ class HotkeyDialog(W.QDialog):
         name=G.QKeySequence(event.key()).toString().upper()
         if name in HOTKEYS and not (event.modifiers() & (C.Qt.ControlModifier | C.Qt.AltModifier | C.Qt.ShiftModifier | C.Qt.MetaModifier)):
             self.selected=name
-            self.readout.setText(name)
+            self.readout.setText(hotkey_text(name))
         else:
             self.hint.setText('请选择单个字母、数字或 F1–F12\nEsc 保留为隐藏 / 取消')
 
@@ -665,7 +670,7 @@ class Companion(W.QWidget):
             self.notify(f'快捷键已改为 {self.hotkey}')
 
     def edit_hide_hotkey(self):
-        dialog=HotkeyDialog(self.hide_hotkey,self)
+        dialog=HotkeyDialog(self.hide_hotkey,self,default='BACKSPACE')
         if dialog.exec():
             if dialog.selected == self.hotkey:
                 self.notify('快捷键冲突：不能与地图开关快捷键相同')
