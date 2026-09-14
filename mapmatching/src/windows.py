@@ -58,9 +58,10 @@ class Keys:
     def __init__(self):
         self.down = set()
         self.toggle_key = 0x47
+        self.hide_key = 0x08  # Backspace
 
     def edges(self):
-        pressed = {key for key in (self.toggle_key,0x1B) if user32.GetAsyncKeyState(key) & 0x8000}
+        pressed = {key for key in (self.toggle_key,self.hide_key,0x1B) if user32.GetAsyncKeyState(key) & 0x8000}
         rising = pressed - self.down
         self.down = pressed
         return rising

@@ -424,6 +424,10 @@ class Companion(W.QWidget):
         if self.hotkey not in HOTKEYS:
             self.hotkey = 'G'
         self.keys.toggle_key = HOTKEYS[self.hotkey]
+        self.hide_hotkey = self.settings.get('hide_hotkey','BACKSPACE')
+        if self.hide_hotkey not in HOTKEYS or self.hide_hotkey == self.hotkey:
+            self.hide_hotkey = 'BACKSPACE'
+        self.keys.hide_key = HOTKEYS[self.hide_hotkey]
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(3,3,3,3)
         layout.setSpacing(8)
@@ -509,6 +513,13 @@ class Companion(W.QWidget):
         hotkeys.addWidget(pencil)
         hotkeys.addWidget(self.enabled,1)
         box.addLayout(hotkeys)
+        hidekeys=W.QHBoxLayout()
+        self.hide_hotkey_label=W.QLabel(f'隐藏叠图({self.hide_hotkey})')
+        hidekeys.addWidget(self.hide_hotkey_label)
+        hide_pencil=EditButton()
+        hide_pencil.clicked.connect(self.edit_hide_hotkey)
+        hidekeys.addWidget(hide_pencil)
+        box.addLayout(hidekeys)
         box.addWidget(self.status)
         quit_button = W.QPushButton('退出')
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
@@ -627,7 +638,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pos=[point.x(),point.y()])),encoding='utf-8')
 
     def edit_hotkey(self):
         self.close_map()
@@ -638,6 +649,15 @@ class Companion(W.QWidget):
             self.hotkey_label.setText(f'启用快捷键({self.hotkey}/esc)')
             self.save()
             self.notify(f'快捷键已改为 {self.hotkey}')
+
+    def edit_hide_hotkey(self):
+        dialog=HotkeyDialog(self.hide_hotkey,self)
+        if dialog.exec() and dialog.selected != self.hotkey:
+            self.hide_hotkey=dialog.selected
+            self.keys.hide_key=HOTKEYS[self.hide_hotkey]
+            self.hide_hotkey_label.setText(f'隐藏叠图({self.hide_hotkey})')
+            self.save()
+            self.notify(f'隐藏键已改为 {self.hide_hotkey}')
 
     def opacity_changed(self):
         self.opacity_label.setText(f'不透明度    {self.opacity.value()}%')
@@ -969,7 +989,7 @@ class Companion(W.QWidget):
             edges = set()
         foreground = win32gui.GetForegroundWindow()
         if self.enabled.isChecked():
-            if 0x1B in edges:
+            if 0x1B in edges or self.keys.hide_key in edges:
                 self.close_map()
             elif self.keys.toggle_key in edges and self.is_game(foreground):
                 # A game can close its map through multiple inputs. Never invert
