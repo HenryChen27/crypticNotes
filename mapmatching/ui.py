@@ -501,10 +501,10 @@ class Companion(W.QWidget):
         hide.clicked.connect(self.close_map)
         buttons.addWidget(retry)
         buttons.addWidget(hide)
-        hide_pencil=EditButton()
-        hide_pencil.clicked.connect(self.edit_hide_hotkey)
-        hide_pencil.setToolTip('修改隐藏叠图快捷键')
-        buttons.addWidget(hide_pencil)
+        hide_button_pencil=EditButton()
+        hide_button_pencil.clicked.connect(self.edit_hide_hotkey)
+        hide_button_pencil.setToolTip('修改隐藏叠图快捷键')
+        buttons.addWidget(hide_button_pencil)
         box.addLayout(buttons)
         box.addSpacing(6)
         box.addWidget(self.delay_label)
@@ -524,6 +524,13 @@ class Companion(W.QWidget):
         hide_pencil.clicked.connect(self.edit_hide_hotkey)
         hidekeys.addWidget(hide_pencil)
         box.addLayout(hidekeys)
+        # The shortcut editor lives beside the hide button; keep the legacy
+        # row out of the panel while retaining its label for compatibility.
+        for _widget in (self.hide_hotkey_label, hide_pencil):
+            _widget.hide()
+        hidekeys.setContentsMargins(0, 0, 0, 0)
+        hidekeys.setSpacing(0)
+        box.setStretch(box.indexOf(self.status), 1)
         box.addWidget(self.status)
         quit_button = W.QPushButton('退出')
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
