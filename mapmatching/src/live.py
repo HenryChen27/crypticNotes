@@ -129,6 +129,41 @@ def match_with_cache(matcher, pixels, cached=None):
     return result,candidate,message
 
 
+class MultiplayerFallback:
+    """Search dedicated duo routes first, loading solo routes only on failure."""
+
+    def __init__(self, primary, solo_factory):
+        self.primary = primary
+        self.solo_factory = solo_factory
+        self.solo = None
+
+    @property
+    def references(self):
+        return self.primary.references + (self.solo.references if self.solo else [])
+
+    def match(self, pixels):
+        result = self.primary.match(pixels)
+        if presentation_candidate(result)[0] is not None:
+            return result
+        if self.solo is None:
+            self.solo = self.solo_factory()
+        solo_result = self.solo.match(pixels)
+        if presentation_candidate(solo_result)[0] is not None:
+            solo_result.diagnostics['multiplayer_solo_fallback'] = True
+            return solo_result
+        # Do not use a rejected solo candidate to infer the cached duo floor.
+        return result
+
+    def register_known(self, pixels, map_id):
+        if map_id.startswith('nightmare/solo/'):
+            if self.solo is None:
+                self.solo = self.solo_factory()
+            result = self.solo.register_known(pixels, map_id)
+            result.diagnostics['multiplayer_solo_fallback'] = True
+            return result
+        return self.primary.register_known(pixels, map_id)
+
+
 def worker(connection, root, difficulty, mode):
     """Persistent, event-driven process. Parent can terminate active work."""
     from pathlib import Path
@@ -144,6 +179,9 @@ def worker(connection, root, difficulty, mode):
             from .reference import build
             build(index)
         matcher = MapMatcher(index, difficulty=difficulty, mode=mode)
+        if difficulty == 'nightmare' and mode == 'duo':
+            matcher = MultiplayerFallback(
+                matcher, lambda: MapMatcher(index, difficulty='nightmare', mode='solo'))
         connection.send(('ready', None))
         while True:
             request = connection.recv()
@@ -173,6 +211,9 @@ def worker(connection, root, difficulty, mode):
                             # borrowing only the newly observed floor.
                             candidate = replace(cached, floor=floor)
                             message = '地图内容较少，已居中显示本楼层'
+            if layer is not None and mode == 'duo' and candidate.mode == 'solo':
+                message = '多人暂无专用路线'
+                result.diagnostics['multiplayer_solo_fallback'] = True
             connection.send(('result', (generation, layer, message, candidate,
                                        (time.perf_counter()-start)*1000, result.to_dict())))
     except (EOFError, BrokenPipeError):
