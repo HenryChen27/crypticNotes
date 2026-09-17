@@ -3159,6 +3159,198 @@
       ],
       "review": "迁移自 user_maps/822d4a6a7e124f578ee265d697d0885e",
       "pixel_sha256": "76907916c29dde9d723f76d96859a2281bfb0bb0572cd99f00554adaadc708a5"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 11图（09.17更新）",
+      "name": "左 - 11图（09.17更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 11图（09.17更新）.png",
+      "sha256": "57fffc15a4a044d1e65d58daf79c8ed72db60c8d3bf24a643e2d45bf15aeaee9",
+      "pixel_sha256": "e5a97c27bab191aa9902f03bf34d264e0afdd0e91f6ade8f94b19fd0d1fd6537",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            21,
+            766,
+            992,
+            1499
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            55,
+            63,
+            948,
+            737
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            19,
+            1506,
+            980,
+            2165
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          21,
+          766,
+          992,
+          1499
+        ],
+        [
+          55,
+          63,
+          948,
+          737
+        ],
+        [
+          19,
+          1506,
+          980,
+          2165
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖5床房（09.17更新）",
+      "name": "左 - 竖5床房（09.17更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 竖5床房（09.17更新）.png",
+      "sha256": "d15d9eb32d81b8d9984cfcff5a6fb810796317858e084ac2ae15bc3c49ef5c45",
+      "pixel_sha256": "5493464d45589b2a429d0e515173d1dd6b5096505d6c5185915ad2e48f880b11",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            56,
+            785,
+            965,
+            1506
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            50,
+            45,
+            935,
+            796
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            68,
+            1545,
+            952,
+            2142
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          56,
+          785,
+          965,
+          1506
+        ],
+        [
+          50,
+          45,
+          935,
+          796
+        ],
+        [
+          68,
+          1545,
+          952,
+          2142
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖拐角楼梯门（09.17更新）",
+      "name": "左 - 竖拐角楼梯门（09.17更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 竖拐角楼梯门（09.17更新）.jpg",
+      "sha256": "2dfe74e7d635402a4bf7c6a06afb1136bc914b08bdb9296bc6e98b0fb5d47834",
+      "pixel_sha256": "3d9c5f76fc0d26656ed0fd1dcc32e8a8e2a7cd5ce67ba95a67b4648725bd86fb",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            18,
+            786,
+            989,
+            1491
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            49,
+            140,
+            961,
+            820
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            29,
+            1535,
+            934,
+            2248
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          18,
+          786,
+          989,
+          1491
+        ],
+        [
+          49,
+          140,
+          961,
+          820
+        ],
+        [
+          29,
+          1535,
+          934,
+          2248
+        ]
+      ],
+      "review": ""
     }
   ]
 }
