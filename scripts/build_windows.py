@@ -37,7 +37,7 @@ def main():
     data=[ROOT/'mapmatching/assets',
           *(ROOT/'maps'/name for name in ('hard','nightmare','_unindexed','evidence',
                                           'floors.json','index.json','disabled.json','README.md')),
-          ROOT/'scripts/run.cmd',ROOT/'README.md']
+          ROOT/'scripts/run.cmd',ROOT/'scripts/create_shortcut.ps1',ROOT/'README.md']
     data.extend((ROOT/'mapmatching').glob('*.md'))
     data.extend(ROOT.glob('*.cmd'))
     for path in data:
