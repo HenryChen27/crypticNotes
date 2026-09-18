@@ -21,7 +21,7 @@
 - 如果上一轮已经识别过地图，下一次会优先复用这张图，只重新对齐位置，速度更快。
 - 识别失败时会在齿轮旁边给一句简短提示，比如“未匹配”“内容太少”“请先打开地图”。
 
-目前内置 59 张地图：困难 28 张、噩梦单人 18 张、噩梦多人 13 张。
+目前内置 67 张地图：困难 28 张、噩梦单人 21 张、噩梦多人 18 张。
 
 ## 下载和启动
 
@@ -45,6 +45,18 @@
 完整解压后，双击 `create-shortcut.cmd`，同一文件夹里会生成带项目图标的 `加页手记地图插件.lnk` 快捷方式。把这个快捷方式拖到桌面，以后双击它即可启动。
 
 快捷方式按每个人实际解压的位置生成，不包含开发者电脑的固定地址。请保留完整的程序文件夹；如果移动了程序文件夹，重新运行 `create-shortcut.cmd`，再用新生成的快捷方式替换桌面上的旧快捷方式。也可以右键 `crypticNotes.cmd`，选择“发送到 → 桌面快捷方式”（Windows 11 可能需要先点“显示更多选项”）。
+
+### 以后怎么更新
+
+有两条路，按你的情况挑一条：
+
+**电脑上装过 Git 的（推荐）** —— 双击程序文件夹里的 `更新.cmd`。它每次只下载真正变了的文件，通常几秒钟，不用重下整个包。第一次双击会先把当前文件夹接进更新通道，那一次要多下约 220 MB，之后就都是几 MB 了。
+
+没装 Git 也不要紧：`更新.cmd` 会告诉你，装上 Git for Windows（<https://git-scm.com/download/win>，一路点“下一步”即可）再双击就行，只需要装这一次。
+
+**没装、也不想装的** —— 还是从 [Releases](https://github.com/HenryChen27/crypticNotes/releases/latest) 下载 ZIP，解压覆盖原文件夹。老办法，能用，只是每次都要重下约 220 MB。
+
+更新换掉的只是程序本身，**你在 `maps/` 里自己放的原图不会被动到**。唯一会重置的是「管理地图」里的移除/新增记录——它会回到发布时的样子，重新点几下即可。
 
 ## 平时怎么用
 
@@ -107,7 +119,9 @@
 用 Release 里的 ZIP 就不需要 Python。源码运行才需要 Python。
 
 **更新版本时要注意什么？**  
-打包版的地图库在程序目录的 `maps/` 里。你如果自己新增过地图，更新前先备份 `maps/`。
+装过 Git 就双击 `更新.cmd`，否则下载 ZIP 解压覆盖，两种都行，见[以后怎么更新](#以后怎么更新)。
+
+打包版的地图库在程序目录的 `maps/` 里。**你自己放进去的原图不会被更新删掉**，但「管理地图」里的移除/新增记录存在 `maps/floors.json`，而它属于发布内容，更新后会被重置回发布时的状态（原图仍在，重新录入即可）。介意的话，更新前先把 `maps/floors.json` 复制一份。
 
 ## 源码运行
 
@@ -132,14 +146,34 @@
 
 成品在 `dist/IdentityVMapAssistant/`。发布时要压缩整个文件夹，不能只拿 EXE。
 
+### 发布给协作者
+
+除了传 ZIP，还可以把成品目录作为 `dist` 分支推上去，让协作者用 `更新.cmd` 增量拉取（每次只传变化的几个文件，而不是整个 220 MB）：
+
+```bash
+scripts/publish_dist.sh --local        # 只提交不推送，先看看这次变了多少
+scripts/publish_dist.sh                # 提交并推送
+scripts/publish_dist.sh -m "提交信息"
+```
+
+脚本会重新生成 `.gitignore`，并把 `scripts/更新.cmd` 和 `scripts/update-client.ps1` 拷进成品目录，再提交推送。**打包会清空 `dist/`，这两个文件每次都由脚本重新拷进去，别去手改成品目录里的副本。**
+
+分发仓库用独立的 `GIT_DIR`（`out/dist_repo/.git`）配 `core.worktree` 指向 `dist/IdentityVMapAssistant`——因为打包会删掉整个 `dist/`，`.git` 放在里面会被一起删掉。
+
+两个坑已经踩过，改动时留意：
+
+- `更新.cmd` 必须是**纯 ASCII**。cmd.exe 按字节偏移定位批处理文件的下一行，文件里混入 GBK 中文会让偏移算错、从某一行中间开始执行（表现为「命令语法不正确」）。所有中文都在 `update-client.ps1` 里。
+- `update-client.ps1` 必须是 **UTF-8 with BOM** 且 CRLF，否则 PowerShell 读成乱码。`publish_dist.sh` 里有守卫，丢了 BOM 会拒绝发布。
+
 ## 当前验证状态
 
 本地检查结果：
 
 - `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：58 个测试通过。
 - `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 93/93 通过。
-- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、59 张地图和匹配子进程。
-- `maps/floors.json`：59 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
+- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、67 张地图和匹配子进程。
+- `maps/floors.json`：67 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
+- 分发通道 `更新.cmd` 端到端跑通：首次接入、增量更新、软删除状态、协作者自录地图不被删除，以及中文提示的编码。
 
 噩梦测试目前主要是原图派生的合成场景，能证明地图库和叠图链路没断；真实迷雾、不同分辨率和不同游戏布局仍需要更多实战截图验证。看不清、候选过于相似或楼层不确定时，程序会拒绝叠图。
 
@@ -149,11 +183,13 @@
 mapmatching/         界面、识别、配准、测试和基准脚本
 maps/                地图库：原图 + floors.json 登记表
 docs/images/         README 效果图
-scripts/             启动、打包、整理分享仓库脚本
+scripts/             启动、打包、发布分发、整理分享仓库脚本
 examples/            本地测试截图
 ```
 
 `maps/index.json`、`maps/evidence/`、`maps/disabled.json` 是缓存或本机状态，可以重建，不进仓库。`maps/` 里的原图和 `floors.json` 是需要备份的源数据。
+
+发布包不走本仓库，走 `crypticNotes` 的 `dist` 分支，由 `scripts/publish_dist.sh` 推送。协作者侧的入口是 `scripts/更新.cmd`（纯 ASCII 引导）和 `scripts/update-client.ps1`（UTF-8 BOM，承载逻辑与中文提示），两者都会被打包进发布目录。
 
 ## 地图来源与致谢
 
