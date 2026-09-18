@@ -3351,6 +3351,326 @@
         ]
       ],
       "review": ""
+    },
+    {
+      "map_id": "nightmare/duo/南 - 悬空桌门",
+      "name": "南 - 悬空桌门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/南 - 悬空桌门.png",
+      "sha256": "5441d2b160bfc3d201bac1e93b2198841ed8d4d0da0e6c7da75c01dae78538b5",
+      "pixel_sha256": "aea2890e6e5ee217ace361f9906113a6cd354c515acfebe3a245325835b414ea",
+      "size": [
+        777,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            59,
+            599,
+            761,
+            1189
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            54,
+            15,
+            734,
+            603
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            46,
+            1194,
+            744,
+            1661
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          59,
+          599,
+          761,
+          1189
+        ],
+        [
+          54,
+          15,
+          734,
+          603
+        ],
+        [
+          46,
+          1194,
+          744,
+          1661
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/duo/左 - 倒T门",
+      "name": "左 - 倒T门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/左 - 倒T门.png",
+      "sha256": "a0c3c3b6864d3ae5e5dd6a1b382cd8e86edeaaa6413349a2e11b04eb5700bcca",
+      "pixel_sha256": "3f76eb31076659ac1011c77c1bba3fe987b2364851a18838550bdf593355119f",
+      "size": [
+        1000,
+        2489
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            69,
+            778,
+            929,
+            1469
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            62,
+            42,
+            905,
+            797
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            80,
+            1494,
+            991,
+            2126
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          69,
+          778,
+          929,
+          1469
+        ],
+        [
+          62,
+          42,
+          905,
+          797
+        ],
+        [
+          80,
+          1494,
+          991,
+          2126
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖1图书门",
+      "name": "左 - 竖1图书门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/左 - 竖1图书门.png",
+      "sha256": "d896c737414c93cffe92b9c255ca9661370fac89b111c3c6ba1c31c29d693d60",
+      "pixel_sha256": "d42468754e8381e27e419214f773d0935fc198de83d3f5a962135a6ba53cdefe",
+      "size": [
+        829,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            43,
+            567,
+            829,
+            1082
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            91,
+            23,
+            720,
+            556
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            45,
+            1083,
+            721,
+            1587
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          43,
+          567,
+          829,
+          1082
+        ],
+        [
+          91,
+          23,
+          720,
+          556
+        ],
+        [
+          45,
+          1083,
+          721,
+          1587
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖1图书走廊门",
+      "name": "左 - 竖1图书走廊门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/左 - 竖1图书走廊门.png",
+      "sha256": "39edebc4f5de190ac0a951e7654519bafc3fdc67f0e88dede23978407001a809",
+      "pixel_sha256": "4f24a56ac68295c6a94c9d3132313fe0f5f7c86cc5544dcb90a011a1d2203ffc",
+      "size": [
+        829,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            62,
+            548,
+            748,
+            1025
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            17,
+            28,
+            780,
+            528
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            104,
+            1026,
+            716,
+            1523
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          62,
+          548,
+          748,
+          1025
+        ],
+        [
+          17,
+          28,
+          780,
+          528
+        ],
+        [
+          104,
+          1026,
+          716,
+          1523
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖L门",
+      "name": "左 - 竖L门",
+      "difficulty": "nightmare",
+      "mode": "duo",
+      "source": "maps/nightmare/duo/左 - 竖L门.png",
+      "sha256": "e801b55e8d01fe66681e5b4b0bf33cd3a681ce9601cad9cc5623bcb0ee91e393",
+      "pixel_sha256": "a0c880c45c42b388303501307ca12d5478935608d9f86634dd7fee9f64418010",
+      "size": [
+        829,
+        1827
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            19,
+            519,
+            829,
+            1038
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            19,
+            19,
+            829,
+            526
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            60,
+            1068,
+            784,
+            1566
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          19,
+          519,
+          829,
+          1038
+        ],
+        [
+          19,
+          19,
+          829,
+          526
+        ],
+        [
+          60,
+          1068,
+          784,
+          1566
+        ]
+      ],
+      "review": ""
     }
   ]
 }

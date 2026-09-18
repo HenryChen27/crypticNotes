@@ -23,6 +23,8 @@ class FloorCanvas(W.QWidget):
         self.pan=C.QPointF()
         self.space=False
         self.pan_start=None
+        self.guide_position=None
+        self.setMouseTracking(True)
         self.setFocusPolicy(C.Qt.StrongFocus)
         self.setCursor(C.Qt.CrossCursor)
 
@@ -57,6 +59,7 @@ class FloorCanvas(W.QWidget):
         if event.key()==C.Qt.Key_Space:
             self.space=True
             self.setCursor(C.Qt.OpenHandCursor)
+            self.update()
             event.accept()
         else:
             super().keyPressEvent(event)
@@ -65,6 +68,7 @@ class FloorCanvas(W.QWidget):
         if event.key()==C.Qt.Key_Space and not event.isAutoRepeat():
             self.space=False
             self.setCursor(C.Qt.CrossCursor)
+            self.update()
             event.accept()
         else:
             super().keyReleaseEvent(event)
@@ -72,7 +76,14 @@ class FloorCanvas(W.QWidget):
     def focusOutEvent(self,event):
         self.space=False; self.pan_start=None; self.start=self.drag=None
         self.setCursor(C.Qt.CrossCursor)
+        self.guide_position=None
+        self.update()
         super().focusOutEvent(event)
+
+    def leaveEvent(self,event):
+        self.guide_position=None
+        self.update()
+        super().leaveEvent(event)
 
     def point(self,p):
         r=self.image_rect()
@@ -81,6 +92,8 @@ class FloorCanvas(W.QWidget):
 
     def mousePressEvent(self,event):
         self.setFocus()
+        self.guide_position=event.position()
+        self.update()
         if event.button()==C.Qt.MiddleButton or (event.button()==C.Qt.LeftButton and self.space):
             self.pan_start=event.position()
             self.setCursor(C.Qt.ClosedHandCursor)
@@ -90,6 +103,8 @@ class FloorCanvas(W.QWidget):
             self.drag=C.QRectF(self.start,self.start)
 
     def mouseMoveEvent(self,event):
+        self.guide_position=event.position()
+        self.update()
         if self.pan_start is not None:
             self.pan+=event.position()-self.pan_start
             self.pan_start=event.position()
@@ -100,6 +115,8 @@ class FloorCanvas(W.QWidget):
             self.update()
 
     def mouseReleaseEvent(self,event):
+        self.guide_position=event.position() if self.rect().contains(event.position().toPoint()) else None
+        self.update()
         if self.pan_start is not None:
             self.pan_start=None
             self.setCursor(C.Qt.OpenHandCursor if self.space else C.Qt.CrossCursor)
@@ -132,6 +149,21 @@ class FloorCanvas(W.QWidget):
             rect=C.QRectF(r.x()+x*sx,r.y()+y*sy,(X-x)*sx,(Y-y)*sy)
             p.drawRect(rect)
             p.drawText(rect.adjusted(6,3,-3,-3),C.Qt.AlignTop|C.Qt.AlignLeft,'地下室' if floor==-1 else f'{floor}F')
+        # Screen-space guides stay thin at any zoom and never affect source boxes.
+        if self.guide_position is not None and not self.space and self.pan_start is None:
+            visible=r.intersected(C.QRectF(self.rect()))
+            if visible.contains(self.guide_position):
+                pos=self.guide_position
+                p.save()
+                p.setClipRect(visible)
+                for color,width in (('#172631',3),('#d8e8f1',1)):
+                    pen=G.QPen(G.QColor(color),width,C.Qt.DashLine)
+                    pen.setCosmetic(True)
+                    pen.setDashPattern([5/width,4/width])
+                    p.setPen(pen)
+                    p.drawLine(C.QPointF(visible.left(),pos.y()),C.QPointF(visible.right(),pos.y()))
+                    p.drawLine(C.QPointF(pos.x(),visible.top()),C.QPointF(pos.x(),visible.bottom()))
+                p.restore()
 
 
 class ImportJob(C.QThread):

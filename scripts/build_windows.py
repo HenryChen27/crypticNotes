@@ -34,7 +34,7 @@ def main():
     #
     # 逐个子项列出来而不是整目录 `maps/`，是为了只排除 `_overview/`：
     # 那三张一图流总览共 137 MB，从不进索引，进包只会让安装包白白大三倍。
-    data=[ROOT/'mapmatching/assets',
+    data=[ROOT/'mapmatching/assets', ROOT/'docs/images',
           *(ROOT/'maps'/name for name in ('hard','nightmare','_unindexed','evidence',
                                           'floors.json','index.json','disabled.json','README.md')),
           ROOT/'scripts/run.cmd',ROOT/'scripts/create_shortcut.ps1',ROOT/'README.md']
