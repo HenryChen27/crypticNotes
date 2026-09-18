@@ -1,0 +1,476 @@
+{
+  "version": 5,
+  "config_fingerprint": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3",
+  "remove_annotations": true,
+  "references": [
+    {
+      "map_id": "nightmare/solo/北 - b门",
+      "array": "65a292e42bd86bcf.npz",
+      "factor": 0.3333333333333333,
+      "sha256": "a46547249710423bc68aa072245cac7743cf888d14fa515959322b6902d6f0c6",
+      "entry_sha": "d4954de311caa024cb062aef0804730fe10daebe783f20046ea2b6e9125eeb25"
+    },
+    {
+      "map_id": "nightmare/solo/北 - Z1门",
+      "array": "dee1a0cd104c3135.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "6d20193d9681ce326ed5d958a01f2a16c801309db5a29ff69e0c9b7adb4a99bc",
+      "entry_sha": "739f9812208e53a8dca68797df0f07b24d748b1dd34a48cd7b4ecc16341db2d0"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 仙人掌门",
+      "array": "f6832c581850446f.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "48d46077b8fdd0c5a2d5a65ecf23af78bec25d37a9fb4edf916d4204d2bb59e2",
+      "entry_sha": "17996f5a21892064e4d1f119ad1efc149bdd3d5037c14d044b91f28316938829"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 回门",
+      "array": "ab286a112f61afb8.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "099110e75f8124793c10f654bc2a1c5cc70ad2952c11b2e2c05a122d34f86b68",
+      "entry_sha": "b340a44bc703d2d4e9b7341ca502cd11e74114197b2a61cc43b2b334bd76866c"
+    },
+    {
+      "map_id": "nightmare/solo/北 - 骑士门",
+      "array": "7e3fbeabe83ac4cc.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "70d593fb68aac868c3c996671ed5334d3f808374ebbe961905b6f5d79ef37093",
+      "entry_sha": "d69bb2da9969ae81707c9e8041026595023d4aa7ef1c9e75ca5a1db03f48f11d"
+    },
+    {
+      "map_id": "nightmare/solo/南 - 3红门路线图",
+      "array": "3dd75afa7b1c89a9.npz",
+      "factor": 0.3766478342749529,
+      "sha256": "f664a449f44db3b67c7f3d038f1133c87f3d4e333cea9268663c953925fa6391",
+      "entry_sha": "a58897e83e20c03d04dea901bbe66678a77957faf212722a31c4a7026acbe90a"
+    },
+    {
+      "map_id": "nightmare/solo/南 - H门",
+      "array": "2117ebdab9308a2e.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "90c679d01d3066d7a7225bc4f45c2b2c4e9e1032ff5f9f827e31abde0e3139e4",
+      "entry_sha": "b3fcbef8f24f299e94e52558f5b3a17bf8ad895937260a1a8125647d03afce04"
+    },
+    {
+      "map_id": "nightmare/solo/右 - C门路线图",
+      "array": "176b89ba5b43ecf2.npz",
+      "factor": 0.3417634996582365,
+      "sha256": "cad4011d685cf530aefd68d71a5d660cc138cfd2f8ab6e9fefc0b91178acaf1a",
+      "entry_sha": "ef614ca3a54010a7a4e504753577d69842d47218670f05de40caa16bc32438a8"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 一闪电 门",
+      "array": "885d5b483c188c7c.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "8e125b7c39f31d74d34f2abf64b91253aca1b5615f956597492a25a86b6a26d8",
+      "entry_sha": "8ea80f15895861bdac55a25089ec273d3971b810c08f435ac62f4c7360347910"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 仙人掌门路线图",
+      "array": "d4032c3304b5f33a.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "eafbeed9bc9ea94007febbddd39d92f0de4e30e196f792b0bbadd2ce8a4d1ed3",
+      "entry_sha": "60d19b9fe22af48be1ad49960885bface71e32ac8deb5a8c42dfd115ab05b8c1"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 断C门 路线图",
+      "array": "378627918c387768.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "9c3429a44a9cf3b4ac861dbed65035668d967717ea76a35e4490a6093f8b1ccc",
+      "entry_sha": "b799d2bb3e595f20a6651f41f567fffafb0f33041e68e372f230a89bca89b4ac"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 短T门",
+      "array": "5bb7d73e77599028.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "5116ba0b27582bcad3c9cfdb022d207fd5e6a7558985cd182c9949af440e2601",
+      "entry_sha": "5d8e41777a2e06eeddbfe40e0b3792bb85e7494db11b210d45a7093b1fd675c1"
+    },
+    {
+      "map_id": "nightmare/solo/右 - 长Z门路线图",
+      "array": "7955565eda4b6dbe.npz",
+      "factor": 0.45310376076121434,
+      "sha256": "265db6712aa1526f23787cc742f937ff55714518f96359094a845c136dbd4044",
+      "entry_sha": "aaf6f738c8be06a534ca706a5b09cfe3f756c16a1bc3db9ee5a344ab0164b886"
+    },
+    {
+      "map_id": "nightmare/duo/北-B门",
+      "array": "07db39f2a9e3d095.npz",
+      "factor": 0.3148614609571788,
+      "sha256": "ac03fd652d3a976092507d84dd09b5a914d42286b5edd8c108e83c33d16954dc",
+      "entry_sha": "e1859cc894ad0e9f02ca2cca4a6449c136c2e560a3225d0023791d70266bfe49"
+    },
+    {
+      "map_id": "nightmare/duo/北-Z1门 ",
+      "array": "7d045699b91efa02.npz",
+      "factor": 0.4537205081669691,
+      "sha256": "346fd7ede62ca5a829af3ef7eb7c5c78ed52d26ee93181f581a3fd040cc7d7de",
+      "entry_sha": "5976a017f26c8c486eb7e9cff0ab25988cb54ce9d19470b00ae1c5f82592f7de"
+    },
+    {
+      "map_id": "nightmare/duo/北-仙人掌",
+      "array": "d453db22bb1745c7.npz",
+      "factor": 0.4537205081669691,
+      "sha256": "ac583ae66063f528887751dcd2ce84a2af550cfdbbe6e01047bf687ffc8646ef",
+      "entry_sha": "c860d85c08eb956247acf9f2459bbbd7ec5b11423f4cc6fbb9770757880b0d01"
+    },
+    {
+      "map_id": "nightmare/duo/北-回门",
+      "array": "fee12ebe673425e2.npz",
+      "factor": 0.4537205081669691,
+      "sha256": "ceab874f620945d72a403da1cd0b00f7939dfffdbdcb666858d5c53e388245fc",
+      "entry_sha": "7221b298a3a9a728d170c412c870d3a24ccb459e753b50a5395cfe27d7b6d826"
+    },
+    {
+      "map_id": "nightmare/duo/北-骑士门",
+      "array": "4d54ee9dac773de8.npz",
+      "factor": 0.42716787697565145,
+      "sha256": "d00b876be0713bfad6a7919df6d6e17f0aa5637cb10d5fff903706199c97bfee",
+      "entry_sha": "78320f9215c824b8ee57cd9732435a21ad900d6eae4b8dd1b340847f8d4f5755"
+    },
+    {
+      "map_id": "nightmare/duo/南-3红门",
+      "array": "3e28ff7c74b012b5.npz",
+      "factor": 0.41459369817578773,
+      "sha256": "8b3f6d939fe2b7d3186c98e08c2956c712b9cc9290a4b603ce26fb4e7043e8a5",
+      "entry_sha": "6b5f1a1e1eb08a6093918c3760701fa475b2727daf220cb18c1f7438b61b54fc"
+    },
+    {
+      "map_id": "nightmare/duo/南-H门",
+      "array": "414e038bc6b8d6c6.npz",
+      "factor": 0.4537205081669691,
+      "sha256": "5e71c55fd910b00a12948bade2425a4ecf42c51e5ad0ce82cee52f3d7643fa4c",
+      "entry_sha": "1579a1dc2a0f8a393d952dfcd5fcbb3a37a649e232633b26e8e1662f9b19ce7a"
+    },
+    {
+      "map_id": "nightmare/duo/右-C门",
+      "array": "03ab0ba3f3877a94.npz",
+      "factor": 0.39261876717707106,
+      "sha256": "a3f8b9ff2fc6432d29f88f721e622fce81539be41f549942842f2cf39eb0cf8a",
+      "entry_sha": "7235567d5baedc210d518e20f54b01a82b0f3d898d10122dc5c26c73c08af302"
+    },
+    {
+      "map_id": "nightmare/duo/右-仙人掌门",
+      "array": "d87f32274cb72741.npz",
+      "factor": 0.4551661356395084,
+      "sha256": "f14e2e5cd561d265c2bda137142cd640c76f25ecb8a70525bef78acafddd051a",
+      "entry_sha": "34d5d45725fae23e299384aa51c01d072357631f111caf4af9edbabf80227035"
+    },
+    {
+      "map_id": "nightmare/duo/右-断C门",
+      "array": "7a53a5786e1de2d6.npz",
+      "factor": 0.30193236714975846,
+      "sha256": "efe503d398cebcdcf8109bd2d588e019ea85c7fc2062373d82f43bb30f0eed3f",
+      "entry_sha": "ccd0cb988a9d6b6c8e67d90623db923ae75e35c2f487ab89160b9a373c8a3acc"
+    },
+    {
+      "map_id": "nightmare/duo/右-短T",
+      "array": "a7bb7f7bb14223e9.npz",
+      "factor": 0.3127932436659368,
+      "sha256": "e05752c76b652bfd809092caa0d15ff8c2b74237ef07b97d37732d03304917fd",
+      "entry_sha": "69a0157a19a6fcb3e6fe21832ebdf54e37874431a205f3dffa6e92b80cab99c9"
+    },
+    {
+      "map_id": "nightmare/duo/右-长Z门",
+      "array": "4e2a447488fbea0c.npz",
+      "factor": 0.4570383912248629,
+      "sha256": "5cb58d42f326a8c46ea550618ba833a6b91ba4aa936511a11ddd5a46628ec412",
+      "entry_sha": "b282aeba815bccabf95f75313a857e2ae09bb3cec6711d7b37912e21b6458ba4"
+    },
+    {
+      "map_id": "nightmare/duo/右-闪电门",
+      "array": "79daffc3f4ca69a8.npz",
+      "factor": 0.3049710277523635,
+      "sha256": "0d90cc0aa38c2ee3f45c7ac7bc91385109b53a91a5d5c50534e5f3ae40eea61a",
+      "entry_sha": "7014c888746403227db98507b95c3699e09495a779d29ad648d7f4e59ec1ce71"
+    },
+    {
+      "map_id": "hard/北-1沙发门（新增）",
+      "array": "e63c30f1ad98cb61.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "4b109f5ee98884c4aea79a35b82c8a4aab423b324b5a29dbfc1aabf9d3088e1d",
+      "entry_sha": "7edab0ca4593a21d450265bf3abd1186fefeff55751a80c5cf789c34ee4b6e6d"
+    },
+    {
+      "map_id": "hard/北-1门",
+      "array": "a1d798d62c8d5ffa.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "792a139b1df93df51bc7d0d7695f1118183ff1a0658a2034b290c6d652b4bbc8",
+      "entry_sha": "60e9b771cc8d9912bc664395b256e7e602e099b61d7d9678e83b674588bf7d09"
+    },
+    {
+      "map_id": "hard/北-4安全门（新增）",
+      "array": "22f624764bc28d25.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "c1bf90e13ebb9cceb39f6116894bab87a2b6aa7be8d1b9248fbbf209481ec702",
+      "entry_sha": "95ea27a2c0cc9764db2ffb4ebf7f852a366de05152fc817bd2ca996dec00bcaf"
+    },
+    {
+      "map_id": "hard/北-4门",
+      "array": "ec5bef30308834f2.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "42820438ee0f04259d4e6e3e9d48dc77b33c893a97373e84651c761cbc46295c",
+      "entry_sha": "7c7573fbba940b6aeb9c91e5c87aa97d165403542317f8cdfa44a6cf4cd53dab"
+    },
+    {
+      "map_id": "hard/北-T门",
+      "array": "b019d8f12c8a3548.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "d15b69cae87c2ab79b5ff1a732d9077bbcac9ce8b1372cdc6599995ae89906a0",
+      "entry_sha": "9f63bde7ab869dc189e2a00bc112609b11ffd31a79378e97c6b56739677c649e"
+    },
+    {
+      "map_id": "hard/北-凹门",
+      "array": "1bd7538c2c9c5986.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "a9d1ca40ec1d1a4b13cb2dc33b4557e7d07ee65ad820d4568fa772de45443738",
+      "entry_sha": "e41f865107a428881092de210f63a8717fb7b0fdce181e826db006c0e2412e0b"
+    },
+    {
+      "map_id": "hard/北-红对角门",
+      "array": "679e9ba7b420d187.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "1a4993de0a01ff8ddc32674475e32a8b2ac9139a7215a450971e90c48b1930ab",
+      "entry_sha": "487e314e7d6305f92815894e8353de0321f33ab10a6f0b8595a43bcaa7eb22aa"
+    },
+    {
+      "map_id": "hard/北-红门",
+      "array": "6606dc282018134a.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "dd065a40f76e8d563410049e769971c8f80ab32128e8cd320498f0191876a5d1",
+      "entry_sha": "c5361f140d5d3d96e78049d39785fa03b05d99270ca3171d2a97bbae6427f3b9"
+    },
+    {
+      "map_id": "hard/南-L门",
+      "array": "01be31f623a98805.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "efa8395f9145adbd465bec4821497bbd659f53aa71d731dac972dd6f014cc7db",
+      "entry_sha": "608a3ebcecd30fb80c2711db47ca42a610973405cf85fa39ee346e7074359fc4"
+    },
+    {
+      "map_id": "hard/南-orz门（新增）",
+      "array": "ee7910f67ea3bffa.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "4999e8ab147641bc37ce7acd0369ef0be30cc9da8ecfd1f2eb5ad22e32a06278",
+      "entry_sha": "eb0131a5f2f6ade413b1cd9d386cc4a3527511dca811adc454b11bc4f1204d55"
+    },
+    {
+      "map_id": "hard/南-三缺一门",
+      "array": "5d2694a506505433.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "f35dcf8f904f934a97fc4f5acac746f78b40d50951d6ec9fea46ae51a843fbeb",
+      "entry_sha": "06f00a6e5b4c7f92121dea2cb3a60601b17a5a2b3caef6f7e0a1a22631581164"
+    },
+    {
+      "map_id": "hard/南-十字门",
+      "array": "318597bec17e1c74.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "7c916d104db380c983d0c292a5684733d9f70d2f60ec3c2ed9e9928d1279ca44",
+      "entry_sha": "1b9add07b055f3b4146bc2be5742985e4ba896e6b912c7e8d4206804098ac7ce"
+    },
+    {
+      "map_id": "hard/南-红门",
+      "array": "8772f8d17182d886.npz",
+      "factor": 0.5555555555555556,
+      "sha256": "9d184a65c3cb66f1e11239b3e5b7aae4606cbaf99bb206e80200bcd26e748595",
+      "entry_sha": "94f20e93b7a8cb7cd3dc4d02a26bdb550c23753737367f4ee0be62ec848eb9e2"
+    },
+    {
+      "map_id": "hard/右-L门",
+      "array": "528afe6cb17a4d04.npz",
+      "factor": 0.6060606060606061,
+      "sha256": "85ed1d5b0d2e7ecd6ec073951fb5472b9ac84890af8e48d40e2f71e60b2bd5ca",
+      "entry_sha": "dbe14767c41a89fbbeed4389c413addb8ac2c6a1d7b52f068668e4b6c952de30"
+    },
+    {
+      "map_id": "hard/右-三L门（新增）",
+      "array": "b47497c446763166.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "090481cb3a2c2ea0d74bec7c9a663063204f845ecbb6c62e2199e12f721a7826",
+      "entry_sha": "d3ce034bf653d807a110827d9b6228ade3024267a22b5f3b1a4dea1094f19877"
+    },
+    {
+      "map_id": "hard/右-双L门",
+      "array": "065dadf538fceb80.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "a832f3438f2f60d1faa2fc92e745a6bae43e39a7b86916aafbe610a19ad59981",
+      "entry_sha": "f0d1b465276446801c4c5be427a648a0d8ff4fba392a3ceb5a22a7418d740269"
+    },
+    {
+      "map_id": "hard/右-左上右下门",
+      "array": "09bf2373c1cd7b5b.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "b5bdd9120a441f1d1eadf8d6dae1dc6c58f9f7c19dfa4fa3d83bb6aec5c2009c",
+      "entry_sha": "60d9126476523e35201f361b062fb2c4fd496e3537f6a6c5d1ff25a8daeb82d1"
+    },
+    {
+      "map_id": "hard/右-锤子门",
+      "array": "2f85ae162373ede9.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "0e44f7428582362911abb76cb0cedd6598d30cb7817a46186b6ea4d425563038",
+      "entry_sha": "0787f6bb0e6c49b468b37f86ba8e02e5f0d7d1fa079dc5b467b623f6996793b8"
+    },
+    {
+      "map_id": "hard/右-骑士门",
+      "array": "91e2595a5470390a.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "6bfdc1ed03615af5187ada57d22473cfa7edca8e249307d2f1f079181e8b44f7",
+      "entry_sha": "5ef932ae36c0f2eabc644c2e9c246f1b0c0e409527eb3c86fd17357065c3a6e6"
+    },
+    {
+      "map_id": "hard/左-Y门",
+      "array": "77660d0afed63c6f.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "4214bfeaaee8116c9e74331bfeff0abc808fc978e481a98e25132b9a06b1706a",
+      "entry_sha": "936bb4ce1d6dc6c6f88443515203cc05ea98ad92ff3cdedb534ada6d9e0c6574"
+    },
+    {
+      "map_id": "hard/左-Y青蛙房（新增）",
+      "array": "76d3d24968a0a0d8.npz",
+      "factor": 0.625,
+      "sha256": "9fa6199ce6589aa54dbeff829f1ac78fc1f0390dd8df75b6a497850e8d8d5149",
+      "entry_sha": "42135e983ab78a928e0259f87f1c8a710b561553782632cd8b0ea73f565f9b74"
+    },
+    {
+      "map_id": "hard/左-倒T门",
+      "array": "4e3b85867f72dbd9.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "b874bc918efd560f731b110a6c8e433e45bf861fda5dc9e55271caae5f4af165",
+      "entry_sha": "da4b9f97b077244bd1cdb363b041cd6f0752b23baa958f377455fa7ec2ec8ef2"
+    },
+    {
+      "map_id": "hard/左-对T门",
+      "array": "84a71f748a004cfd.npz",
+      "factor": 0.5882352941176471,
+      "sha256": "bbff2f2348fb362b54ef0c0851d4ebeb7fbcc4bf2e22ac1861f3b6c4c9ffacf9",
+      "entry_sha": "c8cc37bf6464c50d2b8ad1df50b368ab48633893e09052ce0abc42d06fe73428"
+    },
+    {
+      "map_id": "hard/左-对角门",
+      "array": "b9c0364f61b9eb43.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "b118d44a8522c2a6b53886efc46f901e440594862df4d1d942d8f55c79939f4c",
+      "entry_sha": "4c35491d32a750725d2e40030701f9bdefbddc2d6807dadd1428d41cca08dafd"
+    },
+    {
+      "map_id": "hard/左-罐子门",
+      "array": "3dfe0e81c26dd48d.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "cf9a4168d62885ddfb9880f8bb01a397ad4ce888cf7c343afe8cad5982d59880",
+      "entry_sha": "d466479368386bb85e12d77948cb23a1c0dfbb958b2c6288a1379ffc68bfef1e"
+    },
+    {
+      "map_id": "hard/左-锤子门",
+      "array": "3629cbf4f82a7eda.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "304d2865a0915d641671987e1c66216a9e5622695985746bd517a531e9d355a6",
+      "entry_sha": "4d06329113e9429df404109e8e007dbfb0ede2c280a56562f8161517da6a8e8f"
+    },
+    {
+      "map_id": "hard/左-锤灯笼门（新增）",
+      "array": "9cb393c400bc56d8.npz",
+      "factor": 0.625,
+      "sha256": "343ae7b2ca79e82c808d678bca5ebd9aa2a631b416c04624d769fe132647fa72",
+      "entry_sha": "ec3f781aad90e0db9832270906faa78aa4a8fd0e4eb1a94c2dbd94abc2cbe772"
+    },
+    {
+      "map_id": "hard/左-音叉门",
+      "array": "0707bce721354c46.npz",
+      "factor": 0.6666666666666666,
+      "sha256": "9aa6337180d016489fdc54d23e5f4ce22755aa24e95a5ac539a75b2547f16b88",
+      "entry_sha": "c19bce80334ecc951fb736f3ee5d6c11e6a74caf59c75acfe3e3dac6236870da"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖L门（09.10更新）",
+      "array": "37f0a2f2491b68d8.npz",
+      "factor": 0.5221932114882507,
+      "sha256": "ac3b1c594b9210587140dcae5619928309cbab222bfa08d871cf9df6a682a1bd",
+      "entry_sha": "6bd7c572d4c41374afebe5c5a2828f3e4f8249ef0f468efc8d639f56586bdccc"
+    },
+    {
+      "map_id": "nightmare/solo/南 - 悬空桌门（09.10更新）",
+      "array": "83d438aae2ec0246.npz",
+      "factor": 0.4,
+      "sha256": "e55df170b46a41b30823b57447bd84c319914023d0afacd6d308783d26d4c055",
+      "entry_sha": "7340ed5b3ded0d345b0655736fd9ce1707a11e1fcb5617885faa38b9f588a274"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖1图书走廊门（09.10更新）",
+      "array": "1d311b24ba1c1a73.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "2b393c4e61b0451da0dd8fae162bbb31521e8a2cd1aaed7c4c2663a8fcee8213",
+      "entry_sha": "c1637e8fb53fa35a6842be282a258e40cc9a8c99be3664c169c070ea0103a987"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 倒T门(09.10更新）",
+      "array": "2bbd28ce35ddcd0d.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "ed34126f95ee25ad183d63a0f4e24e8c44f73a4725812dc6b9887600df290907",
+      "entry_sha": "69d503af5123ba930f1661018b9067786d61992068bbdab219e6cea568bdaad1"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖1图书门（09.10更新）",
+      "array": "fe2135e7b616bd11.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "76ec89222e5f8e1f6446f18189db2a8c52922edc9219b006d37eaecb1ed56f4e",
+      "entry_sha": "0cbf7d4e04b2f452d77043ab530c74b68a694e748264daf8599e5d0570461d8e"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 11图（09.17更新）",
+      "array": "3627400a427f81dd.npz",
+      "factor": 0.4,
+      "sha256": "57fffc15a4a044d1e65d58daf79c8ed72db60c8d3bf24a643e2d45bf15aeaee9",
+      "entry_sha": "87da550d48e44cf7e7c8f53109317a3e944e7843b09faf44135d3bcdcca06536"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖5床房（09.17更新）",
+      "array": "e7336d87bad07959.npz",
+      "factor": 0.4,
+      "sha256": "d15d9eb32d81b8d9984cfcff5a6fb810796317858e084ac2ae15bc3c49ef5c45",
+      "entry_sha": "47b11b2996be6a78033aebe9b2bdae3b5dfba4744f2e968f63ba0264610d705e"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 竖拐角楼梯门（09.17更新）",
+      "array": "c2dee42e8565a680.npz",
+      "factor": 0.4,
+      "sha256": "2dfe74e7d635402a4bf7c6a06afb1136bc914b08bdb9296bc6e98b0fb5d47834",
+      "entry_sha": "b5f4ad0d1ff2bfd15d90d74472215a8cb229cbd620d083831ac1043fe19c28c6"
+    },
+    {
+      "map_id": "nightmare/duo/南 - 悬空桌门",
+      "array": "8bae3ac28f4c1801.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "5441d2b160bfc3d201bac1e93b2198841ed8d4d0da0e6c7da75c01dae78538b5",
+      "entry_sha": "5b6eecc8f088585e11b66621aa34dd9191835d5e8b20f0037de47d2b84f7730e"
+    },
+    {
+      "map_id": "nightmare/duo/左 - 倒T门",
+      "array": "1088f552221ab330.npz",
+      "factor": 0.4017677782241864,
+      "sha256": "a0c3c3b6864d3ae5e5dd6a1b382cd8e86edeaaa6413349a2e11b04eb5700bcca",
+      "entry_sha": "b86cb7795dd5178d638e9463117fe32ccba29f7d2f9bcd2752d6d6e2e31dedfd"
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖1图书门",
+      "array": "152b472025a36ded.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "d896c737414c93cffe92b9c255ca9661370fac89b111c3c6ba1c31c29d693d60",
+      "entry_sha": "e76f4ce35e5bcc10eb00cd083d7968692edfe6641cec56fd705ccfabb81ff48e"
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖1图书走廊门",
+      "array": "3bf030cfe4813c86.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "39edebc4f5de190ac0a951e7654519bafc3fdc67f0e88dede23978407001a809",
+      "entry_sha": "792cb9fd9bda3a61bc1012d82deefc803101af2dc7785cd4a0cc3ede934282c2"
+    },
+    {
+      "map_id": "nightmare/duo/左 - 竖L门",
+      "array": "0eb6b6697711977b.npz",
+      "factor": 0.5473453749315819,
+      "sha256": "e801b55e8d01fe66681e5b4b0bf33cd3a681ce9601cad9cc5623bcb0ee91e393",
+      "entry_sha": "b563ac49b63f8eab8217eaa431a3a268a0d071f2e753ed43c0448e6295a97700"
+    }
+  ]
+}
