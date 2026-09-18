@@ -58,6 +58,19 @@ out/
 ui.lock
 GITIGNORE
 
+# 分发目录里只有这两个文件对「行尾」敏感，所以强制按二进制原样存取。
+# 它们到了协作者机器上必须是 CRLF：`更新.cmd` 是 cmd.exe 的批处理（按字节偏移
+# 定位下一行，行尾不对会从行中间开始执行），`update-client.ps1` 还额外要求
+# UTF-8 BOM。各人机器的 core.autocrlf 三档（true / false / input）都常见，
+# 这里要保证的是「无论对方怎么配，拿到的字节都跟发布时一模一样」——
+# 光靠本机实测「这次没坏」是不够的，对方那台机器的设置我们看不到。
+cat > "$WORK_TREE/.gitattributes" <<'GITATTR'
+# 这个文件随仓库分发。要改规则请改 scripts/publish_dist.sh 里的这一段，
+# 别手改安装目录里的副本。
+更新.cmd                   -text
+scripts/update-client.ps1  -text
+GITATTR
+
 # `更新.cmd` / `update-client.ps1` 是协作者双击更新的入口，必须随包发出去。
 # 拷贝和编码校验（.cmd 纯 ASCII、.ps1 带 UTF-8 BOM）都在 scripts/dist_extras.py 里，
 # 打包脚本 finalize_release.py 走的是同一个函数 —— 两边各写一份迟早会漂移，
@@ -69,7 +82,9 @@ if [ -z "$PYTHON_BIN" ]; then
   done
 fi
 [ -n "$PYTHON_BIN" ] || { echo "找不到 python，无法注入更新入口。" >&2; exit 1; }
-"$PYTHON_BIN" "$ROOT/scripts/dist_extras.py" "$WORK_TREE"
+# 本脚本自己的中文是 UTF-8 字节直出；Python 默认按控制台代码页写，两边混在一条
+# 输出流里会有一边乱码。统一成 UTF-8。
+PYTHONIOENCODING=utf-8 "$PYTHON_BIN" "$ROOT/scripts/dist_extras.py" "$WORK_TREE"
 
 # ---- 2. 暂存并汇总 ----
 git add -A

@@ -50,7 +50,7 @@
 
 有两条路，按你的情况挑一条：
 
-**电脑上装过 Git 的（推荐）** —— 双击程序文件夹里的 `更新.cmd`。它每次只下载真正变了的文件，通常几秒钟，不用重下整个包。第一次双击会先把当前文件夹接进更新通道，那一次要多下约 220 MB，之后就都是几 MB 了。
+**电脑上装过 Git 的（推荐）** —— 双击程序文件夹里的 `更新.cmd`。（新发布的 ZIP 里自带它；如果你手上这份文件夹里没有，说明是更早的包，先从 Releases 下最新的 ZIP 覆盖一次。）它每次只下载真正变了的文件，通常几秒钟，不用重下整个包。第一次双击会先把当前文件夹接进更新通道，那一次要多下约 220 MB，之后就都是几 MB 了。
 
 没装 Git 也不要紧：`更新.cmd` 会告诉你，装上 Git for Windows（<https://git-scm.com/download/win>，一路点“下一步”即可）再双击就行，只需要装这一次。
 
@@ -190,6 +190,8 @@ Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余
 - 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、67 张地图和匹配子进程。
 - `maps/floors.json`：67 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
 - 分发通道 `更新.cmd` 端到端跑通：首次接入、增量更新、软删除状态、协作者自录地图不被删除，以及中文提示的编码。
+- 发版流水线 `scripts/release.sh --local` 跑通：打包 → 注入更新入口 → 压缩 → 整理分享仓库 → 提交分发分支，全程无推送。产出 zip 613 个文件，`更新.cmd` 与 `scripts/update-client.ps1` 都在里面且与成品目录逐字节相同；打包 EXE 自检 `ok: true`。
+- 两个更新入口的字节在 `core.autocrlf` 的 `true`/`false`/`input` 三档下签出结果逐字节相同（`.gitattributes` 里对它们标了 `-text`）。协作者那台机器的设置我们看不到，所以不能只靠「本机这次没坏」。
 
 噩梦测试目前主要是原图派生的合成场景，能证明地图库和叠图链路没断；真实迷雾、不同分辨率和不同游戏布局仍需要更多实战截图验证。看不清、候选过于相似或楼层不确定时，程序会拒绝叠图。
 
@@ -205,7 +207,7 @@ examples/            本地测试截图
 
 `maps/index.json`、`maps/evidence/`、`maps/disabled.json` 是缓存或本机状态，可以重建，不进仓库。`maps/` 里的原图和 `floors.json` 是需要备份的源数据。
 
-发布包不走本仓库，走 `crypticNotes` 的 `dist` 分支，由 `scripts/publish_dist.sh` 推送。协作者侧的入口是 `scripts/更新.cmd`（纯 ASCII 引导）和 `scripts/update-client.ps1`（UTF-8 BOM，承载逻辑与中文提示），两者都会被打包进发布目录。
+发布包不走本仓库，走 `crypticNotes` 的 `dist` 分支，由 `scripts/release.sh` 串起 `build_windows.py` → `prepare_share.py` → `publish_dist.sh` → `publish_release.ps1`。协作者侧的入口是 `scripts/更新.cmd`（纯 ASCII 引导）和 `scripts/update-client.ps1`（UTF-8 BOM，承载逻辑与中文提示），两者都由 `scripts/dist_extras.py` 注入发布目录并校验编码，所以 zip 和 `dist` 分支里都会有。
 
 ## 地图来源与致谢
 

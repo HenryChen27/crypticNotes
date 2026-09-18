@@ -74,6 +74,9 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 [ -n "$PYTHON_BIN" ] || { echo "找不到 python。" >&2; exit 1; }
 export PYTHON="$PYTHON_BIN"   # publish_dist.sh 会用它来注入更新入口
+# 本脚本的中文是 UTF-8 字节直出；Python 默认按控制台代码页写。不统一的话，
+# 同一条输出流里总有一边是乱码。
+export PYTHONIOENCODING=utf-8
 
 # ---- 1. 打包 ----
 # build_windows.py 在 PyInstaller 之后会调 finalize_release.finalize()：
