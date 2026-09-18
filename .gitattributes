@@ -1,0 +1,4 @@
+# 这个文件随仓库分发。要改规则请改 scripts/publish_dist.sh 里的这一段，
+# 别手改安装目录里的副本。
+更新.cmd                   -text
+scripts/update-client.ps1  -text
