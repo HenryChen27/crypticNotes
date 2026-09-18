@@ -21,7 +21,7 @@
 - 如果上一轮已经识别过地图，下一次会优先复用这张图，只重新对齐位置，速度更快。
 - 识别失败时会在齿轮旁边给一句简短提示，比如“未匹配”“内容太少”“请先打开地图”。
 
-目前内置 59 张地图：困难 28 张、噩梦单人 18 张、噩梦多人 13 张。
+目前内置 67 张地图：困难 28 张、噩梦单人 21 张、噩梦多人 18 张。
 
 ## 下载和启动
 
@@ -45,6 +45,18 @@
 完整解压后，双击 `create-shortcut.cmd`，同一文件夹里会生成带项目图标的 `加页手记地图插件.lnk` 快捷方式。把这个快捷方式拖到桌面，以后双击它即可启动。
 
 快捷方式按每个人实际解压的位置生成，不包含开发者电脑的固定地址。请保留完整的程序文件夹；如果移动了程序文件夹，重新运行 `create-shortcut.cmd`，再用新生成的快捷方式替换桌面上的旧快捷方式。也可以右键 `crypticNotes.cmd`，选择“发送到 → 桌面快捷方式”（Windows 11 可能需要先点“显示更多选项”）。
+
+### 以后怎么更新
+
+有两条路，按你的情况挑一条：
+
+**电脑上装过 Git 的（推荐）** —— 双击程序文件夹里的 `更新.cmd`。它每次只下载真正变了的文件，通常几秒钟，不用重下整个包。第一次双击会先把当前文件夹接进更新通道，那一次要多下约 220 MB，之后就都是几 MB 了。
+
+没装 Git 也不要紧：`更新.cmd` 会告诉你，装上 Git for Windows（<https://git-scm.com/download/win>，一路点“下一步”即可）再双击就行，只需要装这一次。
+
+**没装、也不想装的** —— 还是从 [Releases](https://github.com/HenryChen27/crypticNotes/releases/latest) 下载 ZIP，解压覆盖原文件夹。老办法，能用，只是每次都要重下约 220 MB。
+
+更新换掉的只是程序本身，**你在 `maps/` 里自己放的原图不会被动到**。唯一会重置的是「管理地图」里的移除/新增记录——它会回到发布时的样子，重新点几下即可。
 
 ## 平时怎么用
 
@@ -107,7 +119,9 @@
 用 Release 里的 ZIP 就不需要 Python。源码运行才需要 Python。
 
 **更新版本时要注意什么？**  
-打包版的地图库在程序目录的 `maps/` 里。你如果自己新增过地图，更新前先备份 `maps/`。
+装过 Git 就双击 `更新.cmd`，否则下载 ZIP 解压覆盖，两种都行，见[以后怎么更新](#以后怎么更新)。
+
+打包版的地图库在程序目录的 `maps/` 里。**你自己放进去的原图不会被更新删掉**，但「管理地图」里的移除/新增记录存在 `maps/floors.json`，而它属于发布内容，更新后会被重置回发布时的状态（原图仍在，重新录入即可）。介意的话，更新前先把 `maps/floors.json` 复制一份。
 
 ## 源码运行
 
@@ -132,14 +146,50 @@
 
 成品在 `dist/IdentityVMapAssistant/`。发布时要压缩整个文件夹，不能只拿 EXE。
 
+### 发布新版本
+
+一条命令走完：打包 → 整理源码 → 推源码 → 推分发包 → 建 Release。
+
+```bash
+scripts/release.sh                     # 全流程。真正推送前会停下来问你一次
+scripts/release.sh --local             # 只在本机做完（打包 + 提交），一个字节都不推
+scripts/release.sh --no-build          # 跳过 PyInstaller，复用现有 dist/
+scripts/release.sh --no-release        # 推完就停，不建 GitHub Release
+scripts/release.sh -m "提交信息"        # 两个仓库共用的提交信息
+```
+
+推送之前它会打印这次要发的东西（源码提交、分发文件数、Release 的 tag），确认了才动手。主仓库 `c:\jysj` 故意不配远端，本脚本也不碰它：源码走 `release/crypticNotes` 这个独立 clone，分发包走 `out/dist_repo`。
+
+步骤之间有顺序依赖，这也是 `release.sh` 存在的理由——zip 由打包脚本从 `dist/` 压出来，而协作者双击的 `更新.cmd` 是分发脚本才拷进 `dist/` 的，谁先谁后都会漏东西（上一版 zip 就这么少了更新入口，578 个文件里一个都没有）。
+
+只想单独做其中一步时，各个脚本仍可单独跑：
+
+```bash
+scripts/publish_dist.sh --local        # 只组装并提交分发分支，不推送
+scripts/publish_dist.sh                # 组装并推送分发分支
+powershell -File scripts/publish_release.ps1 -DryRun    # 只看 Release 正文长什么样，不联网
+```
+
+**打包会清空 `dist/`，更新入口每次都由脚本重新拷进去，别去手改成品目录里的副本。** 分发仓库用独立的 `GIT_DIR`（`out/dist_repo/.git`）配 `core.worktree` 指向 `dist/IdentityVMapAssistant`——因为打包会删掉整个 `dist/`，`.git` 放在里面会被一起删掉。
+
+Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余是正文，里面的 `{{TOTAL}}`/`{{HARD}}`/`{{SOLO}}`/`{{DUO}}` 由 `maps/floors.json` 现场数出来，`{{CHANGELOG}}` 是上一个 Release 以来的提交摘要，`{{SHA256}}` 取自 `release/SHA256SUMS.txt`。改文案只改这个 md，不要再把数字写死在别处（正文里那句「内置 62 张地图」就是这么过期成 67 的）。
+
+几个坑已经踩过，改动时留意：
+
+- `更新.cmd` 必须是**纯 ASCII**。cmd.exe 按字节偏移定位批处理文件的下一行，文件里混入 GBK 中文会让偏移算错、从某一行中间开始执行（表现为「命令语法不正确」）。所有中文都在 `update-client.ps1` 里。
+- `update-client.ps1` 必须是 **UTF-8 with BOM** 且 CRLF，否则 PowerShell 读成乱码。
+- 这两条不是靠自觉：拷贝和校验都在 `scripts/dist_extras.py` 里，打包（`finalize_release.py`）和分发（`publish_dist.sh`）调的是同一个函数，编码不对就拒绝发布。
+- `scripts/publish_release.ps1` 本身也是**纯 ASCII**：PowerShell 5.1 只在有 BOM 时才按 UTF-8 读 `.ps1`，而 BOM 下次编辑很容易丢，所以中文一律不进这个文件（标题和正文都在 `release-notes.md` 里）。
+
 ## 当前验证状态
 
 本地检查结果：
 
 - `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：58 个测试通过。
 - `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 93/93 通过。
-- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、59 张地图和匹配子进程。
-- `maps/floors.json`：59 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
+- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、67 张地图和匹配子进程。
+- `maps/floors.json`：67 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
+- 分发通道 `更新.cmd` 端到端跑通：首次接入、增量更新、软删除状态、协作者自录地图不被删除，以及中文提示的编码。
 
 噩梦测试目前主要是原图派生的合成场景，能证明地图库和叠图链路没断；真实迷雾、不同分辨率和不同游戏布局仍需要更多实战截图验证。看不清、候选过于相似或楼层不确定时，程序会拒绝叠图。
 
@@ -149,11 +199,13 @@
 mapmatching/         界面、识别、配准、测试和基准脚本
 maps/                地图库：原图 + floors.json 登记表
 docs/images/         README 效果图
-scripts/             启动、打包、整理分享仓库脚本
+scripts/             启动、打包、发布分发、整理分享仓库脚本
 examples/            本地测试截图
 ```
 
 `maps/index.json`、`maps/evidence/`、`maps/disabled.json` 是缓存或本机状态，可以重建，不进仓库。`maps/` 里的原图和 `floors.json` 是需要备份的源数据。
+
+发布包不走本仓库，走 `crypticNotes` 的 `dist` 分支，由 `scripts/publish_dist.sh` 推送。协作者侧的入口是 `scripts/更新.cmd`（纯 ASCII 引导）和 `scripts/update-client.ps1`（UTF-8 BOM，承载逻辑与中文提示），两者都会被打包进发布目录。
 
 ## 地图来源与致谢
 

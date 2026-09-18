@@ -8,7 +8,7 @@ from mapmatching.src.live import ToggleState
 class SyncTests(unittest.TestCase):
     def subject(self,opened,local=False):
         state=ToggleState(opened=opened)
-        subject=SimpleNamespace(state=state,keys=SimpleNamespace(toggle_key=71,edges=lambda:{71}),
+        subject=SimpleNamespace(state=state,keys=SimpleNamespace(toggle_key=71,hide_key=8,edges=lambda:{71}),
             enabled=SimpleNamespace(isChecked=lambda:True),demo_window=object() if local else None,
             connection=None,is_game=lambda _:True)
         subject.open_map=Mock(side_effect=state.close)

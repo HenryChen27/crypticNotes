@@ -15,7 +15,7 @@ from .occlusion import control_panels, sharp_boundary
 def extract(image: np.ndarray, *, reference: bool = False,
             remove_annotations: bool = True, exclude_hud: bool = True,
             max_side: int = DEFAULT.max_side, exclude_regions: list[list[int]] | None = None,
-            screenshot_cleanup: bool = True) -> Evidence:
+            screenshot_cleanup: bool = True, full_view: bool = False) -> Evidence:
     if not isinstance(image, np.ndarray) or image.dtype != np.uint8 or image.ndim != 3 or image.shape[2] not in (3, 4) or min(image.shape[:2]) < 3:
         raise ValueError('Expected nonempty uint8 BGR/BGRA image of at least 3x3 pixels')
     factor = min(1., max_side / max(image.shape[:2]))
@@ -31,7 +31,7 @@ def extract(image: np.ndarray, *, reference: bool = False,
         x0,y0,x1,y1 = np.rint(np.array(box)*factor).astype(int)
         mask[max(0,y0):min(h,y1), max(0,x0):min(w,x1)] = 0
     roi = None
-    if not reference and exclude_hud:
+    if not reference and exclude_hud and not full_view:
         roi = (int(.25*w), int(.18*h), int(.91*w), int(.82*h))
         keep = np.zeros_like(mask)
         x0, y0, x1, y1 = roi

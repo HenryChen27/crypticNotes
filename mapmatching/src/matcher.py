@@ -4,6 +4,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 import time
 import numpy as np
+import cv2
+from dataclasses import replace
 from .evidence import extract
 from .reference import load
 from .retrieval import retrieve
@@ -36,21 +38,53 @@ class MapMatcher:
         self.references = load(index, difficulty=difficulty, mode=mode)
         if not self.references:
             raise ValueError('No references satisfy the supplied hints')
+        self.floor_references = []
+        for ref in self.references:
+            for region in ref.regions:
+                ev = ref.evidence
+                x,y,X,Y = np.array(region['bbox']) * ev.image_factor
+                inside = ((ev.corners[:,0]>=x)&(ev.corners[:,0]<X)&
+                          (ev.corners[:,1]>=y)&(ev.corners[:,1]<Y))
+                yy,xx = np.indices(ev.boundary.shape)
+                keep = (xx>=x)&(xx<X)&(yy>=y)&(yy<Y)
+                boundary = (ev.boundary*keep).astype(np.uint8)
+                if not boundary.any() or inside.sum()<2:
+                    continue
+                evidence = replace(ev,mask=(ev.mask*keep).astype(np.uint8),boundary=boundary,
+                                   corners=ev.corners[inside],descriptors=ev.descriptors[inside],
+                                   radii=ev.radii[inside])
+                distance = cv2.distanceTransform(1-boundary,cv2.DIST_L2,5)
+                self.floor_references.append(replace(ref,evidence=evidence,distance=distance,regions=[region]))
 
     def match(self, screenshot: np.ndarray) -> MatchResult:
+        from .live import presentation_candidate
+        initial = self._match_view(screenshot)
+        if presentation_candidate(initial)[0] is not None:
+            return initial
+        expanded = self._match_view(screenshot,full_view=True)
+        recovered = presentation_candidate(expanded)[0]
+        # Expanded frames include more HUD/desktop clutter: require stronger
+        # evidence, rather than loosening the normal acceptance threshold.
+        if recovered is not None and recovered.explained >= .65 and recovered.contradiction <= .25:
+            expanded.diagnostics['pipeline_view'] = 'expanded_view_retry'
+            return expanded
+        initial.diagnostics['expanded_view_rejected'] = True
+        return initial
+
+    def _match_view(self, screenshot: np.ndarray, full_view=False) -> MatchResult:
         """Accept BGR pixels only; never paths, example IDs, paired maps or GT."""
         start = time.perf_counter()
-        evidence = extract(screenshot)
+        evidence = extract(screenshot,full_view=full_view)
         extracted = time.perf_counter()
         if len(evidence.corners) < 4:
             return MatchResult(reason='insufficient_visible_structure', diagnostics=evidence.diagnostics)
-        retrieved = retrieve(evidence, self.references)
+        retrieved = retrieve(evidence, self.floor_references)
         ranked = time.perf_counter()
-        candidates = sorted([register(evidence, r) for r in retrieved[:5]], key=lambda c: -(c.explained or 0))
+        candidates = sorted([register(evidence, r) for r in retrieved[:10]], key=lambda c: -(c.explained or 0))
         end = time.perf_counter()
         return MatchResult(candidates=candidates, diagnostics={**evidence.diagnostics,
                            'session_context': asdict(self.context),
-                           'reference_count': len(self.references),
+                           'reference_count': len(self.references), 'full_view': full_view,
                            'retrieval_top5': [{'map_id': r.reference.map_id, 'score': r.score} for r in retrieved[:5]],
                            'timing_ms': {'extraction': (extracted-start)*1000,
                                          'retrieval': (ranked-extracted)*1000,
@@ -67,13 +101,14 @@ class MapMatcher:
         search identities in the library. Every call uses the current pixels.
         """
         start = time.perf_counter()
-        ref = next((r for r in self.references if r.map_id == map_id), None)
-        if ref is None:
+        refs = [r for r in self.floor_references if r.map_id == map_id]
+        if not refs:
             return MatchResult(reason='cached_map_outside_context')
         evidence = extract(screenshot)
         candidates = []
         if len(evidence.corners) >= 4:
-            candidates = [register(evidence, retrieve(evidence,[ref])[0])]
+            candidates = sorted([register(evidence,r) for r in retrieve(evidence,refs)],
+                                key=lambda c: -(c.explained or 0))
         return MatchResult(candidates=candidates, diagnostics={**evidence.diagnostics,
                            'reference_count': 1, 'identity_search_performed': False,
                            'confidence_calibrated': False,

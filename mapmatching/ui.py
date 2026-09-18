@@ -1068,7 +1068,7 @@ class Companion(W.QWidget):
                                 # 让 follow() 用最新画面重来。绝不能在这里 notify ——
                                 # 那正是「明明调好了却说无法匹配」的来源。
                                 self.follow_dirty = True
-                            elif layer is not None:
+                            elif layer is not None and not no_map_evidence(details):
                                 # 只有真正显示出来的这一帧才配更新记忆身份：被顶掉的
                                 # 旧帧若也写进去，会把 cached 门的下限逐帧往下拉 0.05。
                                 self.cached_candidate = candidate
@@ -1079,6 +1079,7 @@ class Companion(W.QWidget):
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')
                             elif no_map_evidence(details):
+                                self.overlay.hide()
                                 # 屏幕上只有游戏画面、没有地图结构 —— 最典型的是用户单击
                                 # 关掉了游戏小地图（那一下松开同样会触发这次重新匹配）。
                                 # 一次不算数，连续 NO_MAP_STREAK 次才退出，免得刚进地图
@@ -1091,6 +1092,7 @@ class Companion(W.QWidget):
                                     self.notify('正在确认地图已关闭…')
                                     C.QTimer.singleShot(250,lambda t=token:self.confirm_map_closed(t))
                             else:
+                                self.overlay.hide()
                                 self.no_map_streak = 0
                                 # 没配上，但会话照旧打开 —— 用户继续滚轮/拖动就会再试一次。
                                 # 原来这里会 close_map()，于是「拒绝新一轮的匹配」。

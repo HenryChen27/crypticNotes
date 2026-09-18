@@ -40,7 +40,7 @@ def presentation_candidate(result):
     return c, '试用叠图 · 请核对路口'
 
 
-def raw_layer(shape, original, reference, candidate, excluded_boxes=()):
+def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_view=False):
     """BGRA original colors at full alpha; UI applies user opacity once.
 
     Only the identified floor is used. No recoloring, inpainting or substitute
@@ -66,7 +66,8 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=()):
     # Same normalized viewport used by the evidence extractor.
     mask = np.zeros((h,w),bool)
     mask[int(.18*h):int(.82*h),int(.25*w):int(.91*w)] = True
-    layer[~mask,3] = 0
+    if not full_view:
+        layer[~mask,3] = 0
     for x0,y0,x1,y1 in excluded_boxes:
         layer[max(0,y0):min(h,y1),max(0,x0):min(w,x1),3] = 0
     return layer
@@ -195,22 +196,13 @@ def worker(connection, root, difficulty, mode):
             if candidate is not None:
                 ref = next(r for r in matcher.references if r.map_id == candidate.map_id)
                 layer = raw_layer(pixels.shape, read_image(root/ref.source), ref, candidate,
-                                  result.diagnostics.get('excluded_panel_boxes',[]))
-            elif cached is not None and result.candidates:
-                # Sparse/zoomed screenshots may reject alignment. Keep the
-                # remembered identity, but re-read the floor and present the
-                # matching floor map in the center at a readable scale.
-                observed = result.candidates[0]
-                floor = observed.floor
-                if floor is not None:
-                    ref = next((r for r in matcher.references if r.map_id == cached.map_id), None)
-                    if ref is not None:
-                        layer = centered_floor_layer(pixels.shape, read_image(root/ref.source), ref, floor)
-                        if layer is not None:
-                            # Retain the last valid pose in the cache while
-                            # borrowing only the newly observed floor.
-                            candidate = replace(cached, floor=floor)
-                            message = '地图内容较少，已居中显示本楼层'
+                                  result.diagnostics.get('excluded_panel_boxes',[]),
+                                  full_view=result.diagnostics.get('full_view',False))
+            # A failed geometric match is not evidence that the map UI is open.
+            # Never turn a rejected candidate into a centered overlay: ordinary
+            # gameplay can have corners and even a spurious floor assignment.
+            # Centered previews require independent map-UI/floor detection,
+            # which the current matcher does not provide.
             if layer is not None and mode == 'duo' and candidate.mode == 'solo':
                 message = '多人暂无专用路线'
                 result.diagnostics['multiplayer_solo_fallback'] = True

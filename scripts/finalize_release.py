@@ -6,6 +6,9 @@ import shutil
 import sys
 import zipfile
 
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+from dist_extras import inject
+
 ROOT=Path(__file__).resolve().parents[1]
 
 
@@ -36,6 +39,11 @@ def finalize():
                 shutil.copy2(source,target)
     python_license=Path(sys.base_prefix)/'LICENSE.txt'
     if python_license.exists():shutil.copy2(python_license,product/'third-party/Python-LICENSE.txt')
+    # 更新入口必须在**压缩之前**注入：它们不属于 PyInstaller 的产物，打包不会带上，
+    # 而 zip 是从成品目录直接压出来的。漏掉的后果是拿到 zip 的协作者没有更新按钮
+    # —— 上一版 zip 就这么发出去过（578 个文件里一个更新入口都没有）。
+    # 具体拷贝和编码校验都在 dist_extras 里，publish_dist.sh 走的是同一个函数。
+    inject(product)
     release=ROOT/'release'; release.mkdir(exist_ok=True)
     archive=release/'IdentityVMapAssistant-Windows-x64.zip'
     with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
