@@ -73,8 +73,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ''
     Write-Host '  常见原因：'
     Write-Host '    1. 网络连不上 github.com（校园网/公司网络有时会挡）'
-    Write-Host '    2. 第一次使用会弹出 GitHub 登录窗口，需要登录一次'
-    Write-Host '    3. 磁盘空间不足'
+    Write-Host '    2. 磁盘空间不足（更新要留出跟程序差不多大的空余）'
+    Write-Host '    3. 杀毒软件或防火墙拦住了 git 联网'
     Write-Host ''
     Write-Host '  请把上面的报错信息截图发给 Henry。'
     Finish 1
