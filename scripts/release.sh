@@ -34,6 +34,7 @@ DO_RELEASE=1
 DO_PUSH=1
 ASSUME_YES=0
 MESSAGE=""
+NOTE=""
 
 usage() {
   cat <<'USAGE'
@@ -46,6 +47,11 @@ usage() {
   scripts/release.sh --no-share       不整理也不推分享仓库的源码
   scripts/release.sh --no-release     推完就停，不建 GitHub Release
   scripts/release.sh -m "提交信息"     两个仓库共用的提交信息
+  scripts/release.sh --note "本次更新"  Release 正文里「本次更新」一节的内容
+
+不给 --note 时，那一节由「上个 Release 以来的提交标题」自动生成。但分享仓库的提交
+标题基本都是 `release: 更新源码与地图库`（真正的工作在开发仓库里，每次发版压成一条），
+所以自动生成的结果通常很单薄 —— 想让人看到什么，就用 --note 写一句。
 USAGE
 }
 
@@ -57,6 +63,7 @@ while [ $# -gt 0 ]; do
     --no-share)   DO_SHARE=0 ;;
     --no-release) DO_RELEASE=0 ;;
     -m)           shift; MESSAGE="${1:-}" ;;
+    --note)       shift; NOTE="${1:-}" ;;
     -h|--help)    usage; exit 0 ;;
     *)            echo "未知参数: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -162,7 +169,9 @@ fi
 GIT_DIR="$DIST_GIT" GIT_WORK_TREE="$DIST_TREE" git push "$REMOTE" "$DIST_BRANCH"
 
 if [ "$DO_RELEASE" = 1 ]; then
-  powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT/scripts/publish_release.ps1" -Tag "$TAG"
+  release_args=(-Tag "$TAG")
+  if [ -n "$NOTE" ]; then release_args+=(-Note "$NOTE"); fi
+  powershell -NoProfile -ExecutionPolicy Bypass -File "$ROOT/scripts/publish_release.ps1" "${release_args[@]}"
 else
   echo "  Release： --no-release，跳过"
 fi

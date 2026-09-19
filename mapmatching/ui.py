@@ -21,6 +21,7 @@ from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .src.live import ToggleState, worker
 from .src import windows as native
 from .mouse_input import MouseWatcher
+from .pet import PetAnimation, SpeechBubble, reaction
 from .panel_dialogs import own_dialog_open
 from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton
 import win32gui
@@ -245,7 +246,7 @@ class HotkeyDialog(W.QDialog):
         self.hint.setObjectName('muted')
         layout.addWidget(self.hint)
         row=W.QHBoxLayout()
-        for label,action in [('默认 G',self.reset),('取消',self.reject),('保存',self.accept)]:
+        for label,action in [('恢复默认',self.reset),('取消',self.reject),('保存',self.accept)]:
             button=ChalkButton(label)
             button.setFocusPolicy(C.Qt.NoFocus)
             button.clicked.connect(action)
@@ -353,12 +354,24 @@ class DraggableGear(GearButton):
     def __init__(self,window):
         super().__init__()
         self.window=window
+        self.pet=PetAnimation(self, ROOT/"docs/images/logo.png")
         self.origin=None
         self.press_global=None
         self.moved=False
 
+    def paintEvent(self,event):
+        if self.pet.enabled:
+            self.pet.paint()
+        else:
+            super().paintEvent(event)
+
+    def enterEvent(self,event):
+        self.pet.play('curious')
+        super().enterEvent(event)
+
     def mousePressEvent(self,event):
         if event.button()==C.Qt.LeftButton:
+            self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
             self.origin=self.press_global-self.window.frameGeometry().topLeft()
@@ -438,7 +451,7 @@ class Companion(W.QWidget):
         layout.setSpacing(8)
         self.gear = DraggableGear(self)
         self.gear.setObjectName('gear')
-        self.gear.setFixedSize(46,46)
+        self.gear.pet.enable(self.settings.get("pet_enabled",True))
         self.gear.setToolTip('加页手记 · 设置')
         self.gear.clicked.connect(self.toggle_panel)
         layout.addWidget(self.gear,0,C.Qt.AlignRight)
@@ -534,6 +547,21 @@ class Companion(W.QWidget):
         hidekeys.setContentsMargins(0, 0, 0, 0)
         hidekeys.setSpacing(0)
         box.setStretch(box.indexOf(self.status), 1)
+        pet_row = W.QHBoxLayout()
+        pet_row.addStretch()
+        pet_label = W.QLabel("个性外观：")
+        pet_label.setStyleSheet('font-size:14px;')
+        pet_row.addWidget(pet_label)
+        self.pet_enabled = ChalkToggle()
+        self.pet_enabled.setFixedSize(88,28)
+        pet_font = self.pet_enabled.font()
+        pet_font.setPixelSize(14)
+        self.pet_enabled.setFont(pet_font)
+        self.pet_enabled.setChecked(self.gear.pet.enabled)
+        self.pet_enabled.setToolTip("关闭后恢复齿轮；不影响识图和提示")
+        self.pet_enabled.toggled.connect(self.set_pet_enabled)
+        pet_row.addWidget(self.pet_enabled)
+        pet_row.addStretch()
         utilities = W.QHBoxLayout()
         utilities.addWidget(enroll,1)
         utilities.addWidget(local,1)
@@ -543,13 +571,12 @@ class Companion(W.QWidget):
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
+        box.addLayout(pet_row)
         layout.addWidget(self.panel)
         self.panel.hide()
-        self.toast = W.QLabel('',None,C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint | C.Qt.WindowDoesNotAcceptFocus | C.Qt.WindowTransparentForInput)
-        self.toast.setAttribute(C.Qt.WA_ShowWithoutActivating)
-        self.toast.setStyleSheet('background:rgba(20,28,37,242);color:#dbe5ec;'
-                                 'border:1px solid rgba(154,180,200,70);border-radius:8px;'
-                                 'padding:12px;font-family:__FONT__;font-size:13px;'.replace('__FONT__',css_font()).replace('__ARROW__',ARROW))
+        self.toast = SpeechBubble()
+        self.toast.setStyleSheet('QLabel {color:#dbe5ec;background:transparent;border:0;'
+                                'font-size:13px;font-family:'+css_font()+';}')
         self.toast_timer = C.QTimer(self)
         self.toast_timer.setSingleShot(True)
         self.toast_timer.timeout.connect(self.toast.hide)
@@ -656,7 +683,25 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,pos=[point.x(),point.y()])),encoding='utf-8')
+
+    def set_pet_enabled(self, enabled):
+        # Preserve the settings panel under the pointer, rather than the differently
+        # sized mascot. Otherwise the very switch being clicked jumps by 86 px.
+        expanded = self.panel.isVisible()
+        anchor_widget = self.panel if expanded else self.gear
+        anchor = anchor_widget.mapToGlobal(C.QPoint(0,0))
+        self.gear.pet.enable(enabled)
+        self.adjustSize()
+        self.layout().invalidate()
+        self.layout().activate()
+        if expanded:
+            self.move(self.pos()+anchor-self.panel.mapToGlobal(C.QPoint(0,0)))
+        else:
+            self.place_gear(anchor)
+        self.clamp_to_screen()
+        self.toast.hide()
+        self.save()
 
     def edit_hotkey(self):
         self.close_map()
@@ -713,6 +758,8 @@ class Companion(W.QWidget):
         self.toast.setMinimumWidth(0)
         self.toast.setMaximumWidth(16777215)
         self.toast.setWordWrap(False)
+        if self.gear.pet.enabled:
+            self.gear.pet.play(reaction(message))
         self.toast.setText(brief)
         self.toast.adjustSize()
         natural=self.toast.width()
@@ -729,6 +776,7 @@ class Companion(W.QWidget):
         x=max(area.left(),min(x,area.right()+1-self.toast.width()))
         y=max(area.top(),min(anchor.y(),area.bottom()+1-self.toast.height()))
         self.toast.move(x,y)
+        self.toast.point_at(anchor+C.QPoint(self.gear.width()//2,24), self.gear.pet.enabled)
         self.toast.show()
         self.toast_timer.start(TOAST_MS)
 

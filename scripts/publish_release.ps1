@@ -17,6 +17,7 @@
 [CmdletBinding()]
 param(
     [string]$Tag = '',
+    [string]$Note = '',
     [switch]$Draft,
     [switch]$DryRun
 )
@@ -60,21 +61,40 @@ function Get-MapCounts {
     }
 }
 
+function Get-PreviousRef {
+    # The range endpoint has to be a commit. `target_commitish` is whatever was handed
+    # to the API when the release was created -- our own releases pass a sha, but
+    # v1.0.0 passed the branch name "main", and `git log main..HEAD` is silently empty
+    # when HEAD is on main. An empty range used to fall through to the "last 5 commits"
+    # path, which is how two bookkeeping commits ended up on a published release page.
+    param([object]$Release)
+    if (-not $Release) { return $null }
+    if ($Release.target_commitish -match '^[0-9a-f]{40}$') { return $Release.target_commitish }
+    if ($Release.tag_name) {
+        $resolved = & git -C $Share rev-parse --verify --quiet "$($Release.tag_name)^{commit}" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $resolved) { return $Release.tag_name }
+    }
+    return $null
+}
+
 function Get-Changelog {
     param([string]$Sha, [object[]]$Releases, [string]$SelfTag)
     $previous = $Releases |
         Where-Object { -not $_.draft -and $_.tag_name -ne $SelfTag } |
         Sort-Object created_at -Descending | Select-Object -First 1
+    $base = Get-PreviousRef -Release $previous
     $lines = @()
-    if ($previous -and $previous.target_commitish) {
-        $lines = @(Get-Git @('log', '--no-merges', '--pretty=format:- %s',
-                             "$($previous.target_commitish)..$Sha"))
+    if ($base) {
+        $lines = @(Get-Git @('log', '--no-merges', '--pretty=format:- %s', "$base..$Sha"))
     }
-    if (-not $lines -or -not ($lines -join '').Trim()) {
-        # No previous release (first publish), or the notes were asked for in a dry
-        # run where the release list is not available: show recent history instead.
-        $lines = @(Get-Git @('log', '-5', '--no-merges', '--pretty=format:- %s', $Sha))
+    if (-not ($lines -join '').Trim()) {
+        # No usable previous release -- first publish, or a dry run, where the release
+        # list is not fetched at all. Recent history is the honest fallback.
+        $lines = @(Get-Git @('log', '-30', '--no-merges', '--pretty=format:- %s', $Sha))
     }
+    # "release: ..." commits are this pipeline's own bookkeeping. They say nothing
+    # about what changed for the player, so they never belong on the release page.
+    $lines = @($lines | Where-Object { $_ -notmatch '^- release:' } | Select-Object -First 15)
     $text = ($lines -join "`n").Trim()
     if (-not $text) { $text = '- See the source repository for the change history.' }
     return $text
@@ -82,6 +102,11 @@ function Get-Changelog {
 
 function Get-ReleaseNotes {
     param([string]$Changelog)
+    # -Note wins over the derived list. The share repo's commits are all titled
+    # "release: ..." (the actual work lives uncommitted in the dev repo and lands as
+    # one squashed commit per publish), so the derived list is usually thin. What the
+    # players should read is a sentence about what changed, and only a human has that.
+    if ($Note) { $Changelog = $Note }
     $lines = [System.IO.File]::ReadAllLines($Notes, [System.Text.Encoding]::UTF8)
     if ($lines.Count -eq 0) { throw "release notes are empty: $Notes" }
     # First line is the release title; everything after it is the body.
@@ -135,8 +160,28 @@ function Invoke-Main {
     $secret = $null
 
     $base = "https://api.github.com/repos/$Repo"
-    $releases = @(Invoke-RestMethod -Uri "$base/releases" -Headers $headers)
-    $entry = $releases | Where-Object { $_.tag_name -eq $Tag } | Select-Object -First 1
+    # Invoke-RestMethod on PowerShell 5.1 hands back the whole JSON array as a SINGLE
+    # object, so `@(...)` merely wraps it again and $releases[0] is the real array.
+    # Left nested, `Where-Object { $_.tag_name -eq $Tag }` triggers member enumeration:
+    # $_.tag_name yields two values, `-eq` yields @($true,$false), and a non-empty array
+    # is always truthy in PowerShell -- so EVERY release matches. $entry then becomes an
+    # array of several releases and `$entry.assets` is their concatenation, which means
+    # a digest mismatch makes the script DELETE an asset belonging to another release.
+    $releases = @(Invoke-RestMethod -Uri "$base/releases?per_page=100" -Headers $headers)
+    if ($releases.Count -eq 1 -and $releases[0] -is [System.Array]) { $releases = @($releases[0]) }
+
+    # Look the release up by tag rather than filtering the list: /releases/tags/<tag>
+    # returns exactly one release or 404, with no array-shape ambiguity to get wrong.
+    # Getting this wrong is destructive -- a $entry that accidentally spans several
+    # releases makes $entry.assets a concatenation, and the "digest differs" branch
+    # then DELETEs an asset that belongs to a different release.
+    $entry = $null
+    try {
+        $entry = Invoke-RestMethod -Uri "$base/releases/tags/$Tag" -Headers $headers
+    } catch [System.Net.WebException] {
+        $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
+        if ($status -ne 404) { throw }
+    }
 
     $notes = Get-ReleaseNotes -Changelog (Get-Changelog -Sha $sha -Releases $releases -SelfTag $Tag)
 
