@@ -99,7 +99,9 @@ git -c core.quotepath=false diff --cached --name-only | sed 's/^/  /'
 
 size=$(git diff --cached --name-only -z \
   | while IFS= read -r -d '' f; do
-      [ -f "$WORK_TREE/$f" ] && stat -c %s "$WORK_TREE/$f"
+      if [ -f "$WORK_TREE/$f" ]; then
+        stat -c %s "$WORK_TREE/$f"
+      fi
     done | awk '{s+=$1} END{printf "%.1f", s/1048576}')
 echo
 echo "变化内容合计约 ${size} MiB（原始大小）。"
