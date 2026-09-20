@@ -174,6 +174,9 @@ def worker(connection, root, difficulty, mode):
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
     root = Path(root)
+    recorder = None
+    options = {}
+    pixels = None
     try:
         index=root/'maps'
         if not (index/'index.json').exists():
@@ -190,6 +193,7 @@ def worker(connection, root, difficulty, mode):
                 return
             generation, pixels, *previous = request
             cached = previous[0] if previous else None
+            options = previous[1] if len(previous) > 1 else {}
             start = time.perf_counter()
             result,candidate,message = match_with_cache(matcher,pixels,cached)
             layer = None
@@ -206,11 +210,31 @@ def worker(connection, root, difficulty, mode):
             if layer is not None and mode == 'duo' and candidate.mode == 'solo':
                 message = '多人暂无专用路线'
                 result.diagnostics['multiplayer_solo_fallback'] = True
+            if candidate is None and options.get('record_failures'):
+                from .failure_records import FailureRecorder
+                from ..paths import DATA_ROOT
+                if recorder is None:
+                    recorder = FailureRecorder(DATA_ROOT/'failure-records', root)
+                result.diagnostics['failure_record'] = recorder.save(
+                    pixels, result.to_dict(), dict(difficulty=difficulty, mode=mode,
+                    cached_map_id=cached.map_id if cached else None,
+                    source=options.get('source'), capture_rect=options.get('capture_rect')),
+                    message)
             connection.send(('result', (generation, layer, message, candidate,
                                        (time.perf_counter()-start)*1000, result.to_dict())))
     except (EOFError, BrokenPipeError):
         pass
     except Exception as error:
+        if options.get('record_failures') and pixels is not None:
+            try:
+                from .failure_records import FailureRecorder
+                from ..paths import DATA_ROOT
+                if recorder is None:
+                    recorder = FailureRecorder(DATA_ROOT/'failure-records', root)
+                recorder.save(pixels, {}, dict(difficulty=difficulty, mode=mode),
+                              '匹配程序异常', error=str(error))
+            except Exception:
+                pass
         connection.send(('error', str(error)))
     finally:
         connection.close()

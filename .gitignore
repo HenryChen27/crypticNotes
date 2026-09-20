@@ -21,3 +21,4 @@ __pycache__/
 maps/index.json
 maps/evidence/
 maps/disabled.json
+failure-records/

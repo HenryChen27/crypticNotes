@@ -566,6 +566,16 @@ class Companion(W.QWidget):
         utilities.addWidget(enroll,1)
         utilities.addWidget(local,1)
         box.addLayout(utilities)
+        records_row = W.QHBoxLayout()
+        self.record_failures = W.QCheckBox('记录识别失败')
+        self.record_failures.setChecked(self.settings.get('record_failures', True))
+        self.record_failures.setToolTip('保存识别时的完整截图及诊断数据，仅保存在本机；分享前请检查截图中的私人信息')
+        self.record_failures.toggled.connect(lambda _: self.save())
+        records_row.addWidget(self.record_failures)
+        records_button = ChalkButton('打开记录')
+        records_button.clicked.connect(self.open_failure_records)
+        records_row.addWidget(records_button)
+        box.addLayout(records_row)
         box.addWidget(self.status)
         quit_button = W.QPushButton('退出')
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
@@ -683,7 +693,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -702,6 +712,11 @@ class Companion(W.QWidget):
         self.clamp_to_screen()
         self.toast.hide()
         self.save()
+
+    def open_failure_records(self):
+        directory = DATA_ROOT/'failure-records'
+        directory.mkdir(parents=True, exist_ok=True)
+        G.QDesktopServices.openUrl(C.QUrl.fromLocalFile(str(directory)))
 
     def edit_hotkey(self):
         self.close_map()
@@ -928,7 +943,10 @@ class Companion(W.QWidget):
                 return
             self.rect_at_capture = self.capture_rect()
             pixels = native.capture(self.rect_at_capture)
-            self.pending = (token,pixels,self.cached_candidate)
+            self.pending = (token,pixels,self.cached_candidate, dict(
+                record_failures=self.record_failures.isChecked(),
+                source='local_screenshot' if self.demo_window is not None else 'screen',
+                capture_rect=self.rect_at_capture))
             self.status.setText('正在对齐上次地图…' if self.cached_candidate else '正在识别地图并配准…')
             self.start_worker()
         except Exception as error:
