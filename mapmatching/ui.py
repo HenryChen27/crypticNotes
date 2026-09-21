@@ -1158,11 +1158,11 @@ class Companion(W.QWidget):
                                     self.notify('正在确认地图已关闭…')
                                     C.QTimer.singleShot(250,lambda t=token:self.confirm_map_closed(t))
                             else:
-                                self.overlay.hide()
-                                self.no_map_streak = 0
-                                # 没配上，但会话照旧打开 —— 用户继续滚轮/拖动就会再试一次。
-                                # 原来这里会 close_map()，于是「拒绝新一轮的匹配」。
-                                self.notify(advise(details,message))
+                                # A rejected fit cannot establish that the game map
+                                # remains open. Stop following ordinary gameplay;
+                                # keep the cached identity for the next explicit try.
+                                self.close_map(silent=True)
+                                self.notify(advise(details,message)+' · 按重新识别重试')
                 elif not self.process.is_alive():
                     self.close_map(silent=True)
                     self.stop_worker()
