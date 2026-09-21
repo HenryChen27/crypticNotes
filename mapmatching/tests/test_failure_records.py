@@ -8,6 +8,24 @@ from mapmatching.src.failure_records import FailureRecorder, category
 
 
 class FailureRecordTests(unittest.TestCase):
+    def test_success_and_failure_share_oldest_first_limit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            r=FailureRecorder(Path(temp)/'records',temp)
+            for i in range(22):
+                folder=r.directory/'old'/f'20260101-{i:06d}'
+                folder.mkdir(parents=True)
+                (folder/'record.json').write_text('{}')
+                (folder/'screen.png').write_bytes(b'old')
+            r.save(np.zeros((4,4,3),np.uint8),{}, {'trigger':'manual_retry'},'ok',success=True)
+            records=list(r.directory.glob('*/*/record.json'))
+            self.assertEqual(len(records),20)
+            self.assertFalse((r.directory/'old'/'20260101-000002').exists())
+            self.assertTrue((r.directory/'old'/'20260101-000003').exists())
+            d=json.loads(next(p for p in records if p.parent.parent.name=='识别成功').read_text(encoding='utf8'))
+            self.assertEqual(d['outcome'],'accepted')
+            self.assertEqual(d['context']['trigger'],'manual_retry')
+            self.assertIn('app_version',d)
+
     def test_lossless_image_context_and_duplicate_limit(self):
         with tempfile.TemporaryDirectory() as temp:
             r = FailureRecorder(Path(temp)/'records', temp, max_cases=1)

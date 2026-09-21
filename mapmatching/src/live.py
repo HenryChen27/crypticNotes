@@ -210,7 +210,7 @@ def worker(connection, root, difficulty, mode):
             if layer is not None and mode == 'duo' and candidate.mode == 'solo':
                 message = '多人暂无专用路线'
                 result.diagnostics['multiplayer_solo_fallback'] = True
-            if candidate is None and options.get('record_failures'):
+            if options.get('record_failures'):
                 from .failure_records import FailureRecorder
                 from ..paths import DATA_ROOT
                 if recorder is None:
@@ -218,8 +218,10 @@ def worker(connection, root, difficulty, mode):
                 result.diagnostics['failure_record'] = recorder.save(
                     pixels, result.to_dict(), dict(difficulty=difficulty, mode=mode,
                     cached_map_id=cached.map_id if cached else None,
-                    source=options.get('source'), capture_rect=options.get('capture_rect')),
-                    message)
+                    source=options.get('source'), capture_rect=options.get('capture_rect'),
+                    trigger=options.get('trigger','unknown'),
+                    map_visibility='unknown', generation=generation),
+                    message, success=layer is not None)
             connection.send(('result', (generation, layer, message, candidate,
                                        (time.perf_counter()-start)*1000, result.to_dict())))
     except (EOFError, BrokenPipeError):

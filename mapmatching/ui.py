@@ -567,9 +567,9 @@ class Companion(W.QWidget):
         utilities.addWidget(local,1)
         box.addLayout(utilities)
         records_row = W.QHBoxLayout()
-        self.record_failures = W.QCheckBox('记录识别失败')
+        self.record_failures = W.QCheckBox('记录识别案例')
         self.record_failures.setChecked(self.settings.get('record_failures', True))
-        self.record_failures.setToolTip('保存识别时的完整截图及诊断数据，仅保存在本机；分享前请检查截图中的私人信息')
+        self.record_failures.setToolTip('保存成功与失败截图及诊断数据，合计保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
         self.record_failures.toggled.connect(lambda _: self.save())
         records_row.addWidget(self.record_failures)
         records_button = ChalkButton('打开记录')
@@ -904,12 +904,13 @@ class Companion(W.QWidget):
         if self.demo:
             self.demo_window.raise_()
             self.demo_window.activateWindow()
-            self.open_map()
+            self.open_map('manual_retry')
         else:
             self.notify('请切到要识别的画面；1 秒后截屏')
-            C.QTimer.singleShot(1000,lambda: self.open_map() if self.is_game(win32gui.GetForegroundWindow()) else self.notify('请先切到截图或游戏画面'))
+            C.QTimer.singleShot(1000,lambda: self.open_map("manual_retry") if self.is_game(win32gui.GetForegroundWindow()) else self.notify('请先切到截图或游戏画面'))
 
-    def open_map(self):
+    def open_map(self, reason="map_hotkey"):
+        self.capture_trigger = reason
         self.close_map(silent=True)
         token = self.state.open()
         self.started = time.perf_counter()
@@ -945,6 +946,7 @@ class Companion(W.QWidget):
             pixels = native.capture(self.rect_at_capture)
             self.pending = (token,pixels,self.cached_candidate, dict(
                 record_failures=self.record_failures.isChecked(),
+                trigger=getattr(self,"capture_trigger","unknown"),
                 source='local_screenshot' if self.demo_window is not None else 'screen',
                 capture_rect=self.rect_at_capture))
             self.status.setText('正在对齐上次地图…' if self.cached_candidate else '正在识别地图并配准…')
@@ -1049,7 +1051,7 @@ class Companion(W.QWidget):
         if self.follow_dirty and not (self._capturing or self.busy):
             self.realign()
 
-    def realign(self):
+    def realign(self, reason='mouse_realign'):
         """停手后重新截屏对齐一次。
 
         **绝不走 open_map()**：它会先 close_map()，而 close_map 在 busy 时会
@@ -1063,6 +1065,7 @@ class Companion(W.QWidget):
         if not self.state.opened:
             return
         self.started = time.perf_counter()
+        self.capture_trigger = reason
         self.take_capture(self.state.open())
 
     def confirm_map_closed(self,token):
@@ -1071,7 +1074,7 @@ class Companion(W.QWidget):
         if self.mouse_busy() or self.busy or self._capturing:
             C.QTimer.singleShot(150,lambda:self.confirm_map_closed(token))
             return
-        self.realign()
+        self.realign('close_confirmation')
 
     def tick(self):
         edges = self.keys.edges()
@@ -1085,7 +1088,7 @@ class Companion(W.QWidget):
                 if self.state.opened:
                     self.close_map()
                 elif self.is_game(foreground) or self.demo_window is not None:
-                    self.open_map()
+                    self.open_map('hide_hotkey_restore')
             elif self.keys.toggle_key in edges and self.is_game(foreground):
                 # A game can close its map through multiple inputs. Never invert
                 # a guessed boolean: inspect the screen after this key instead.
