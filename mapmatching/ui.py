@@ -569,7 +569,7 @@ class Companion(W.QWidget):
         records_row = W.QHBoxLayout()
         self.record_failures = W.QCheckBox('记录识别案例')
         self.record_failures.setChecked(self.settings.get('record_failures', True))
-        self.record_failures.setToolTip('保存成功与失败截图及诊断数据，合计保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
+        self.record_failures.setToolTip('保存成功与失败截图及诊断数据，每个分类各保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
         self.record_failures.toggled.connect(lambda _: self.save())
         records_row.addWidget(self.record_failures)
         records_button = ChalkButton('打开记录')

@@ -8,7 +8,7 @@ from mapmatching.src.failure_records import FailureRecorder, category
 
 
 class FailureRecordTests(unittest.TestCase):
-    def test_success_and_failure_share_oldest_first_limit(self):
+    def test_each_category_has_independent_oldest_first_limit(self):
         with tempfile.TemporaryDirectory() as temp:
             r=FailureRecorder(Path(temp)/'records',temp)
             for i in range(22):
@@ -18,9 +18,9 @@ class FailureRecordTests(unittest.TestCase):
                 (folder/'screen.png').write_bytes(b'old')
             r.save(np.zeros((4,4,3),np.uint8),{}, {'trigger':'manual_retry'},'ok',success=True)
             records=list(r.directory.glob('*/*/record.json'))
-            self.assertEqual(len(records),20)
-            self.assertFalse((r.directory/'old'/'20260101-000002').exists())
-            self.assertTrue((r.directory/'old'/'20260101-000003').exists())
+            self.assertEqual(len(records),21)
+            self.assertFalse((r.directory/'old'/'20260101-000001').exists())
+            self.assertTrue((r.directory/'old'/'20260101-000002').exists())
             d=json.loads(next(p for p in records if p.parent.parent.name=='识别成功').read_text(encoding='utf8'))
             self.assertEqual(d['outcome'],'accepted')
             self.assertEqual(d['context']['trigger'],'manual_retry')
@@ -39,7 +39,7 @@ class FailureRecordTests(unittest.TestCase):
             np.testing.assert_array_equal(image, pixels)
             r.save(pixels, {}, {}, 'duplicate')
             r.save(pixels+1, {}, {}, 'exception', error='error')
-            self.assertEqual(len(list(r.directory.glob('*/*/record.json'))),1)
+            self.assertEqual(len(list(r.directory.glob('*/*/record.json'))),2)
 
     def test_classification_uses_the_display_rejection_order(self):
         c = dict(pose={'scale':1}, explained=.8, contradiction=.1, retrieval_score=8, floor=1)

@@ -40,15 +40,18 @@ class FailureRecorder:
 
     def prune(self):
         root = self.directory.resolve()
-        records = sorted(self.directory.glob('*/*/record.json'), key=lambda p: p.parent.name)
-        size = sum(p.stat().st_size for p in self.directory.rglob('*') if p.is_file())
-        while records and (len(records) > self.max_cases or size > self.max_bytes):
-            folder = records.pop(0).parent
-            resolved = folder.resolve()
-            if not resolved.is_relative_to(root) or resolved == root or folder.is_symlink():
-                raise ValueError('Unsafe record directory')
-            size -= sum(p.stat().st_size for p in folder.rglob('*') if p.is_file())
-            shutil.rmtree(folder)
+        for group in self.directory.iterdir() if self.directory.exists() else []:
+            if not group.is_dir() or group.is_symlink():
+                continue
+            records = sorted(group.glob('*/record.json'), key=lambda p: p.parent.name)
+            size = sum(p.stat().st_size for p in group.rglob('*') if p.is_file())
+            while records and (len(records) > self.max_cases or size > self.max_bytes):
+                folder = records.pop(0).parent
+                resolved = folder.resolve()
+                if not resolved.is_relative_to(root) or resolved == root or folder.is_symlink():
+                    raise ValueError('Unsafe record directory')
+                size -= sum(p.stat().st_size for p in folder.rglob('*') if p.is_file())
+                shutil.rmtree(folder)
 
     def save(self, pixels, result, context, message, error=None, success=False):
         try:
