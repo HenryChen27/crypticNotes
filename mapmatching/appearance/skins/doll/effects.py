@@ -1,6 +1,25 @@
 """Deterministic hand-drawn strokes; no font glyphs or per-frame randomness."""
 import math
+from pathlib import Path
+from functools import lru_cache
+import numpy as np
 from PySide6 import QtCore as C, QtGui as G
+
+
+@lru_cache(maxsize=4)
+def artwork(kind):
+    names={'heart':'heart.png','angry':'!.png','puzzled':'question.png','sleep':'z.png'}
+    if kind not in names:
+        return None
+    image=G.QImage(str(Path(__file__).with_name(names[kind])))
+    if image.isNull():
+        return None
+    image=image.convertToFormat(G.QImage.Format_RGBA8888)
+    pixels=np.frombuffer(image.constBits(),np.uint8).reshape(image.height(),image.bytesPerLine()//4,4)
+    y,x=np.where(pixels[:,:image.width(),3]>8)
+    if not len(x):
+        return None
+    return image.copy(int(x.min()),int(y.min()),int(x.max()-x.min()+1),int(y.max()-y.min()+1))
 
 
 def symbol(kind):
@@ -29,7 +48,7 @@ def symbol(kind):
 
 
 def paint_effects(p,mood,t,duration):
-    if not 0<t<1:
+    if mood == 'curious' or not 0<t<1:
         return
     p.save();p.resetTransform()
     heart=mood in ('heart','happy')
@@ -45,6 +64,12 @@ def paint_effects(p,mood,t,duration):
         p.rotate((-13 if i%2 else 11)+5*math.sin(age*5))
         scale=(.55+.25*math.sin(math.pi*age)) if heart else .7
         p.scale(scale,scale);p.setOpacity(fade)
+        image=artwork('heart' if heart else mood)
+        if image is not None:
+            size=image.size().scaled(32,32,C.Qt.KeepAspectRatio)
+            p.drawImage(C.QRectF(-size.width()/2,-size.height()+6,size.width(),size.height()),image)
+            p.restore()
+            continue
         path=symbol('heart' if heart else mood)
         if heart:
             p.setBrush(G.QColor('#b70c23'))
