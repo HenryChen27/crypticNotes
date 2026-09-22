@@ -13,6 +13,8 @@ import cv2
 def category(result, error=None):
     if error:
         return '程序异常'
+    if result.get('reason') == 'map_ui_not_confirmed':
+        return '未确认地图展开'
     candidates = result.get('candidates', [])
     if not candidates:
         return '未发现地图结构'
@@ -67,7 +69,7 @@ class FailureRecorder:
             if not ok:
                 return '截图编码失败'
             data = dict(schema_version=2, time=datetime.now(timezone.utc).isoformat(),
-                        app_version='2026.09.21-diagnostics2', outcome='accepted' if success else 'rejected',
+                        app_version='2026.09.22-map-ui-gate', outcome='accepted' if success else 'rejected',
                         category=kind, message=message, error=error,
                         context=context, screenshot_sha256=digest,
                         image_shape=list(pixels.shape), result=result,

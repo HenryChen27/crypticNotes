@@ -2,7 +2,8 @@ import unittest
 from pathlib import Path
 from PySide6 import QtWidgets as W
 from mapmatching.ui import DraggableGear
-from mapmatching.pet import reaction, pose, SpeechBubble
+from mapmatching.appearance import reaction, SpeechBubble
+from mapmatching.appearance.skins.doll.animation import pose
 
 
 class PetTests(unittest.TestCase):
@@ -32,7 +33,7 @@ class PetTests(unittest.TestCase):
         self.assertEqual(reaction('已隐藏'), 'sleep')
 
     def test_joint_animation_returns_to_rest(self):
-        for mood in ('heart', 'puzzled', 'sleep', 'curious'):
+        for mood in ('heart', 'happy', 'angry', 'puzzled', 'sleep', 'curious'):
             for endpoint in (0, 1):
                 angles, weight = pose(mood, endpoint)
                 self.assertEqual(weight, 0)
@@ -40,6 +41,14 @@ class PetTests(unittest.TestCase):
         angles, _ = pose('puzzled', .4)
         self.assertLess(angles['right_upper'], -100)
         self.assertNotEqual(angles['right_lower'], angles['right_upper'])
+
+    def test_root_motion_returns_to_rest(self):
+        from mapmatching.appearance.skins.doll.animation import body_motion
+        for mood in ('happy','angry'):
+            for endpoint in (0,1):
+                self.assertTrue(all(abs(v)<1e-10 for v in body_motion(mood,endpoint).values()))
+            self.assertNotEqual(body_motion(mood,.35)['y'],0)
+        self.assertEqual(reaction('快捷键冲突'),'angry')
 
     def test_speech_tail_tracks_both_sides_and_can_be_disabled(self):
         from PySide6 import QtCore as C

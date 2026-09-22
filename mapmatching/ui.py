@@ -21,7 +21,7 @@ from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .src.live import ToggleState, worker
 from .src import windows as native
 from .mouse_input import MouseWatcher
-from .pet import PetAnimation, SpeechBubble, reaction
+from .appearance import PetAnimation, SpeechBubble, reaction
 from .panel_dialogs import own_dialog_open
 from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton
 import win32gui
@@ -354,7 +354,7 @@ class DraggableGear(GearButton):
     def __init__(self,window):
         super().__init__()
         self.window=window
-        self.pet=PetAnimation(self, ROOT/"docs/images/logo.png")
+        self.pet=PetAnimation(self)
         self.origin=None
         self.press_global=None
         self.moved=False
@@ -1147,6 +1147,9 @@ class Companion(W.QWidget):
                                 floor_label='地下室' if candidate.floor==-1 else f'{candidate.floor}F'
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')
+                            elif details.get('reason') == 'map_ui_not_confirmed':
+                                self.close_map(silent=True)
+                                self.notify(message)
                             elif no_map_evidence(details):
                                 self.overlay.hide()
                                 # 屏幕上只有游戏画面、没有地图结构 —— 最典型的是用户单击

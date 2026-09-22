@@ -38,6 +38,8 @@ def main():
           *(ROOT/'maps'/name for name in ('hard','nightmare','_unindexed','evidence',
                                           'floors.json','index.json','disabled.json','README.md')),
           ROOT/'scripts/run.cmd',ROOT/'scripts/create_shortcut.ps1',ROOT/'README.md']
+    data.extend(p for p in (ROOT/'mapmatching/appearance/skins').rglob('*')
+                if p.is_file() and p.suffix.lower() in ('.png','.jpg','.webp','.json'))
     data.extend((ROOT/'mapmatching').glob('*.md'))
     data.extend(ROOT.glob('*.cmd'))
     for path in data:

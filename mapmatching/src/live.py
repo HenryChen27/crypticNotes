@@ -104,7 +104,7 @@ def composite(screenshot, layer, opacity=.30):
     return np.rint(screenshot*(1-alpha)+layer[:,:,:3]*alpha).clip(0,255).astype(np.uint8)
 
 
-def match_with_cache(matcher, pixels, cached=None):
+def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False):
     """Try one-map registration first, then reacquire only when it fails.
 
     The cache is a provisional identity, never an old screen-space transform.
@@ -113,9 +113,20 @@ def match_with_cache(matcher, pixels, cached=None):
     """
     import time
     start = time.perf_counter()
+    visibility = None
+    if require_map_ui:
+        from .map_visibility import inspect_map_ui
+        from .matcher import MatchResult
+        visibility = inspect_map_ui(pixels)
+        if not visibility['visible']:
+            return (MatchResult(reason='map_ui_not_confirmed',diagnostics=dict(
+                map_ui=visibility,identity_search_performed=False,pipeline='screen_gate')),
+                None,'未确认地图已展开，已停止叠图')
     fallback = None
     if cached is not None:
         result = matcher.register_known(pixels,cached.map_id)
+        if visibility is not None:
+            result.diagnostics['map_ui'] = visibility
         candidate,message = presentation_candidate(result)
         if candidate is not None and (candidate.explained or 0) >= max(.55,(cached.explained or 0)-.05) and candidate.contradiction <= min(.40,(cached.contradiction or 0)+.05):
             result.diagnostics.update(pipeline='cached_registration',cached_map_id=cached.map_id,
@@ -123,6 +134,8 @@ def match_with_cache(matcher, pixels, cached=None):
             return result,candidate,'沿用上次地图 · 已重新对齐'
         fallback = 'cached_alignment_rejected'
     result = matcher.match(pixels)
+    if visibility is not None:
+        result.diagnostics['map_ui'] = visibility
     candidate,message = presentation_candidate(result)
     result.diagnostics.update(pipeline='recognition_fallback' if cached is not None else 'recognition',
                               identity_search_performed=True,cache_fallback_reason=fallback,
@@ -195,7 +208,8 @@ def worker(connection, root, difficulty, mode):
             cached = previous[0] if previous else None
             options = previous[1] if len(previous) > 1 else {}
             start = time.perf_counter()
-            result,candidate,message = match_with_cache(matcher,pixels,cached)
+            result,candidate,message = match_with_cache(matcher,pixels,cached,
+                require_map_ui=options.get('source') == 'screen')
             layer = None
             if candidate is not None:
                 ref = next(r for r in matcher.references if r.map_id == candidate.map_id)
@@ -220,7 +234,7 @@ def worker(connection, root, difficulty, mode):
                     cached_map_id=cached.map_id if cached else None,
                     source=options.get('source'), capture_rect=options.get('capture_rect'),
                     trigger=options.get('trigger','unknown'),
-                    map_visibility='unknown', generation=generation),
+                    map_visibility=result.diagnostics.get('map_ui',{}).get('visible','unknown'), generation=generation),
                     message, success=layer is not None)
             connection.send(('result', (generation, layer, message, candidate,
                                        (time.perf_counter()-start)*1000, result.to_dict())))
