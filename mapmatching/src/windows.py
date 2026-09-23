@@ -57,11 +57,25 @@ def place_overlay(hwnd, rect):
 class Keys:
     def __init__(self):
         self.down = set()
+        self.pending_edges = set()
         self.toggle_key = 0x47
         self.hide_key = 0x08  # Backspace
 
+    def raw_edge(self,key,released):
+        if key not in (self.toggle_key,self.hide_key,0x1B):return
+        if released:
+            self.down.discard(key)
+        elif key not in self.down:
+            self.down.add(key)
+            self.pending_edges.add(key)
+
     def edges(self):
         pressed = {key for key in (self.toggle_key,self.hide_key,0x1B) if user32.GetAsyncKeyState(key) & 0x8000}
-        rising = pressed - self.down
-        self.down = pressed
+        rising = (pressed - self.down) | self.pending_edges
+        self.pending_edges.clear()
+        # Raw Input owns release edges when registered; polling is a fallback.
+        if not getattr(self,'raw_active',False):
+            self.down = pressed
+        else:
+            self.down |= pressed
         return rising

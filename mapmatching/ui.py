@@ -1,5 +1,6 @@
 """Small Windows companion UI; no injection, game hooks or network service."""
 from __future__ import annotations
+from .src.ui_trace import trace
 import argparse
 import json
 import multiprocessing as mp
@@ -412,6 +413,8 @@ class Companion(W.QWidget):
         self.overlay = Overlay()
         self.state = ToggleState()
         self.keys = native.Keys()
+        from .keyboard_input import KeyboardWatcher
+        self.keyboard = KeyboardWatcher(self.keys)
         self.process = self.connection = None
         self.busy = False
         self.target = None
@@ -605,6 +608,9 @@ class Companion(W.QWidget):
             # 只有齿轮的位置才是用户真正看到的那个「右上角」。
             screen = W.QApplication.primaryScreen().availableGeometry()
             self.place_gear(C.QPoint(screen.right()-20-self.gear.width(),screen.top()+30))
+        self.keys.raw_active = self.keyboard.register(int(self.winId()))
+        if not self.keys.raw_active:
+            self.notify('快捷键事件监听失败，已使用轮询；请检查运行权限')
         if not self.mouse.register(int(self.winId())):
             # fail open：一个静默失效的监听，远好于一个永远不恢复的叠图。
             self.mouse_follow = False
@@ -910,9 +916,12 @@ class Companion(W.QWidget):
             C.QTimer.singleShot(1000,lambda: self.open_map("manual_retry") if self.is_game(win32gui.GetForegroundWindow()) else self.notify('请先切到截图或游戏画面'))
 
     def open_map(self, reason="map_hotkey"):
+        trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_active",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
         token = self.state.open()
+        self.opening = True
+        self.open_probe_count = 0
         self.started = time.perf_counter()
         self.target = int(self.demo_window.winId()) if self.demo_window is not None else win32gui.GetForegroundWindow()
         self.status.setText('等待地图展开…')
@@ -944,6 +953,16 @@ class Companion(W.QWidget):
                 return
             self.rect_at_capture = self.capture_rect()
             pixels = native.capture(self.rect_at_capture)
+            if getattr(self,'opening',False) and self.demo_window is None:
+                from .src.map_visibility import inspect_map_ui
+                visibility=inspect_map_ui(pixels)
+                trace("opening_probe",token=token,attempt=self.open_probe_count,visible=visibility["visible"])
+                if not visibility['visible'] and self.open_probe_count<5:
+                    self.open_probe_count+=1
+                    C.QTimer.singleShot(250,lambda t=token:self.take_capture(t) if self.state.accepts(t) else None)
+                    return
+            self.opening = False
+            trace("captured",token=token,trigger=getattr(self,"capture_trigger","unknown"))
             self.pending = (token,pixels,self.cached_candidate, dict(
                 record_failures=self.record_failures.isChecked(),
                 trigger=getattr(self,"capture_trigger","unknown"),
@@ -974,6 +993,7 @@ class Companion(W.QWidget):
         # not busy：一次只有一个请求在途。并发发两条会让先回的那条被后回的顶掉，
         # 状态就没法一一对应了。
         if self.ready and self.pending is not None and not self.busy:
+            trace("worker_request",token=self.pending[0])
             self.connection.send(self.pending)
             self.pending = None
             self.busy = True
@@ -992,6 +1012,8 @@ class Companion(W.QWidget):
         self.ready = False
 
     def close_map(self,silent=False):
+        trace("closed",token=self.state.generation)
+        self.opening = False
         self.state.close()
         self.overlay.hide()
         self.toast.hide()
@@ -1035,6 +1057,8 @@ class Companion(W.QWidget):
         所以用户调整完再松一次手就会自动重试 —— 这是这个功能存在的理由。
         """
         # 本地截图是静态的，没有地图可跟随；关掉快捷键开关就整体停用，语义一致。
+        if getattr(self,'opening',False):
+            return
         if not (self.mouse_follow and self.enabled.isChecked() and self.demo_window is None):
             return
         if self.mouse_busy():
@@ -1078,6 +1102,9 @@ class Companion(W.QWidget):
 
     def tick(self):
         edges = self.keys.edges()
+        if edges:
+            trace('shortcut_edge',keys=sorted(edges),enabled=self.enabled.isChecked(),
+                  modal=W.QApplication.activeModalWidget() is not None)
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
         foreground = win32gui.GetForegroundWindow()
@@ -1124,6 +1151,7 @@ class Companion(W.QWidget):
                     else:
                         self.busy = False
                         token,layer,message,candidate,elapsed,details = payload
+                        trace("worker_result",token=token,accepted=self.state.accepts(token),reason=details.get("reason"),layer=layer is not None)
                         if self.state.accepts(token):
                             # 两重保护都必要：交互结束的那个 tick 里 follow() 先跑，
                             # 那时结果还没轮询到（busy 仍为 True）所以会推迟，
@@ -1133,6 +1161,7 @@ class Companion(W.QWidget):
                             self.last_result = dict(total_ms=(time.perf_counter()-self.started)*1000,
                                                     processing_ms=elapsed,result=details)
                             if stale:
+                                trace("discarded_moving_frame",token=token)
                                 # 这张是交互期间截的旧帧，注定被下一帧取代：安静丢弃，
                                 # 让 follow() 用最新画面重来。绝不能在这里 notify ——
                                 # 那正是「明明调好了却说无法匹配」的来源。
@@ -1179,6 +1208,7 @@ class Companion(W.QWidget):
                 self.notify('匹配进程中断，请重试')
 
     def shutdown(self):
+        self.keyboard.release()
         self.mouse.release()        # 先摘监听，再拆窗口
         self.leave_demo()
         self.save()
