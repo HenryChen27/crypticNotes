@@ -99,7 +99,7 @@ try {
         Wait-Process -Id $appProcess.Id -Timeout 8 -ErrorAction SilentlyContinue
     }
     # Detect remaining locks or denied write access before touching any files.
-    $tracked = @(git ls-files)
+    $tracked = @(git -c core.quotepath=false ls-files)
     $tracked += 'IdentityVMapAssistant.exe'
     foreach ($relative in ($tracked | Select-Object -Unique)) {
         $filePath = [IO.Path]::GetFullPath((Join-Path $installRoot $relative))
