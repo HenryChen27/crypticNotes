@@ -993,6 +993,7 @@ class Companion(W.QWidget):
         # not busy：一次只有一个请求在途。并发发两条会让先回的那条被后回的顶掉，
         # 状态就没法一一对应了。
         if self.ready and self.pending is not None and not self.busy:
+            self.request_pixels = self.pending[1]
             trace("worker_request",token=self.pending[0])
             self.connection.send(self.pending)
             self.pending = None
@@ -1048,7 +1049,7 @@ class Companion(W.QWidget):
         收口成一个判据，好处是关掉 mouse_follow 就整体失效 —— 包括下面结果分支里
         「丢弃交互期间旧帧」那一条，否则基准测试里一次误触仍会让叠图不显示。
         """
-        return bool(self.mouse_follow and self.mouse.interacting())
+        return bool(self.mouse_follow and self.mouse.map_interacting())
 
     def follow(self):
         """叠图期间跟随地图的缩放/移动：交互时隐藏，停手后重新对齐一次。
@@ -1157,11 +1158,25 @@ class Companion(W.QWidget):
                             # 那时结果还没轮询到（busy 仍为 True）所以会推迟，
                             # 随后才轮到结果分支 —— 只有 follow_dirty 挡得住这张
                             # 「交互期间截的旧帧」。
-                            stale = self.follow_active or self.follow_dirty or self.mouse_busy()
+                            moving = self.mouse_busy()
+                            stale = self.follow_active or self.follow_dirty or moving
+                            if stale and layer is not None and not moving:
+                                # A click is not proof that the map moved. The
+                                # overlay is hidden by follow() while dirty.
+                                from .src.frame_guard import unchanged_map
+                                try:
+                                    same,check=unchanged_map(getattr(self,'request_pixels',None),native.capture(self.capture_rect()))
+                                except Exception as error:
+                                    same,check=False,dict(reason='verification_failed',error=str(error))
+                                trace('result_frame_check',token=token,same=same,**check)
+                                if same:
+                                    stale=False
+                                    self.follow_active=self.follow_dirty=False
                             self.last_result = dict(total_ms=(time.perf_counter()-self.started)*1000,
                                                     processing_ms=elapsed,result=details)
                             if stale:
-                                trace("discarded_moving_frame",token=token)
+                                trace("discarded_moving_frame",token=token,moving=moving,
+                                      follow_active=self.follow_active,follow_dirty=self.follow_dirty)
                                 # 这张是交互期间截的旧帧，注定被下一帧取代：安静丢弃，
                                 # 让 follow() 用最新画面重来。绝不能在这里 notify ——
                                 # 那正是「明明调好了却说无法匹配」的来源。
@@ -1173,6 +1188,7 @@ class Companion(W.QWidget):
                                 # 看到地图了，之前攒的「没有地图」次数作废。
                                 self.no_map_streak = 0
                                 self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
+                                trace('overlay_displayed',token=token,map_id=candidate.map_id,floor=candidate.floor)
                                 floor_label='地下室' if candidate.floor==-1 else f'{candidate.floor}F'
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')

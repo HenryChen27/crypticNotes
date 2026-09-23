@@ -69,7 +69,7 @@ class FailureRecorder:
             if not ok:
                 return '截图编码失败'
             data = dict(schema_version=2, time=datetime.now(timezone.utc).isoformat(),
-                        app_version='2026.09.23-input', outcome='accepted' if success else 'rejected',
+                        app_version='2026.09.24-display-guard', outcome='accepted' if success else 'rejected',
                         category=kind, message=message, error=error,
                         context=context, screenshot_sha256=digest,
                         image_shape=list(pixels.shape), result=result,

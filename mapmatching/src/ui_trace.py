@@ -13,6 +13,6 @@ def trace(event,**fields):
             path.write_text('\n'.join(lines)+'\n',encoding='utf8')
         with path.open('a',encoding='utf8') as f:
             f.write(json.dumps(dict(time=datetime.now(timezone.utc).isoformat(),
-                version='2026.09.23-input',event=event,**fields),ensure_ascii=False)+'\n')
+                version='2026.09.24-display-guard',event=event,**fields),ensure_ascii=False)+'\n')
     except OSError:
         pass

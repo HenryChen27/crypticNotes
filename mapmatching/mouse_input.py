@@ -205,6 +205,12 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
         # 此时唯一的信息源是 Raw Input，清空等于把 Raw Input 的信号也抹掉。
         return bool(self.buttons) or (now - self.last_wheel) < self.WHEEL_HOLD
 
+    def map_interacting(self):
+        # Keep existing polling/release recovery, but only map controls can
+        # invalidate a pose. Right/middle/side buttons are unrelated actions.
+        self.interacting()
+        return 0x01 in self.buttons or (time.perf_counter()-self.last_wheel)<self.WHEEL_HOLD
+
     def window_at_cursor(self):
         """光标下**根窗口**的 hwnd（物理像素）。失败返回 0。"""
         point = wintypes.POINT()
