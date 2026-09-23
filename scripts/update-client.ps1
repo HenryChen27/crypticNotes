@@ -81,8 +81,49 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host '  [2/2] 正在同步文件...'
+$installRoot = (Get-Location).Path
+$appPath = [IO.Path]::GetFullPath((Join-Path $installRoot 'IdentityVMapAssistant.exe'))
+try {
+    # Only stop processes whose executable belongs to THIS installation.
+    $running = @(Get-Process -Name IdentityVMapAssistant -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $appPath })
+    foreach ($appProcess in $running) { [void]$appProcess.CloseMainWindow() }
+    if ($running.Count) {
+        Write-Host '  正在退出当前目录的插件及识图进程...'
+        Start-Sleep -Milliseconds 1200
+    }
+    $remaining = @(Get-Process -Name IdentityVMapAssistant -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $appPath })
+    foreach ($appProcess in $remaining) {
+        Stop-Process -Id $appProcess.Id -Force -ErrorAction Stop
+        Wait-Process -Id $appProcess.Id -Timeout 8 -ErrorAction SilentlyContinue
+    }
+    # Detect remaining locks or denied write access before touching any files.
+    $tracked = @(git ls-files)
+    $tracked += 'IdentityVMapAssistant.exe'
+    foreach ($relative in ($tracked | Select-Object -Unique)) {
+        $filePath = [IO.Path]::GetFullPath((Join-Path $installRoot $relative))
+        if (-not $filePath.StartsWith($installRoot.TrimEnd('\')+'\',[StringComparison]::OrdinalIgnoreCase)) {
+            throw '更新路径越界'
+        }
+        if (Test-Path -LiteralPath $filePath -PathType Leaf) {
+            $handle = [IO.File]::Open($filePath,[IO.FileMode]::Open,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+            $handle.Dispose()
+        }
+    }
+} catch {
+    Write-Host '  [错误] 程序文件仍被占用或没有写入权限，尚未开始替换文件。'
+    Write-Host '  请退出插件；若插件以管理员运行，请用管理员身份运行更新.cmd。'
+    Write-Host '  若仍失败，请重启电脑后先更新，不要先打开插件。'
+    Write-Host ('  详细信息：'+$_.Exception.Message)
+    Finish 1
+}
+$oldAskYesNo = $env:GIT_ASK_YESNO
+$env:GIT_ASK_YESNO = 'false'
 git checkout -f -q -B $branch FETCH_HEAD
-if ($LASTEXITCODE -ne 0) { Write-Host ''; Write-Host '  [错误] 同步文件失败。'; Finish 1 }
+$checkoutCode = $LASTEXITCODE
+$env:GIT_ASK_YESNO = $oldAskYesNo
+if ($checkoutCode -ne 0) { Write-Host ''; Write-Host '  [错误] 同步失败，请关闭插件后重新更新；不要启动未更新完整的程序。'; Finish 1 }
 
 # 这里**刻意不跑 `git clean -fd`**。
 # checkout 已经会删掉「上一版有、这一版没有」的受控文件，那才是版本更新该做的事；
