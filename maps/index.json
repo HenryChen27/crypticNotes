@@ -471,6 +471,27 @@
       "factor": 0.5473453749315819,
       "sha256": "e801b55e8d01fe66681e5b4b0bf33cd3a681ce9601cad9cc5623bcb0ee91e393",
       "entry_sha": "b563ac49b63f8eab8217eaa431a3a268a0d071f2e753ed43c0448e6295a97700"
+    },
+    {
+      "map_id": "nightmare/solo/南 - n门（09.24更新）",
+      "array": "14b3337b9199485b.npz",
+      "factor": 0.4,
+      "sha256": "50bfd5364992f84d796f51d8784104e9f262c01944b54eed5ee571114071bb09",
+      "entry_sha": "a8d7f2ad10af7a7a5d18af07854a4ddeb6d1202c72583f1cc85c715e72c503fe"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 1竖图书走廊门（09.24更新）",
+      "array": "7b108661cc1e398c.npz",
+      "factor": 0.4,
+      "sha256": "6ca6efe44e49873a656e2cbe2adc276fd3a04f557d91180d176a62537f122ba1",
+      "entry_sha": "fb60467f1482329834bde2884bdbb212338319763fdb5c5ac7ed0b320062252d"
+    },
+    {
+      "map_id": "nightmare/solo/左 - 骑士门（09.24更新）",
+      "array": "b5e110504419b2d4.npz",
+      "factor": 0.4,
+      "sha256": "ad4fdb1fde2a73846d356ebd22a41e6331294b6331d5e138bf7d6dca3891cd8e",
+      "entry_sha": "68716ee18b3fcbf1cc7c7303838606e485c80b90aa3cf596e3abc860dd61983e"
     }
   ]
 }
