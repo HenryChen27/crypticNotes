@@ -1,13 +1,9 @@
-"""地图库浏览器：列出每一张地图，把它们从匹配里移除或恢复。
-
-**删除就是移除** —— 原图和特征文件原地不动，只是把登记条目收起来，随时可以恢复。
-内置和用户录入的图没有区别，所以「删除」按钮已经没有，确认框也不再写「无法撤销」。
-"""
+"""地图库浏览器：录入地图或永久删除库内地图。"""
 from pathlib import Path
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .theme import MistPanel, ChalkButton, ChalkChoice, chalk_texture
 from .panel_dialogs import PanelDialog, ThumbnailPopup
-from .src.map_admin import context_text, floor_text, list_maps, set_enabled
+from .src.map_admin import context_text, floor_text, list_maps, delete_map
 
 FILTERS = [('全部', ''), ('困难', 'hard'), ('噩梦·单人', 'nightmare/solo'), ('噩梦·双人', 'nightmare/duo')]
 SECTIONS = [('active', '可用'), ('disabled', '已停用')]
@@ -233,8 +229,8 @@ class MapManageDialog(PanelDialog):
 
     def action(self, record):
         # 没有「删除」按钮了：任何一张图的移除都是可恢复的（原图和特征都留在盘上）。
-        button = RowButton('恢复' if record['state'] == 'disabled' else '移除', 68)
-        button.clicked.connect(lambda: self.mutate(record, restore=record['state'] == 'disabled'))
+        button = RowButton('删除', 68)
+        button.clicked.connect(lambda: self.mutate(record, restore=False))
         if not record['writable']:
             button.setEnabled(False)
             button.setCursor(C.Qt.ArrowCursor)
@@ -293,30 +289,24 @@ class MapManageDialog(PanelDialog):
 
     # ---- actions --------------------------------------------------------
     def confirm(self, record, restore):
-        if restore:
-            return ConfirmDialog('恢复地图', f'确定恢复「{record["name"]}」？\n它会重新参与匹配。', '恢复', self)
-        body = f'确定从匹配中移除「{record["name"]}」？\n原图和已录入的楼层信息都会保留，随时可以恢复。'
+        body = f'彻底删除「{record["name"]}」？\n库内原图、楼层信息和识别缓存将删除，无法恢复。'
         if self.remaining(record) <= 1:
             body += f'\n\n这是「{context_text(record["difficulty"], record["mode"])}」的最后一张可用地图，移除后该模式将无法匹配。'
-        return ConfirmDialog('管理地图', body, '移除', self)
+        return ConfirmDialog('删除地图', body, '彻底删除', self)
 
     def mutate(self, record, restore):
         dialog = self.confirm(record, restore)
         if dialog.exec() != W.QDialog.Accepted:
             return
         try:
-            set_enabled(self.root, record['map_id'], restore)
+            delete_map(self.root, record['map_id'])
         except Exception as error:
             self.status.setText(str(error))
             return
         self.changed = True
-        verb = '已恢复' if restore else '已移除'
+        verb = '已删除'
         self.status.setText(f'{verb}：{record["name"]}')
-        # 恢复会回到原来那一行，可能在视野外 —— 让用户看得见它回来了。
-        if restore:
-            self.focus_on(record['map_id'])
-        else:
-            self.reload()
+        self.reload()
 
     def add_map(self):
         from .map_import_ui import MapImportDialog

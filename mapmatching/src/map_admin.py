@@ -1,13 +1,6 @@
-"""地图目录的浏览与增删。**刻意站在识别路径之外。**
+"""地图目录管理。delete_map 永久删除库内文件及登记。
 
-这个模块只读写 `maps/floors.json`、`maps/disabled.json`、`maps/index.json`，
-不 import evidence / matcher / retrieval，也不碰 `reference.py` 的加载逻辑。
-所以「识别逻辑」保持逐字节不变。
-
-**内置和自建不再有区别。** 以前内置走软删除、自建走真删（原图是凉的、自建的
-是用户自己塞的）；现在所有图都躺在 `maps/` 这一棵树里，删谁的语义都一样：
-把登记条目从 `floors.json` 搬进 `disabled.json`，**原图和特征原地不动**。
-搬到哪一步都只是搬条目，所以「删掉」永远是瞬时的、可恢复的。
+set_enabled 保留兼容旧版停用数据，管理界面使用永久删除。
 """
 from pathlib import Path
 import os
@@ -92,3 +85,48 @@ def set_enabled(root, map_id, enabled):
     if not os.access(maps, os.W_OK):
         raise ValueError('程序目录不可写，无法修改地图库；请把程序解压到可写目录后重试')
     return mapstore.set_map_enabled(maps, map_id, enabled)
+
+
+def delete_map(root, map_id):
+    """永久删除登记、库内原图和特征；共享原图保留给其他条目。"""
+    maps = maps_dir(root).resolve()
+    entries = mapstore.read_manifest(maps)
+    disabled = mapstore.read_disabled(maps)
+    targets = [e for e in entries + disabled if e['map_id'] == map_id]
+    if not targets:
+        raise ValueError('找不到这张地图')
+    others = [e for e in entries + disabled if e['map_id'] != map_id]
+    shared = {mapstore._safe_source(maps.parent, e) for e in others}
+    files = set()
+    for entry in targets:
+        source = mapstore._safe_source(maps.parent, entry)
+        if not source.is_relative_to(maps) or source.suffix.lower() not in {'.png', '.jpg', '.jpeg', '.webp', '.bmp'}:
+            raise ValueError('原图不在地图库内，拒绝删除')
+        if source not in shared:
+            files.add(source)
+    evidence = (maps/'evidence'/mapstore.evidence_name(map_id)).resolve()
+    if not evidence.is_relative_to(maps):
+        raise ValueError('特征文件路径越界，拒绝删除')
+    files.add(evidence)
+    metadata = [maps/'floors.json', maps/'disabled.json', maps/'index.json']
+    # 出错时还原本次操作，不把删到一半当作成功；成功后不留回收副本。
+    snapshot = {p: p.read_bytes() if p.exists() else None for p in files | set(metadata)}
+    try:
+        for path in files:
+            path.unlink(missing_ok=True)
+        mapstore.write_manifest(maps, [e for e in entries if e['map_id'] != map_id])
+        positions = mapstore.read_disabled_positions(maps)
+        positions.pop(map_id, None)
+        mapstore.write_disabled(maps, [e for e in disabled if e['map_id'] != map_id], positions)
+        index = mapstore._read_json(maps/'index.json', None)
+        if index is not None:
+            index['references'] = [e for e in index.get('references', []) if e['map_id'] != map_id]
+            mapstore.write_json(maps/'index.json', index)
+    except Exception:
+        for path, content in snapshot.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            elif not path.exists() or path.read_bytes() != content:
+                path.write_bytes(content)
+        raise
+    return targets[0]

@@ -85,8 +85,10 @@ class RemovalThroughTheModalConfirm(unittest.TestCase):
             register(root, '甲', 'hard', None, 30)
             seen = drive_removal(root, 'hard/甲', '甲')
             self.assertEqual(seen, ['ConfirmDialog'], '确认框没弹出来，这个测试就没测到东西')
-            self.assertEqual([e['map_id'] for e in mapstore.read_disabled(mapstore.maps_dir(root))],
-                             ['hard/甲'], '确认了却没写进 disabled.json')
+            self.assertEqual(mapstore.read_disabled(root/'maps'), [])
+            self.assertEqual(mapstore.read_manifest(root/'maps'), [])
+            self.assertFalse((root/'maps/hard/甲.png').exists())
+            self.assertTrue((root/'甲.png').exists())
 
     def test_cancelling_the_confirm_changes_nothing(self):
         """反向：点「取消」不该动盘 —— 免得把「一律写盘」当成通过。"""

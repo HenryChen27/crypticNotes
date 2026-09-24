@@ -3671,6 +3671,198 @@
         ]
       ],
       "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/南 - n门（09.24更新）",
+      "name": "南 - n门（09.24更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/南 - n门（09.24更新）.png",
+      "sha256": "50bfd5364992f84d796f51d8784104e9f262c01944b54eed5ee571114071bb09",
+      "pixel_sha256": "245de60cb2779983dafc9df1859d13686b1cde6a29a9fed2725ba47caabd9e6e",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            16,
+            802,
+            1000,
+            1549
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            50,
+            22,
+            929,
+            789
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            88,
+            1656,
+            885,
+            2160
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          16,
+          802,
+          1000,
+          1549
+        ],
+        [
+          50,
+          22,
+          929,
+          789
+        ],
+        [
+          88,
+          1656,
+          885,
+          2160
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - 1竖图书走廊门（09.24更新）",
+      "name": "左 - 1竖图书走廊门（09.24更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 1竖图书走廊门（09.24更新）.png",
+      "sha256": "6ca6efe44e49873a656e2cbe2adc276fd3a04f557d91180d176a62537f122ba1",
+      "pixel_sha256": "c0074640de7695255074290f20db32b90398a608639ac4cd749ee3c6fdad9005",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            79,
+            780,
+            942,
+            1573
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            87,
+            48,
+            938,
+            763
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            108,
+            1616,
+            967,
+            2196
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          79,
+          780,
+          942,
+          1573
+        ],
+        [
+          87,
+          48,
+          938,
+          763
+        ],
+        [
+          108,
+          1616,
+          967,
+          2196
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - 骑士门（09.24更新）",
+      "name": "左 - 骑士门（09.24更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 骑士门（09.24更新）.png",
+      "sha256": "ad4fdb1fde2a73846d356ebd22a41e6331294b6331d5e138bf7d6dca3891cd8e",
+      "pixel_sha256": "c69a7bc73067bb02fe15754b4dfaeca5c1528bc27a619e5cda0b7497b51480bf",
+      "size": [
+        1000,
+        2500
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            64,
+            791,
+            907,
+            1526
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            65,
+            46,
+            927,
+            782
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            33,
+            1527,
+            821,
+            2231
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          64,
+          791,
+          907,
+          1526
+        ],
+        [
+          65,
+          46,
+          927,
+          782
+        ],
+        [
+          33,
+          1527,
+          821,
+          2231
+        ]
+      ],
+      "review": ""
     }
   ]
 }

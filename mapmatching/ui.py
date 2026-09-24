@@ -137,7 +137,7 @@ def explain_failure(message):
     不动那一行 raise，也不给它加兜底。
     """
     if 'No references satisfy the supplied hints' in message:
-        return '这个难度下已经没有可用地图了，请在「管理地图」里恢复或新增'
+        return '这个难度下已经没有可用地图了，请在「管理地图」里新增'
     return message
 
 
