@@ -2,11 +2,12 @@
 import json
 from datetime import datetime,timezone
 from ..paths import DATA_ROOT
+record_directory = DATA_ROOT/'failure-records'
 
 
 def trace(event,**fields):
     try:
-        folder=DATA_ROOT/'failure-records';folder.mkdir(parents=True,exist_ok=True)
+        folder=record_directory;folder.mkdir(parents=True,exist_ok=True)
         path=folder/'ui-events.jsonl'
         if path.exists() and path.stat().st_size>128*1024:
             lines=path.read_text(encoding='utf8').splitlines()[-200:]

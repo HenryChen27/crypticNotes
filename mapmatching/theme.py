@@ -31,8 +31,8 @@ def chalk_texture(width,height,bright=False,roughness=1.0,shape='rect',left_edge
     grain=rng.normal(0,13,(h,w))
     feather=np.clip((edge-rng.uniform(0,5*roughness,(h,w)))/(9*roughness),0,1)
     rgba=np.zeros((h,w,4),np.uint8)
-    dark = bright == 'dark'
-    palette = (35,54,70) if dark else ((190,209,219) if bright else (158,181,197))
+    dark = bright in ('dark', 'deep')
+    palette = ((16,29,40) if bright == 'deep' else (35,54,70)) if dark else ((242,245,247) if bright == 'white' else ((190,209,219) if bright else (158,181,197)))
     gradient = 8*(1-yy/max(1,h-1)) + 5*np.sin(xx/max(1,w-1)*math.pi)-5
     for channel,base in enumerate(palette):
         rgba[:,:,channel]=np.clip(base+grain*(.35 if dark else 1)+gradient,0,255)
@@ -54,6 +54,104 @@ class ChalkButton(W.QPushButton):
         p.setPen(G.QColor('#152635'))
         p.setFont(self.font())
         p.drawText(self.rect(),C.Qt.AlignCenter,self.text())
+
+
+class FoldSection(W.QWidget):
+    """Dark frosted groups with feathered edges and top-aligned content."""
+    changed = C.Signal()
+
+    def __init__(self, title, expanded=False):
+        super().__init__()
+        self.setSizePolicy(W.QSizePolicy.Preferred, W.QSizePolicy.Maximum)
+        class Heading(ChalkButton):
+            def paintEvent(self, event):
+                p = G.QPainter(self)
+                p.setRenderHint(G.QPainter.Antialiasing)
+                # The texture supplies both the subtle gradient and feathered
+                # alpha edge; an opaque rectangle underneath would erase it.
+                p.setOpacity(.94 if self.underMouse() else .86)
+                p.drawImage(self.rect(), chalk_texture(self.width(), self.height(), 'deep', .7, 'rounded'))
+                p.setOpacity(1)
+                p.setPen(G.QColor('#d3dfe6'))
+                p.setFont(self.font())
+                p.drawText(self.rect().adjusted(14, 0, -32, 0), C.Qt.AlignVCenter, title)
+                x, y = self.width()-18, self.height()/2
+                p.setPen(G.QPen(G.QColor('#aabfcd'), 1.5))
+                points = [(x-4,y-2),(x,y+2),(x+4,y-2)] if self.isChecked() else [(x-2,y-4),(x+2,y),(x-2,y+4)]
+                p.drawPolyline(G.QPolygonF([C.QPointF(*point) for point in points]))
+        layout = W.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.setAlignment(C.Qt.AlignTop)
+        self.header = Heading(title)
+        self.header.setMinimumHeight(32)
+        self.header.setFixedHeight(32)
+        self.header.setCheckable(True)
+        self.header.setChecked(expanded)
+        self.content = W.QWidget()
+        self.body = W.QVBoxLayout(self.content)
+        self.body.setContentsMargins(12, 12, 12, 14)
+        self.body.setSpacing(10)
+        self.body.setAlignment(C.Qt.AlignTop)
+        self.content.setVisible(expanded)
+        layout.addWidget(self.header)
+        layout.addWidget(self.content)
+        self.header.toggled.connect(self.content.setVisible)
+        self.header.toggled.connect(lambda _: self.changed.emit())
+
+    def paintEvent(self, event):
+        p = G.QPainter(self)
+        p.setRenderHint(G.QPainter.Antialiasing)
+        p.setOpacity(.48)
+        p.drawImage(self.rect(), chalk_texture(self.width(), self.height(), 'deep', .7, 'rounded'))
+
+
+class FrostScrollBar(W.QScrollBar):
+    def __init__(self):
+        super().__init__(C.Qt.Vertical)
+        self.setFixedWidth(10)
+        self.setStyleSheet('QScrollBar:vertical {width:10px; margin:0;} QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;} QScrollBar::handle:vertical {min-height:28px;}')
+
+    def paintEvent(self, event):
+        if self.maximum() <= self.minimum():
+            return
+        p = G.QPainter(self)
+        p.setOpacity(.35)
+        p.drawImage(self.rect(), chalk_texture(self.width(), self.height(), 'dark', .5, 'rounded'))
+        option = W.QStyleOptionSlider()
+        self.initStyleOption(option)
+        handle = self.style().subControlRect(W.QStyle.CC_ScrollBar, option, W.QStyle.SC_ScrollBarSlider, self)
+        p.setOpacity(.8 if self.underMouse() else .6)
+        p.drawImage(handle, chalk_texture(handle.width(), handle.height(), True, .5, 'rounded'))
+
+
+class FrostCheckBox(W.QCheckBox):
+    def __init__(self, text):
+        super().__init__(text)
+        self.setMinimumHeight(30)
+
+    def paintEvent(self, event):
+        p = G.QPainter(self)
+        p.setRenderHint(G.QPainter.Antialiasing)
+        box = C.QRect(3, (self.height()-20)//2, 20, 20)
+        p.drawImage(box, chalk_texture(20, 20, 'deep', .6, 'rounded'))
+        if self.isChecked():
+            x, y = box.x(), box.y()
+            # Uneven, hand-drawn strokes extend above and beyond the square.
+            pen = G.QPen(G.QColor('#f5f5f2'), 2.6, C.Qt.SolidLine,
+                         C.Qt.RoundCap, C.Qt.RoundJoin)
+            p.setPen(pen)
+            path = G.QPainterPath(C.QPointF(x+2, y+9))
+            path.cubicTo(x+5,y+11,x+7,y+15,x+9,y+17)
+            path.cubicTo(x+13,y+10,x+19,y+2,x+23,y-3)
+            p.drawPath(path)
+            p.setPen(G.QPen(G.QColor(255,255,252,175), 1.1,
+                           C.Qt.SolidLine, C.Qt.RoundCap))
+            p.drawPolyline(G.QPolygonF([C.QPointF(x+1,y+11),
+                C.QPointF(x+8,y+18), C.QPointF(x+16,y+6), C.QPointF(x+24,y-2)]))
+        p.setPen(G.QColor('#d3dfe6'))
+        p.setFont(self.font())
+        p.drawText(self.rect().adjusted(34,0,0,0), C.Qt.AlignVCenter, self.text())
 
 
 class ChalkChoice(W.QWidget):

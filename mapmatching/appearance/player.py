@@ -1,4 +1,5 @@
 import math
+import random
 import numpy as np
 from PySide6 import QtCore as C, QtGui as G
 from .skins import doll
@@ -36,6 +37,7 @@ class PetAnimation:
                 painter.end();self.layers[side+'_arm']=layer
         self.enabled = False
         self.mood = 'curious'
+        self.wave_right = False
         self.clock = C.QElapsedTimer()
         self.timer = C.QTimer(button)
         self.timer.setInterval(25)
@@ -44,6 +46,10 @@ class PetAnimation:
     def enable(self, enabled):
         self.enabled = bool(enabled and not self.pixmap.isNull())
         self.timer.stop()
+        if self.enabled:
+            self.mood = 'idle'
+            self.clock.start()
+            self.timer.start(50)
         self.button.setFixedSize(112, 132) if self.enabled else self.button.setFixedSize(46, 46)
         self.button.update()
 
@@ -53,24 +59,34 @@ class PetAnimation:
         if self.timer.isActive() and self.mood == mood:
             return
         self.mood = mood
+        if mood == 'curious':
+            self.wave_right = random.choice((False, True))
         self.clock.start()
-        self.timer.start()
+        self.timer.start(25)
         self.button.update()
 
     def advance(self):
-        if self.clock.elapsed() >= self.duration or not self.button.isVisible():
-            self.timer.stop()
-        self.button.update()
+        if self.clock.elapsed() >= self.duration:
+            self.mood = 'idle'
+            self.clock.restart()
+            self.timer.setInterval(50)
+        if self.button.isVisible():
+            self.button.update()
 
     @property
     def duration(self):
-        return getattr(self.skin,'DURATIONS',{}).get(self.mood,2200)
+        return 4000 if self.mood == 'idle' else getattr(self.skin,'DURATIONS',{}).get(self.mood,2200)
 
     def paint(self, progress=None):
         p = G.QPainter(self.button)
         p.setRenderHints(G.QPainter.Antialiasing | G.QPainter.SmoothPixmapTransform)
         t = progress if progress is not None else (self.clock.elapsed()/self.duration if self.timer.isActive() else 1)
         angles, ease = self.skin.pose(self.mood, t)
+        if self.mood == 'curious' and self.wave_right:
+            for part_name in ('upper', 'lower', 'leg'):
+                left, right = 'left_'+part_name, 'right_'+part_name
+                angles[left], angles[right] = -angles[right], -angles[left]
+            angles['head'] *= -1
         # Leave headroom inside the existing widget for the upward float.
         p.translate(7, 20)
         p.scale(.32, .32)

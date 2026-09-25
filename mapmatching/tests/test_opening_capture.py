@@ -29,7 +29,8 @@ class OpeningCaptureTests(unittest.TestCase):
         s=SimpleNamespace(state=state,opening=True,open_probe_count=0,demo_window=None,
             foreground_lost=lambda:False,capture_rect=lambda:(0,0,2560,1600),
             show=Mock(),take_capture=Mock(),start_worker=Mock(),cached_candidate=None,
-            record_failures=SimpleNamespace(isChecked=lambda:True),status=Mock())
+            record_failures=SimpleNamespace(isChecked=lambda:True),status=Mock(),
+            records_directory=lambda:'test-records')
         with patch.object(native,'capture',return_value=np.zeros((10,10,3),np.uint8)),patch.object(C.QTimer,'singleShot',side_effect=lambda ms,fn:callbacks.append(fn)),patch('mapmatching.src.map_visibility.inspect_map_ui',return_value={'visible':False}):
             Companion.capture_after_hide(s,token)
             self.assertEqual(s.open_probe_count,1)
@@ -41,3 +42,4 @@ class OpeningCaptureTests(unittest.TestCase):
             Companion.capture_after_hide(s,token)
             self.assertFalse(s.opening)
             s.start_worker.assert_called_once()
+            self.assertEqual(s.pending[3]['records_directory'], 'test-records')

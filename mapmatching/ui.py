@@ -24,7 +24,7 @@ from .src import windows as native
 from .mouse_input import MouseWatcher
 from .appearance import PetAnimation, SpeechBubble, reaction
 from .panel_dialogs import own_dialog_open
-from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton
+from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox
 import win32gui
 
 BG = 'rgba(20,28,37,234)'
@@ -238,6 +238,7 @@ class HotkeyDialog(W.QDialog):
         layout.setSpacing(14)
         title=W.QLabel('修改快捷键')
         title.setObjectName('title')
+        title.setSizePolicy(W.QSizePolicy.Preferred, W.QSizePolicy.Fixed)
         layout.addWidget(title)
         self.readout=W.QLabel(hotkey_text(current))
         self.readout.setAlignment(C.Qt.AlignCenter)
@@ -452,6 +453,7 @@ class Companion(W.QWidget):
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(3,3,3,3)
         layout.setSpacing(8)
+        layout.setAlignment(C.Qt.AlignTop)
         self.gear = DraggableGear(self)
         self.gear.setObjectName('gear')
         self.gear.pet.enable(self.settings.get("pet_enabled",True))
@@ -460,13 +462,35 @@ class Companion(W.QWidget):
         layout.addWidget(self.gear,0,C.Qt.AlignRight)
         self.panel = MistPanel()
         self.panel.setObjectName('panel')
-        self.panel.setFixedWidth(360)
+        self.panel.setFixedWidth(374)
         box = W.QVBoxLayout(self.panel)
         box.setContentsMargins(20,18,20,18)
         box.setSpacing(10)
+        box.setAlignment(C.Qt.AlignTop)
         title = W.QLabel('加页手记')
         title.setObjectName('title')
         box.addWidget(title)
+        self.setting_sections = [FoldSection(name, i == 0) for i, name in
+                                 enumerate(('游戏设置', '使用偏好', '地图库', '问题排查'))]
+        groups = W.QWidget()
+        group_layout = W.QVBoxLayout(groups)
+        group_layout.setContentsMargins(0, 0, 0, 0)
+        group_layout.setSpacing(8)
+        group_layout.setAlignment(C.Qt.AlignTop)
+        for section in self.setting_sections:
+            group_layout.addWidget(section)
+            section.changed.connect(lambda: C.QTimer.singleShot(0, self.resize_settings))
+        self.settings_scroll = W.QScrollArea()
+        self.settings_scroll.setWidgetResizable(True)
+        self.settings_scroll.setVerticalScrollBar(FrostScrollBar())
+        self.settings_scroll.setVerticalScrollBarPolicy(C.Qt.ScrollBarAlwaysOn)
+        self.settings_scroll.setViewportMargins(0, 0, 4, 0)
+        self.settings_scroll.setFrameShape(W.QFrame.NoFrame)
+        self.settings_scroll.setHorizontalScrollBarPolicy(C.Qt.ScrollBarAlwaysOff)
+        self.settings_scroll.setStyleSheet('QScrollArea, QScrollArea > QWidget > QWidget {background:transparent;}')
+        self.settings_scroll.setWidget(groups)
+        box.addWidget(self.settings_scroll)
+        game, preferences, library, debug = [s.body for s in self.setting_sections]
         self.difficulty = ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(1 if self.settings.get('difficulty') == 'nightmare' else 0)
         difficulty_row=W.QHBoxLayout()
@@ -474,7 +498,7 @@ class Companion(W.QWidget):
         label.setFixedWidth(62)
         difficulty_row.addWidget(label)
         difficulty_row.addWidget(self.difficulty,1)
-        box.addLayout(difficulty_row)
+        game.addLayout(difficulty_row)
         self.party_row = W.QWidget()
         party_layout = W.QHBoxLayout(self.party_row)
         party_layout.setContentsMargins(0,0,0,0)
@@ -484,13 +508,13 @@ class Companion(W.QWidget):
         self.party = ChalkChoice([('单人','solo'),('多人','duo')])
         self.party.setCurrentIndex(1 if self.settings.get('mode') == 'duo' else 0)
         party_layout.addWidget(self.party,1)
-        box.addWidget(self.party_row)
+        game.addWidget(self.party_row)
         self.opacity_label = W.QLabel()
-        box.addWidget(self.opacity_label)
+        preferences.addWidget(self.opacity_label)
         self.opacity = ChalkSlider()
         self.opacity.setRange(5,80)
         self.opacity.setValue(max(5,min(80,int(self.settings.get('opacity',30)))))
-        box.addWidget(self.opacity)
+        preferences.addWidget(self.opacity)
         self.delay = DelaySlider()
         self.delay.setValue(max(100,min(1000,int(self.settings.get('delay',350)))))
         self.delay_label=W.QLabel()
@@ -512,7 +536,7 @@ class Companion(W.QWidget):
         self.return_game = ChalkButton('返回屏幕')
         self.return_game.clicked.connect(self.leave_demo)
         self.return_game.hide()
-        box.addWidget(self.return_game)
+        debug.addWidget(self.return_game)
         buttons = W.QHBoxLayout()
         retry = ChalkButton('重新识别')
         retry.clicked.connect(self.retry)
@@ -524,10 +548,9 @@ class Companion(W.QWidget):
         hide_button_pencil.clicked.connect(self.edit_hide_hotkey)
         hide_button_pencil.setToolTip('修改隐藏叠图快捷键')
         buttons.addWidget(hide_button_pencil)
-        box.addLayout(buttons)
-        box.addSpacing(6)
-        box.addWidget(self.delay_label)
-        box.addWidget(self.delay)
+        game.addLayout(buttons)
+        preferences.addWidget(self.delay_label)
+        preferences.addWidget(self.delay)
         hotkeys=W.QHBoxLayout()
         self.hotkey_label=W.QLabel(f'启用快捷键({self.hotkey}/esc)')
         hotkeys.addWidget(self.hotkey_label)
@@ -535,21 +558,22 @@ class Companion(W.QWidget):
         pencil.clicked.connect(self.edit_hotkey)
         hotkeys.addWidget(pencil)
         hotkeys.addWidget(self.enabled,1)
-        box.addLayout(hotkeys)
+        preferences.addLayout(hotkeys)
         hidekeys=W.QHBoxLayout()
         self.hide_hotkey_label=W.QLabel(f'隐藏叠图({self.hide_hotkey})')
         hidekeys.addWidget(self.hide_hotkey_label)
         hide_pencil=EditButton()
         hide_pencil.clicked.connect(self.edit_hide_hotkey)
         hidekeys.addWidget(hide_pencil)
-        box.addLayout(hidekeys)
+        preferences.addLayout(hidekeys)
         # The shortcut editor lives beside the hide button; keep the legacy
         # row out of the panel while retaining its label for compatibility.
         for _widget in (self.hide_hotkey_label, hide_pencil):
             _widget.hide()
         hidekeys.setContentsMargins(0, 0, 0, 0)
         hidekeys.setSpacing(0)
-        box.setStretch(box.indexOf(self.status), 1)
+        # Status has not been inserted yet; indexOf returned -1 here, which
+        # Qt interpreted as stretching every row, including the title.
         pet_row = W.QHBoxLayout()
         pet_row.addStretch()
         pet_label = W.QLabel("个性外观：")
@@ -565,12 +589,13 @@ class Companion(W.QWidget):
         self.pet_enabled.toggled.connect(self.set_pet_enabled)
         pet_row.addWidget(self.pet_enabled)
         pet_row.addStretch()
-        utilities = W.QHBoxLayout()
-        utilities.addWidget(enroll,1)
-        utilities.addWidget(local,1)
-        box.addLayout(utilities)
+        library.addWidget(enroll)
+        import_button = ChalkButton('录入新地图')
+        import_button.clicked.connect(self.import_map)
+        library.addWidget(import_button)
+        debug.addWidget(local)
         records_row = W.QHBoxLayout()
-        self.record_failures = W.QCheckBox('记录识别案例')
+        self.record_failures = FrostCheckBox('记录识别案例')
         self.record_failures.setChecked(self.settings.get('record_failures', True))
         self.record_failures.setToolTip('保存成功与失败截图及诊断数据，每个分类各保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
         self.record_failures.toggled.connect(lambda _: self.save())
@@ -578,13 +603,21 @@ class Companion(W.QWidget):
         records_button = ChalkButton('打开记录')
         records_button.clicked.connect(self.open_failure_records)
         records_row.addWidget(records_button)
-        box.addLayout(records_row)
+        debug.addLayout(records_row)
+        self.records_path = W.QLabel()
+        self.records_path.setWordWrap(True)
+        self.records_path.setObjectName('muted')
+        debug.addWidget(self.records_path)
+        change_folder = ChalkButton('更改存储文件夹')
+        change_folder.clicked.connect(self.choose_records_folder)
+        debug.addWidget(change_folder)
+        self.update_records_path()
         box.addWidget(self.status)
         quit_button = W.QPushButton('退出')
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
-        box.addLayout(pet_row)
+        preferences.addLayout(pet_row)
         layout.addWidget(self.panel)
         self.panel.hide()
         self.toast = SpeechBubble()
@@ -602,6 +635,7 @@ class Companion(W.QWidget):
         self.enabled.toggled.connect(lambda enabled: self.close_map() if not enabled else None)
         self.opacity_changed()
         self.party_row.setVisible(self.difficulty.currentIndex() == 1)
+        self.resize_settings()
         self.adjustSize()
         if not self.restore_position():
             # 默认位置也按齿轮而不是窗口来定：窗口宽度随面板开关变化，
@@ -633,10 +667,36 @@ class Companion(W.QWidget):
             self.toggle_panel()
         return super().event(event)
 
+    def resize_settings(self):
+        for section in self.setting_sections:
+            section.body.invalidate()
+            section.body.activate()
+            section.layout().invalidate()
+            section.layout().activate()
+            section.setFixedHeight(section.sizeHint().height())
+        self.settings_scroll.widget().layout().invalidate()
+        self.settings_scroll.widget().layout().activate()
+        wanted = self.settings_scroll.widget().sizeHint().height()
+        area = self.screen().availableGeometry()
+        # Expand down from the current title position. Never move the whole
+        # window upward to fit an expanded group; overflow belongs in the scroll.
+        overhead = self.gear.height()+8+6+36+30+60
+        available = area.bottom()-max(area.top(), self.y())-overhead
+        self.settings_scroll.setFixedHeight(min(wanted, max(100, available)))
+        self.panel.layout().invalidate()
+        self.panel.layout().activate()
+        self.panel.setFixedHeight(self.panel.layout().sizeHint().height())
+        self.adjustSize()
+
     def toggle_panel(self):
         self.toast.hide()
         right = self.geometry().right()
+        if not self.panel.isVisible():
+            for index, section in enumerate(self.setting_sections):
+                section.header.setChecked(index == 0)
+            self.settings_scroll.verticalScrollBar().setValue(0)
         self.panel.setVisible(not self.panel.isVisible())
+        self.resize_settings()
         self.adjustSize()
         self.move(right-self.width()+1,self.y())
         self.clamp_to_screen()
@@ -699,7 +759,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -720,9 +780,40 @@ class Companion(W.QWidget):
         self.save()
 
     def open_failure_records(self):
-        directory = DATA_ROOT/'failure-records'
+        directory = self.records_directory()
         directory.mkdir(parents=True, exist_ok=True)
         G.QDesktopServices.openUrl(C.QUrl.fromLocalFile(str(directory)))
+
+    def records_directory(self):
+        return Path(self.settings.get('records_directory') or DATA_ROOT/'failure-records')
+
+    def update_records_path(self):
+        from .src import ui_trace
+        directory = self.records_directory()
+        ui_trace.record_directory = directory
+        self.records_path.setText('保存至：' + directory.name)
+        self.records_path.setToolTip(str(directory))
+
+    def choose_records_folder(self):
+        selected = W.QFileDialog.getExistingDirectory(self, '选择记录存储位置', str(self.records_directory()))
+        if not selected:
+            return
+        # Use a dedicated child folder; retention must not touch unrelated files.
+        directory = Path(selected)/'failure-records'
+        if Path(selected).name == 'failure-records':
+            directory = Path(selected)
+        try:
+            import tempfile
+            directory.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile(dir=directory):
+                pass
+        except OSError as error:
+            self.notify(f'无法写入文件夹：{error}')
+            return
+        self.settings['records_directory'] = str(directory)
+        self.update_records_path()
+        self.save()
+        self.notify('新记录将保存到所选文件夹，旧记录保留原处')
 
     def edit_hotkey(self):
         self.close_map()
@@ -759,7 +850,7 @@ class Companion(W.QWidget):
         self.close_map()
         self.stop_worker()
         self.party_row.setVisible(self.difficulty.currentIndex() == 1)
-        self.adjustSize()
+        self.resize_settings()
         self.save()
         C.QTimer.singleShot(0,self.start_worker)
 
@@ -964,7 +1055,7 @@ class Companion(W.QWidget):
             self.opening = False
             trace("captured",token=token,trigger=getattr(self,"capture_trigger","unknown"))
             self.pending = (token,pixels,self.cached_candidate, dict(
-                record_failures=self.record_failures.isChecked(),
+                record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),
                 trigger=getattr(self,"capture_trigger","unknown"),
                 source='local_screenshot' if self.demo_window is not None else 'screen',
                 capture_rect=self.rect_at_capture))

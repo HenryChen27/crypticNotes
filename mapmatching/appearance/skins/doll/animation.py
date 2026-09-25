@@ -19,6 +19,9 @@ def body_motion(mood, progress):
     t=max(0.,min(1.,progress))
     envelope=math.sin(math.pi*t)**2
     phase=2*math.pi*t
+    if mood == 'idle':
+        breath = (1-math.cos(phase))*.5
+        return dict(x=0., y=-5*breath, torso=0., squash=-.012*breath)
     if mood in ('heart','happy'):
         sway=math.sin(phase)
         return dict(x=5*sway*envelope,y=-42*envelope,
@@ -37,6 +40,12 @@ def pose(mood, progress):
     flutter = math.sin(t*math.pi*12)*ease
     angles = dict(head=0., left_upper=0., left_lower=0.,
                   right_upper=0., right_lower=0., left_leg=0., right_leg=0.)
+    if mood == 'idle':
+        sway = math.sin(2*math.pi*t)**3
+        angles.update(left_upper=2.2*sway, right_upper=-1.8*sway,
+                      left_lower=.7*sway, right_lower=-.6*sway,
+                      left_leg=-1.4*sway, right_leg=1.7*sway)
+        return angles, 0.
     if mood in ('heart','happy'):
         swing=math.sin(t*math.pi*2)
         # One soft inward curl, held briefly, then released. Legs trail lift.

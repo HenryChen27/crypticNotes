@@ -7,6 +7,36 @@ from mapmatching.appearance.skins.doll.animation import pose
 
 
 class PetTests(unittest.TestCase):
+    def test_greeting_selects_hand_and_returns_to_idle(self):
+        from unittest.mock import patch
+        button = DraggableGear(W.QWidget())
+        button.pet.enable(True)
+        self.assertEqual(button.pet.mood, 'idle')
+        for right in (True, False):
+            with patch('mapmatching.appearance.player.random.choice', return_value=right):
+                button.pet.mood = 'idle'
+                button.pet.play('curious')
+                self.assertEqual(button.pet.wave_right, right)
+            with patch.object(button.pet, 'clock') as clock:
+                clock.elapsed.return_value = 3000
+                button.pet.advance()
+                self.assertEqual(button.pet.mood, 'idle')
+                self.assertTrue(button.pet.timer.isActive())
+        button.pet.enable(False)
+
+    def test_idle_breath_is_small_and_loops_at_rest(self):
+        from mapmatching.appearance.skins.doll.animation import body_motion
+        self.assertEqual(body_motion('idle', 0), body_motion('idle', 1))
+        self.assertLessEqual(abs(body_motion('idle', .5)['y']), 6)
+        for t in (0, .5, 1):
+            self.assertTrue(all(abs(v) < 1e-10 for v in pose('idle', t)[0].values()))
+        forward, _ = pose('idle', .25)
+        backward, _ = pose('idle', .75)
+        for limb in ('left_upper', 'right_upper', 'left_leg', 'right_leg'):
+            self.assertGreater(abs(forward[limb]), 0)
+            self.assertLess(abs(forward[limb]), 3)
+            self.assertAlmostEqual(forward[limb], -backward[limb])
+
     @classmethod
     def setUpClass(cls):
         cls.app = W.QApplication.instance() or W.QApplication([])

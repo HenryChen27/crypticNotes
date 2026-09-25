@@ -48,7 +48,7 @@ def symbol(kind):
 
 
 def paint_effects(p,mood,t,duration):
-    if mood == 'curious' or not 0<t<1:
+    if mood in ('curious', 'idle') or not 0<t<1:
         return
     p.save();p.resetTransform()
     heart=mood in ('heart','happy')

@@ -227,8 +227,9 @@ def worker(connection, root, difficulty, mode):
             if options.get('record_failures'):
                 from .failure_records import FailureRecorder
                 from ..paths import DATA_ROOT
-                if recorder is None:
-                    recorder = FailureRecorder(DATA_ROOT/'failure-records', root)
+                directory = Path(options.get('records_directory') or DATA_ROOT/'failure-records')
+                if recorder is None or recorder.directory != directory:
+                    recorder = FailureRecorder(directory, root)
                 result.diagnostics['failure_record'] = recorder.save(
                     pixels, result.to_dict(), dict(difficulty=difficulty, mode=mode,
                     cached_map_id=cached.map_id if cached else None,
@@ -245,8 +246,9 @@ def worker(connection, root, difficulty, mode):
             try:
                 from .failure_records import FailureRecorder
                 from ..paths import DATA_ROOT
-                if recorder is None:
-                    recorder = FailureRecorder(DATA_ROOT/'failure-records', root)
+                directory = Path(options.get('records_directory') or DATA_ROOT/'failure-records')
+                if recorder is None or recorder.directory != directory:
+                    recorder = FailureRecorder(directory, root)
                 recorder.save(pixels, {}, dict(difficulty=difficulty, mode=mode),
                               '匹配程序异常', error=str(error))
             except Exception:
