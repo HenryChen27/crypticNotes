@@ -1,0 +1,3 @@
+<resources>
+    <string name="tap_relay_description">仅在你开启点击区域触发后，将你在校准范围内的触摸转交给游戏。不会读取窗口内容、聊天或密码。可随时关闭，关闭后仍可使用画面自动检测。</string>
+</resources>
