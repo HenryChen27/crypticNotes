@@ -30,6 +30,21 @@ def initialize(root, difficulty, mode):
 def _label(map_id):
     return _names.get(map_id) or map_id.rsplit('/',1)[-1]
 
+# The core writes for a desktop window and a log; the phone has one narrow strip
+# that has to be read at a glance mid-match. Same meaning, fewer characters --
+# the verdicts themselves are untouched, only their wording on this device.
+PHONE_TEXT = {
+    '没有识别到地图结构，请打开游戏地图后重试': '没看到地图，请打开地图',
+    '没有找到可靠匹配，请增加探索范围后重试': '没匹配上，多走几步再试',
+    '两张地图过于相似，暂不叠图，请增加探索范围': '两张图太像，多走几步再试',
+    '已找到候选地图，但楼层尚未确认，暂不叠图': '楼层未确认，暂不叠图',
+    '试用叠图 · 请核对路口': '请核对路口',
+    '多人暂无专用路线': '多人暂无路线',
+}
+
+def _phone(message):
+    return PHONE_TEXT.get(message, message)
+
 def decode(data):
     return cv2.imdecode(np.frombuffer(bytes(data),np.uint8),cv2.IMREAD_COLOR)
 
@@ -56,7 +71,7 @@ def match(data, output, gated=False):
     map_pixels[y:Y,x:X]=pixels[y:Y,x:X]
     result,candidate,message=match_with_cache(_matcher,map_pixels,_cached,require_map_ui=False)
     if candidate is None:
-        return json.dumps(dict(ok=False,message=message,details=result.to_dict()),default=str)
+        return json.dumps(dict(ok=False,message=_phone(message),details=result.to_dict()),default=str)
     reference=next(r for r in _matcher.references if r.map_id==candidate.map_id)
     layer=raw_layer(pixels.shape,read_image(_root/reference.source),reference,candidate,full_view=True)
     clip=np.zeros((h,w),bool);clip[y:Y,x:X]=True
@@ -67,5 +82,5 @@ def match(data, output, gated=False):
     _cached=candidate
     if candidate.mode=='solo' and _matcher.__class__ is MultiplayerFallback:
         message='多人暂无专用路线'
-    return json.dumps(dict(ok=True,message=message,map_id=candidate.map_id,
+    return json.dumps(dict(ok=True,message=_phone(message),map_id=candidate.map_id,
                            name=_label(candidate.map_id),floor=candidate.floor))

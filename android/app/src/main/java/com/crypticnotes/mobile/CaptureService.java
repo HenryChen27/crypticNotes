@@ -66,7 +66,14 @@ public class CaptureService extends Service {
     private boolean gateOnly = false;
     private View quickSettings;
     private boolean badgeMessage = false;
-    private final Runnable hideBadgeMessage = () -> { badgeMessage = false; layoutBadge(); };
+    /** Declared here, not with its neighbours, because the runnable below reads it. */
+    private int state = S_IDLE;
+    private final Runnable hideBadgeMessage = () -> {
+        collapseBadge();
+        // The emblem is alone again; if a match is still running it has to keep
+        // turning, otherwise the bubble folding up looks like a stall.
+        setSpinning(state == S_MATCHING);
+    };
     /** A hung match must not wedge the loop with `busy` stuck true. */
     private static final long BUSY_TIMEOUT_MS = 5000;
     /** Consecutive negative gate verdicts before the fit is discarded outright. */
@@ -76,24 +83,16 @@ public class CaptureService extends Service {
      * Same rectangle the geometric evidence mask and the stability check use.
      */
     private static final int SAMPLE_X0 = 66, SAMPLE_X1 = 138, SAMPLE_Y0 = 11, SAMPLE_Y1 = 78;
-    /** Status strip geometry, as fractions of the screen. */
-    private static final float BADGE_X = .195f, BADGE_Y = .01f, BADGE_W = .20f, BADGE_NARROW_W = .09f;
-    /**
-     * Nothing of ours may sit right of this.
-     *
-     * The gate needs all three control templates — x .70-1.0, .78-1.0 and
-     * .65-1.0 — to match at .78 or better, and the geometric-evidence viewport
-     * starts at x .41. A status strip dragged into either region feeds its own
-     * text into the gate, so recognition fails outright and never recovers.
-     * Anything left of .41 is safe at any height, which is ample room.
-     */
-    private static final float BADGE_MAX_X = .41f;
+    /** Default resting place of the floating button, as fractions of the screen. */
+    private static final float BADGE_X = .195f, BADGE_Y = .01f;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService compute = Executors.newSingleThreadExecutor();
     private final ExecutorService inspect = Executors.newSingleThreadExecutor();
     private MediaProjection projection; private VirtualDisplay display; private ImageReader reader;
     private WindowManager windows; private ImageView overlay; private LinearLayout badge;
+    /** Kept so the in-game opacity control can retune the live layer. */
+    private WindowManager.LayoutParams overlayParams;
     // `bridge` and `ready` are written on the compute thread and read on the
     // main thread. Volatile keeps that handoff explicit rather than relying on
     // the Handler hop that happens to publish it today.
@@ -132,26 +131,67 @@ public class CaptureService extends Service {
     private int missStreak = 0;
     private long lastMatch = 0;
     private String badgeText = "";
-    private int state = S_IDLE;
+    /** Spins the emblem while a match runs. Built on first use, then reused. */
+    private android.animation.ObjectAnimator spin;
+    /** True while a difficulty change is rebuilding the matcher. */
+    private boolean applying = false;
+    /** Latest rebuild request; earlier ones report nothing and re-arm nothing. */
+    private int applyToken = 0;
     private View tapRegion; private RegionCalibrationView calibration;
     private RectF tapBounds;
     private Path touchPath; private long touchStart;
     private WindowManager.LayoutParams badgeParams;
-    private TextView badgeLabel; private Theme.Chevron badgeHandle;
-    private boolean badgeCollapsed = false;
+    private TextView badgeLabel; private ImageView badgeEmblem;
+    /** Collapsed width, expanded width and height of the button, in pixels. */
+    private int ballWidth, stripWidth, badgeHeight;
+    /** True when the bubble unfolds to the left, because the right has no room. */
+    private boolean bubbleLeft;
+    private android.animation.ValueAnimator bubbleAnim;
     private Runnable badgeLongPress; private boolean badgeLongPressed = false;
+    private long badgeTapAt;
+    private float badgeTapX, badgeTapY;
+    private boolean badgeSecondTap;
+    private final Runnable badgeSingleTap = () -> { badgeTapAt = 0; if (!destroyed) toggleQuickSettings(); };
+
+    private void retryFromBadge() {
+        if (!ready && !applying) { setStatus(S_IDLE, "正在准备，请稍候"); return; }
+        if (quickSettings != null) closeQuickSettings();
+        overlayHidden = false;
+        clearOverlay(); lastMatch = 0; lastGateAt = 0;
+        setStatus(S_IDLE, "重新识别");
+        if (!applying) { ready = true; repoll(0); }
+    }
     private float badgeDownX, badgeDownY; private int badgeStartX, badgeStartY;
     private boolean badgeDragged = false;
     private boolean refreshBundledMaps = false;
+    /** True while the player has asked for the overlay to stay off. */
+    private boolean overlayHidden = false;
 
     private static final int S_IDLE = 0, S_MATCHING = 1, S_MATCHED = 2, S_FAILED = 3;
+
+    /** Button geometry at scale 1; the player scales the first two via settings. */
+    private static final int BADGE_BALL_DP = 44, BADGE_EMBLEM_DP = 26, BADGE_MESSAGE_DP = 220;
+    private static final float BADGE_SCALE_MIN = .7f, BADGE_SCALE_MAX = 1.6f, BADGE_SCALE_DEFAULT = 1f;
+    /** How long the bubble takes to grow out of the ball, and to fold back. */
+    private static final long BUBBLE_MS = 200;
 
     private final Runnable poll = new Runnable() { public void run() { sample(); } };
 
     @Override public IBinder onBind(Intent i) { return null; }
 
+    /**
+     * The running instance, so the home screen can hand it display-only changes.
+     *
+     * Capture lives in this process, so the activity can reach it directly
+     * instead of going through an Intent; both sides already do all their work
+     * on the main thread, which is what makes that safe.
+     */
+    @android.annotation.SuppressLint("StaticFieldLeak")   // a Service, not a context to leak
+    static CaptureService current;
+
     @Override public void onCreate() {
         super.onCreate();
+        current = this;
         windows = (WindowManager) getSystemService(WINDOW_SERVICE);
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         nm.createNotificationChannel(new NotificationChannel("capture", "地图识别", NotificationManager.IMPORTANCE_LOW));
@@ -171,7 +211,10 @@ public class CaptureService extends Service {
             projection = ((MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE))
                     .getMediaProjection(intent.getIntExtra("result", -1), permission);
             projection.registerCallback(new MediaProjection.Callback() { @Override public void onStop() { stopSelf(); } }, main);
-            opacity = intent.getIntExtra("opacity", 30) / 100f;
+            // The home screen sends its slider position; with no extra (service
+            // restarted by the system) fall back to what was last chosen.
+            applyOpacity(intent.getIntExtra("opacity",
+                    getSharedPreferences("mobile", 0).getInt("opacity", 30)));
             setupOverlay(); resizeCapture();
             String difficulty = intent.getStringExtra("difficulty"), mode = intent.getStringExtra("mode");
             getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
@@ -217,32 +260,32 @@ public class CaptureService extends Service {
         overlay = new ImageView(this);
         overlay.setScaleType(ImageView.ScaleType.FIT_XY);
         overlay.setVisibility(View.INVISIBLE);
-        WindowManager.LayoutParams layer = params(-1, -1, false);
-        layer.alpha = opacity;
-        windows.addView(overlay, layer);
+        overlayParams = params(-1, -1, false);
+        overlayParams.alpha = opacity;
+        windows.addView(overlay, overlayParams);
 
         badge = new LinearLayout(this);
         badge.setOrientation(LinearLayout.HORIZONTAL);
-        Theme.ChalkDrawable background = new Theme.ChalkDrawable(this, Theme.Chalk.DEEP, .7f, "rounded", true, true);
-        background.setOpacity(.9f);
-        badge.setBackground(background);
-        int pad = Theme.px(this, 8);
-        badge.setPadding(pad, pad, pad, pad);
+        badge.setBackground(new Theme.ChalkDrawable(this, Theme.Chalk.DEEP, .7f, "rounded", true, true));
+        badge.setGravity(Gravity.CENTER);
 
         badgeLabel = new TextView(this);
         badgeLabel.setTextColor(Theme.TEXT);
-        badgeLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12);
         badgeLabel.setTypeface(Theme.typeface(this));
-        badgeLabel.setMaxLines(3);
+        badgeLabel.setMaxLines(1);
         badgeLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        badgeLabel.setGravity(Gravity.CENTER);
+
+        // The emblem is on screen in every state, so the button is one object
+        // that speaks rather than a circle that turns into a strip and back.
+        badgeEmblem = new ImageView(this);
+        badgeEmblem.setImageResource(R.drawable.floating_emblem);
+        badgeEmblem.setScaleType(ImageView.ScaleType.FIT_CENTER);
+        badgeEmblem.setContentDescription("地图助手");
+        badge.addView(badgeEmblem, new LinearLayout.LayoutParams(
+                Theme.px(this, BADGE_EMBLEM_DP), Theme.px(this, BADGE_EMBLEM_DP)));
         badge.addView(badgeLabel, new LinearLayout.LayoutParams(0,
                 LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-        badgeHandle = new Theme.Chevron(this);
-        badgeHandle.setContentDescription("折叠或展开状态条");
-        badgeHandle.setOnClickListener(v -> setBadgeCollapsed(!badgeCollapsed));
-        badge.addView(badgeHandle, new LinearLayout.LayoutParams(Theme.px(this, 20),
-                LinearLayout.LayoutParams.MATCH_PARENT));
 
         badgeParams = params(-2, -2, true);
         windows.addView(badge, badgeParams);
@@ -250,8 +293,26 @@ public class CaptureService extends Service {
         layoutBadge();
     }
 
+    /** Tap the ball to open the panel, tap it again to close. */
+    private void toggleQuickSettings() {
+        if (quickSettings != null) closeQuickSettings(); else showQuickSettings();
+    }
+
     /**
-     * Drag the strip by its body, tap to re-identify, hold to recalibrate.
+     * Re-read the display preferences and apply them to the live windows.
+     *
+     * The home screen writes the same keys the in-game panel does, and the
+     * service may well be running behind it; without this the new opacity or
+     * button size only appeared after a restart.
+     */
+    void applyDisplayPreferences() {
+        if (destroyed) return;
+        applyOpacity(getSharedPreferences("mobile", 0).getInt("opacity", Math.round(opacity * 100)));
+        layoutBadge();
+    }
+
+    /**
+     * Drag the button by its body, tap for the settings panel, hold to stop.
      *
      * A touch listener swallows the click listeners, so the tap and the hold
      * are both resolved here rather than via setOnClickListener.
@@ -260,13 +321,24 @@ public class CaptureService extends Service {
         float dx = event.getRawX() - badgeDownX, dy = event.getRawY() - badgeDownY;
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                badgeSecondTap = badgeTapAt != 0
+                        && event.getEventTime() - badgeTapAt <= ViewConfiguration.getDoubleTapTimeout()
+                        && Math.hypot(event.getRawX()-badgeTapX, event.getRawY()-badgeTapY)
+                            <= ViewConfiguration.get(this).getScaledDoubleTapSlop();
+                main.removeCallbacks(badgeSingleTap);
+                badgeTapAt = 0;
                 badgeDownX = event.getRawX();
                 badgeDownY = event.getRawY();
-                badgeStartX = badgeParams.x;
-                badgeStartY = badgeParams.y;
+                // Anchor on the ball, not on the window: with a bubble up the
+                // window starts at the far end of the strip, and dragging from
+                // there would drop the button a strip's width away from the
+                // finger the moment the bubble folds.
+                SharedPreferences dragPrefs = getSharedPreferences("mobile", 0);
+                badgeStartX = ballX(dragPrefs);
+                badgeStartY = badgeY(dragPrefs);
                 badgeDragged = false;
                 badgeLongPressed = false;
-                badgeLongPress = () -> { badgeLongPressed = true; showQuickSettings(); };
+                badgeLongPress = () -> { badgeLongPressed = true; stopRecognition(); };
                 main.postDelayed(badgeLongPress, ViewConfiguration.getLongPressTimeout());
                 return true;
             case MotionEvent.ACTION_MOVE:
@@ -276,16 +348,26 @@ public class CaptureService extends Service {
                 }
                 badgeDragged = true;
                 main.removeCallbacks(badgeLongPress);
+                // Collapse first: the stored position is the ball's, and a
+                // bubble hanging off it would be dragged by its far end. It has
+                // to be the instant fold -- an animated one re-anchors the
+                // window on every frame and would fight the finger.
+                main.removeCallbacks(hideBadgeMessage);
+                collapseBadgeNow();
                 moveBadge(badgeStartX + Math.round(dx), badgeStartY + Math.round(dy));
                 return true;
             case MotionEvent.ACTION_UP:
                 main.removeCallbacks(badgeLongPress);
                 if (badgeDragged) {
                     saveBadgePosition();
-                    if (badgeCollapsed) setBadgeCollapsed(true);
                 }
                 else if (!badgeLongPressed) {
-                    showQuickSettings();
+                    if (badgeSecondTap) retryFromBadge();
+                    else {
+                        badgeTapAt = event.getEventTime();
+                        badgeTapX = event.getRawX(); badgeTapY = event.getRawY();
+                        main.postDelayed(badgeSingleTap, ViewConfiguration.getDoubleTapTimeout());
+                    }
                 }
                 badgeDragged = false;
                 badgeLongPressed = false;
@@ -301,12 +383,12 @@ public class CaptureService extends Service {
         }
     }
 
-    /** Move the strip, honouring {@link #BADGE_MAX_X}; does not persist. */
+    /** Move the button anywhere on screen; does not persist. */
     private void moveBadge(int x, int y) {
         if (badge == null || width <= 0) return;
         int limit = width - badgeParams.width;
         badgeParams.x = Math.max(0, Math.min(x, Math.max(0, limit)));
-        // Measure the strip itself: the window is WRAP_CONTENT high, so
+        // Measure the button itself: the window is WRAP_CONTENT high, so
         // badgeParams.height is -2 and would leave y effectively unclamped.
         badgeParams.y = Math.max(0, Math.min(y, Math.max(0, height - badge.getHeight())));
         try { windows.updateViewLayout(badge, badgeParams); } catch (Exception ignored) {}
@@ -319,48 +401,162 @@ public class CaptureService extends Service {
                 .putFloat("badge_y", badgeParams.y / (float) height).apply();
     }
 
-    private void setBadgeCollapsed(boolean value) {
-        main.removeCallbacks(hideBadgeMessage);
-        badgeMessage = false;
-        boolean right = badgeParams.x + badgeParams.width / 2 > width / 2;
-        saveBadgePosition();
-        getSharedPreferences("mobile", 0).edit().putBoolean("badge_right", right).apply();
-        badgeCollapsed = value;
-        badgeLabel.setMaxLines(value ? 1 : 3);
-        badgeHandle.setPointingLeft(!value);
-        getSharedPreferences("mobile", 0).edit().putBoolean("badge_collapsed", value).apply();
-        layoutBadge();
+    /** Keep the overlay off until the player asks for it back. */
+    private void setOverlayHidden(boolean hidden) {
+        overlayHidden = hidden;
+        if (hidden) clearOverlay();
+        else { lastMatch = 0; invalidateSamples(); }
+        setStatus(S_IDLE, hidden ? "叠图已隐藏" : "叠图已恢复");
+        repoll(100);
     }
 
     /**
-     * Put the strip back where the player left it.
+     * Put the button back where the player left it.
      *
-     * Every region the app inspects sits on the right (the gate's three
-     * controls) or in the middle (the 0.41-0.86 x 0.12-0.87 viewport used for
-     * stability and for geometric evidence), so the strip is confined to the
-     * left of {@link #BADGE_MAX_X}. Hiding it on every frame was what made it
-     * strobe; keeping it out of those regions means it never has to move.
+     * It is no longer confined to the left: it stays visible while capturing
+     * and is painted out of the captured copy instead, with the covered
+     * rectangle handed to the gate so an obscured control is not scored. That
+     * is what replaced hiding it on every frame, which is what used to strobe.
      */
     private void layoutBadge() {
         if (badge == null || width <= 0) return;
+        measureBadge();
+        if (bubbleAnim != null) { bubbleAnim.cancel(); bubbleAnim = null; }
         SharedPreferences prefs = getSharedPreferences("mobile", 0);
-        badgeCollapsed = true;
-        badgeLabel.setMaxLines(badgeCollapsed ? 1 : 3);
-        badgeHandle.setPointingLeft(!badgeCollapsed);
-        badgeHandle.setVisibility(View.GONE);
-        badgeLabel.setVisibility(View.VISIBLE);
-        badgeLabel.setGravity(Gravity.CENTER);
-        badgeLabel.setText(badgeMessage ? badgeText : "图");
-        badge.setBackground(new Theme.ChalkDrawable(this, Theme.Chalk.DEEP, .7f,
-                badgeMessage ? "rounded" : "circle", true, true));
-        badge.setContentDescription("地图助手：点击设置，拖动移动");
-        badgeParams.width = Theme.px(this, badgeMessage ? 200 : 44);
-        badgeParams.height = badgeMessage ? -2 : Theme.px(this, 44);
-        int limit = width - badgeParams.width;
-        badgeParams.x = Math.max(0, Math.min(Math.round(prefs.getFloat("badge_x", BADGE_X) * width),
-                Math.max(0, limit)));
-        badgeParams.y = Math.max(0, Math.min(height - Theme.px(this, 60), Math.round(prefs.getFloat("badge_y", BADGE_Y) * height)));
+        int ballX = ballX(prefs);
+        bubbleLeft = ballX + stripWidth > width;
+        rebuildBadgeRow();
+        badgeLabel.setText(badgeText);
+        badgeLabel.setVisibility(badgeMessage ? View.VISIBLE : View.GONE);
+        badgeLabel.setAlpha(1f);
+        badge.setBackground(badgeSurface(badgeMessage));
+        badge.setContentDescription("地图助手：单击设置，双击重新识别，拖动移动，长按关闭");
+        badgeParams.height = badgeHeight;
+        badgeParams.width = badgeMessage ? stripWidth : ballWidth;
+        badgeParams.x = clampX(ballX, badgeParams.width);
+        badgeParams.y = badgeY(prefs);
         try { windows.updateViewLayout(badge, badgeParams); } catch (Exception ignored) {}
+    }
+
+    /** Sizes for the current scale and screen; no window is touched here. */
+    private void measureBadge() {
+        SharedPreferences prefs = getSharedPreferences("mobile", 0);
+        // Size is the player's call: the button sits over the map they are
+        // reading, and how much of it they can spare is a matter of device and
+        // eyesight, not of anything the app can measure.
+        float scale = Math.max(BADGE_SCALE_MIN,
+                Math.min(BADGE_SCALE_MAX, prefs.getFloat("badge_scale", BADGE_SCALE_DEFAULT)));
+        int emblem = Theme.px(this, Math.round(BADGE_EMBLEM_DP * scale));
+        badgeEmblem.setLayoutParams(new LinearLayout.LayoutParams(emblem, emblem));
+        int pad = Theme.px(this, Math.max(8, Math.round(8 * scale)));
+        badge.setPadding(pad, pad, pad, pad);
+        badgeLabel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, Math.max(12f, 12f * scale));
+        badgeHeight = Theme.px(this, Math.round(BADGE_BALL_DP * scale));
+        ballWidth = badgeHeight;
+        // The bubble grows with the type and stops at the screen edge, so a
+        // message stays whole at the larger sizes instead of being cut off.
+        stripWidth = Math.min(width - Theme.px(this, 24),
+                Math.round(Theme.px(this, BADGE_MESSAGE_DP) * scale));
+    }
+
+    private int ballX(SharedPreferences prefs) {
+        return Math.max(0, Math.min(Math.round(prefs.getFloat("badge_x", BADGE_X) * width),
+                Math.max(0, width - ballWidth)));
+    }
+
+    private int badgeY(SharedPreferences prefs) {
+        return Math.max(0, Math.min(height - Theme.px(this, 60),
+                Math.round(prefs.getFloat("badge_y", BADGE_Y) * height)));
+    }
+
+    private Theme.ChalkDrawable badgeSurface(boolean message) {
+        // A message is a flat strip faded at both ends; the resting button is
+        // the emblem in a circle.
+        return new Theme.ChalkDrawable(this, Theme.Chalk.DEEP, .7f,
+                message ? "band" : "circle", true, true);
+    }
+
+    /**
+     * Order the two children so the emblem stays on the ball's outer edge.
+     *
+     * Growing right the emblem leads; growing left it trails, which leaves it
+     * exactly where the collapsed button was and lets the bubble unfold away
+     * from it instead of appearing on top of it.
+     */
+    private void rebuildBadgeRow() {
+        ViewGroup.LayoutParams emblemParams = badgeEmblem.getLayoutParams();
+        LinearLayout.LayoutParams labelParams = new LinearLayout.LayoutParams(0,
+                LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        badge.removeAllViews();
+        if (bubbleLeft) {
+            badge.addView(badgeLabel, labelParams);
+            badge.addView(badgeEmblem, emblemParams);
+        } else {
+            badge.addView(badgeEmblem, emblemParams);
+            badge.addView(badgeLabel, labelParams);
+        }
+    }
+
+    private int clampX(int ballX, int windowWidth) {
+        return Math.max(0, Math.min(bubbleLeft ? ballX + ballWidth - windowWidth : ballX,
+                Math.max(0, width - windowWidth)));
+    }
+
+    /**
+     * Unfold the message bubble out of the ball, or fold it back.
+     *
+     * The window itself is what grows, so the strip looks like it is being
+     * pulled out of the button rather than switched on beside it; the label
+     * fades in over the same 200ms.
+     */
+    private void bubble(boolean expand) {
+        if (badge == null || width <= 0) return;
+        measureBadge();
+        if (bubbleAnim != null) { bubbleAnim.cancel(); bubbleAnim = null; }
+        SharedPreferences prefs = getSharedPreferences("mobile", 0);
+        final int anchor = ballX(prefs);
+        bubbleLeft = anchor + stripWidth > width;
+        rebuildBadgeRow();
+        badgeLabel.setText(badgeText);
+        badgeParams.height = badgeHeight;
+        badgeParams.y = badgeY(prefs);
+        final int from = badgeParams.width > 0 ? badgeParams.width : ballWidth;
+        final int to = expand ? stripWidth : ballWidth;
+        if (expand) {
+            badgeLabel.setVisibility(View.VISIBLE);
+            badgeLabel.setAlpha(0f);
+            badge.setBackground(badgeSurface(true));
+        } else {
+            badgeLabel.setAlpha(1f);
+        }
+        if (from == to) {
+            badgeParams.width = to;
+            badgeParams.x = clampX(anchor, to);
+            if (!expand) { badgeLabel.setVisibility(View.GONE); badge.setBackground(badgeSurface(false)); }
+            try { windows.updateViewLayout(badge, badgeParams); } catch (Exception ignored) {}
+            return;
+        }
+        final float alpha0 = badgeLabel.getAlpha(), alpha1 = expand ? 1f : 0f;
+        bubbleAnim = android.animation.ValueAnimator.ofFloat(0f, 1f);
+        bubbleAnim.setDuration(BUBBLE_MS);
+        bubbleAnim.setInterpolator(new android.view.animation.DecelerateInterpolator());
+        bubbleAnim.addUpdateListener(animation -> {
+            float t = (float) animation.getAnimatedValue();
+            badgeParams.width = Math.round(from + (to - from) * t);
+            badgeParams.x = clampX(anchor, badgeParams.width);
+            badgeLabel.setAlpha(alpha0 + (alpha1 - alpha0) * t);
+            try { windows.updateViewLayout(badge, badgeParams); } catch (Exception ignored) {}
+        });
+        bubbleAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+            @Override public void onAnimationEnd(android.animation.Animator animation) {
+                // Swapped at the ends, not at the start: the surface must keep
+                // the shape the window currently has.
+                if (expand) { badgeLabel.setAlpha(1f); }
+                else { badgeLabel.setAlpha(1f); badgeLabel.setVisibility(View.GONE);
+                       badge.setBackground(badgeSurface(false)); }
+            }
+        });
+        bubbleAnim.start();
     }
 
     private void resizeCapture() {
@@ -383,6 +579,7 @@ public class CaptureService extends Service {
 
     private void showOverlay(boolean visible) {
         if (overlay == null) return;
+        if (visible && overlayHidden) return;
         if (visible && overlayLayer != null) {
             if (!overlayAttached) { overlay.setImageBitmap(overlayLayer); overlayAttached = true; }
             if (overlay.getVisibility() != View.VISIBLE) {
@@ -503,14 +700,74 @@ public class CaptureService extends Service {
 
     private void setStatus(int newState, String text) {
         state = newState;
+        setSpinning(newState == S_MATCHING);
+        // Work in progress is shown by the turning emblem, not by words: the
+        // bubble is kept for outcomes the player has to read. Fold any bubble
+        // still up from the previous state so the emblem is what is visible.
+        if (newState == S_MATCHING) {
+            main.removeCallbacks(hideBadgeMessage);
+            collapseBadge();
+            return;
+        }
         if (text == null || text.equals(badgeText)) return;
         badgeText = text;
-        badgeLabel.setText(text);
-        if (badgeCollapsed) {
-            badgeMessage = true; layoutBadge();
-            main.removeCallbacks(hideBadgeMessage);
-            main.postDelayed(hideBadgeMessage, 1800);
+        if (badgeMessage) badgeLabel.setText(text);
+        else { badgeMessage = true; bubble(true); }
+        main.removeCallbacks(hideBadgeMessage);
+        main.postDelayed(hideBadgeMessage, 1800);
+    }
+
+    /** Fold the bubble away, if one is up. */
+    private void collapseBadge() {
+        if (!badgeMessage) return;
+        badgeMessage = false;
+        bubble(false);
+    }
+
+    /** Fold it away in this frame, for callers that are about to move the ball. */
+    private void collapseBadgeNow() {
+        if (!badgeMessage) return;
+        badgeMessage = false;
+        if (bubbleAnim != null) { bubbleAnim.cancel(); bubbleAnim = null; }
+        layoutBadge();
+    }
+
+    /**
+     * Turn the emblem while recognition is running.
+     *
+     * Motion carries the "busy" signal without a word to translate or a strip
+     * covering the map, and it stops the moment there is a result to read.
+     */
+    private void setSpinning(boolean on) {
+        if (badgeEmblem == null) return;
+        if (!on) {
+            if (spin != null) spin.cancel();
+            badgeEmblem.setRotation(0f);
+            return;
         }
+        if (spin == null) {
+            spin = android.animation.ObjectAnimator.ofFloat(badgeEmblem, "rotation", 0f, 360f);
+            spin.setDuration(1100);
+            spin.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+            spin.setInterpolator(new android.view.animation.LinearInterpolator());
+        }
+        if (!spin.isStarted()) spin.start();
+    }
+
+    /**
+     * Long press: end the session, button included.
+     *
+     * This stops the service rather than only hiding the view. A hidden button
+     * over a service that still captures the screen would be the worst of both
+     * -- no way to see it, no way to stop it.
+     */
+    private void stopRecognition() {
+        if (quickSettings != null) { windows.removeView(quickSettings); quickSettings = null; }
+        clearOverlay();
+        setSpinning(false);
+        if (badge != null) badge.setVisibility(View.GONE);
+        Toast.makeText(this, "已关闭识别", Toast.LENGTH_SHORT).show();
+        stopSelf();
     }
 
     // ---- capture loop ------------------------------------------------------
@@ -526,6 +783,9 @@ public class CaptureService extends Service {
     private void sample() {
         if (destroyed || !ready) return;
         if (calibration != null || quickSettings != null) { repoll(500); return; }
+        // Nothing to keep in step while the player has the overlay switched off;
+        // matching would only burn a cycle per settle and be thrown away.
+        if (overlayHidden) { repoll(WATCH_MS); return; }
         if (checking) { repoll(100); return; }
         if (SystemClock.elapsedRealtime() - lastGateAt >= 800) {
             // Map controls lie outside the map layer: inspect them without
@@ -690,7 +950,8 @@ public class CaptureService extends Service {
                     }
                     if (overlayLayer != null) { clearOverlay(); lastMatch = 0; }
                     if (busy || throttled()) { repoll(WATCH_MS); return; }
-                    if (state != S_FAILED) setStatus(S_MATCHING, "正在识别…");
+                    // No wording for work in progress: the turning emblem says it.
+                    if (state != S_FAILED) setStatus(S_MATCHING, null);
                     runMatch(bytes, framePixels);
                     repoll(WATCH_MS);
                 });
@@ -791,22 +1052,23 @@ public class CaptureService extends Service {
         });
     }
 
-    /** "识别成功：南-三缺一门" over "1F · 试用叠图 · 请核对路口". */
+    /**
+     * "南-三缺一门 · 1F · 请核对路口" -- one short line.
+     *
+     * The strip is one line high, so a second line was never drawn; and the
+     * caveat that the fit is provisional is carried by the message itself, which
+     * the adapter keeps to a few characters.
+     */
     private static String describe(JSONObject result, String message) {
         String name = result.optString("name");
         if (name.isEmpty()) name = result.optString("map_id");
-        StringBuilder label = new StringBuilder("识别成功：").append(name);
-        StringBuilder detail = new StringBuilder();
+        StringBuilder label = new StringBuilder(name);
         if (result.has("floor") && !result.isNull("floor")) {
             int floor = result.optInt("floor");
-            detail.append(floor == 1 ? "1F" : floor == 2 ? "2F" : floor == -1 ? "地下室" : floor + "F");
+            label.append(" · ").append(floor == 1 ? "1F" : floor == 2 ? "2F"
+                    : floor == -1 ? "地下室" : floor + "F");
         }
-        // The matcher only ever offers a provisional fit; keep saying so.
-        if (!message.isEmpty()) {
-            if (detail.length() > 0) detail.append(" · ");
-            detail.append(message);
-        }
-        if (detail.length() > 0) label.append('\n').append(detail);
+        if (!message.isEmpty()) label.append(" · ").append(message);
         return label.toString();
     }
 
@@ -889,55 +1151,128 @@ public class CaptureService extends Service {
         windows.addView(tapRegion, p);
     }
 
+    /**
+     * The in-game panel. Everything a match needs, on one screen.
+     *
+     * Deliberately compact: a phone held sideways has no height to spare, so
+     * the panel is sized to fit without scrolling and the three actions share a
+     * single row. The dismiss control is a cross in the corner rather than a
+     * button at the bottom, which is what freed the height for that.
+     */
     private void showQuickSettings() {
         if (quickSettings != null || calibration != null || !ready) return;
         clearOverlay();
-        badge.setVisibility(View.INVISIBLE);
+        // The button stays on screen: tapping it again is the other way out.
         if (tapRegion != null) { windows.removeView(tapRegion); tapRegion = null; }
         SharedPreferences prefs = getSharedPreferences("mobile", 0);
-        Theme.MistPanel panel = new Theme.MistPanel(this);
-        int pad = Theme.px(this, 16); panel.setPadding(pad, pad, pad, pad);
         Theme.MistPanel shell = new Theme.MistPanel(this);
+        int pad = Theme.px(this, 14);
+        shell.setPadding(0, Theme.px(this, 12), 0, 0);
         LinearLayout header = new LinearLayout(this);
-        TextView title = Theme.muted(this, "游戏设置 · 拖动这里移动");
-        header.addView(title, new LinearLayout.LayoutParams(0, Theme.px(this, 44), 1));
-        Theme.ChalkButton dismiss = new Theme.ChalkButton(this, "关闭");
-        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 72), Theme.px(this, 44)));
-        dismiss.setOnClickListener(v -> closeQuickSettings());
-        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(pad, 0, pad, 0);
+        TextView title = label("游戏设置", 17, Theme.TITLE, 0);
+        header.addView(title, new LinearLayout.LayoutParams(0, Theme.px(this, 38), 1));
+        Theme.CloseButton dismiss = new Theme.CloseButton(this);
+        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 38)));
+
+        Theme.MistPanel panel = new Theme.MistPanel(this);
+        panel.setPadding(pad, 0, pad, pad);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
         shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        dismiss.setOnClickListener(v -> closeQuickSettings());
+
+        String difficultyValue = prefs.getString("difficulty", "hard");
+        String modeValue = prefs.getString("mode", "solo");
+        panel.addView(label("游戏难度", 14, Theme.MUTED, 6));
         Theme.ChalkChoice difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
-        difficulty.setIndex(prefs.getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
+        difficulty.setIndex(difficultyValue.equals("nightmare") ? 1 : 0);
         panel.addView(difficulty, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
+        TextView routeLabel = label("参考路线", 14, Theme.MUTED, 6);
+        panel.addView(routeLabel);
         Theme.ChalkChoice party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
-        party.setIndex(prefs.getString("mode", "solo").equals("duo") ? 1 : 0);
+        party.setIndex(modeValue.equals("duo") ? 1 : 0);
         panel.addView(party, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
         party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
-        difficulty.setListener(i -> party.setVisibility(i == 1 ? View.VISIBLE : View.GONE));
-        Theme.ChalkButton save = new Theme.ChalkButton(this, "应用设置 / 重新识别", true);
-        panel.addView(save);
-        save.setOnClickListener(v -> {
-            String d = difficulty.getIndex() == 0 ? "hard" : "nightmare";
-            String m = party.getIndex() == 0 ? "solo" : "duo";
-            prefs.edit().putString("difficulty", d).putString("mode", m).apply();
-            closeQuickSettings(); clearOverlay(); ready = false;
-            compute.execute(() -> {
-                try {
-                    bridge.callAttr("initialize", getFilesDir().toString(), d, m);
-                    main.post(() -> { if (!destroyed) { ready = true; lastMatch = 0; setStatus(S_IDLE, "设置已应用"); repoll(100); } });
-                } catch (Exception e) { main.post(() -> { if (!destroyed) { setStatus(S_FAILED, "设置失败，请重新启动识图"); } }); }
-            });
+        routeLabel.setVisibility(party.getVisibility());
+
+        // The two choices above cost a matcher rebuild, so what is actually in
+        // force needs a line of its own -- without it, closing the panel looks
+        // like the change was dropped.
+        TextView applied = label("当前：" + difficultyLabel(difficultyValue, modeValue), 13, Theme.MUTED, 6);
+        panel.addView(applied);
+        Theme.ChalkChoice.Listener apply = i -> {
+            boolean nightmare = difficulty.getIndex() == 1;
+            party.setVisibility(nightmare ? View.VISIBLE : View.GONE);
+            routeLabel.setVisibility(party.getVisibility());
+            applyRecognition(nightmare ? "nightmare" : "hard",
+                    party.getIndex() == 0 ? "solo" : "duo", applied);
+        };
+        difficulty.setListener(apply);
+        party.setListener(apply);
+
+        // Overlay opacity. Live, because it is a display setting and the whole
+        // point is seeing the change; re-recognition is not needed for it.
+        final int startOpacity = Math.round(opacity * 100);
+        TextView opacityLabel = label("叠图不透明度 " + startOpacity + "%", 14, Theme.MUTED, 6);
+        panel.addView(opacityLabel);
+        Theme.ChalkSlider slider = new Theme.ChalkSlider(this, 65,
+                Math.max(0, Math.min(65, startOpacity - 5)));
+        panel.addView(slider, new LinearLayout.LayoutParams(-1, Theme.px(this, 40)));
+        slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+            public void onProgressChanged(android.widget.SeekBar bar, int value, boolean fromUser) {
+                int percent = value + 5;
+                opacityLabel.setText("叠图不透明度 " + percent + "%");
+                applyOpacity(percent);
+            }
+            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
+            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
         });
-        Theme.ChalkButton region = new Theme.ChalkButton(this, "校准地图入口"); panel.addView(region);
+
+        // Three actions, one row, outside the scroll area: stacked they are what
+        // pushed the panel past the bottom of a landscape phone, and pinned they
+        // cannot be scrolled away from either.
+        LinearLayout actions = new LinearLayout(this);
+        actions.setPadding(pad, 0, pad, pad);
+        LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
+        actionParams.topMargin = Theme.px(this, 10);
+        actionParams.rightMargin = Theme.px(this, 6);
+        Theme.ChalkButton retry = button("重新识别", true);
+        actions.addView(retry, actionParams);
+        retry.setOnClickListener(v -> {
+            closeQuickSettings(); clearOverlay(); lastMatch = 0;
+            // A rebuild still in flight will re-arm the loop itself; starting it
+            // here as well would race the two.
+            if (!applying) { ready = true; repoll(100); }
+        });
+        LinearLayout.LayoutParams middleParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
+        middleParams.topMargin = Theme.px(this, 10);
+        middleParams.rightMargin = Theme.px(this, 6);
+        Theme.ChalkButton hideLayer = button(overlayHidden ? "显示叠图" : "隐藏叠图", false);
+        actions.addView(hideLayer, middleParams);
+        hideLayer.setOnClickListener(v -> {
+            setOverlayHidden(!overlayHidden);
+            hideLayer.setText(overlayHidden ? "显示叠图" : "隐藏叠图");
+        });
+        LinearLayout.LayoutParams lastParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
+        lastParams.topMargin = Theme.px(this, 10);
+        Theme.ChalkButton region = button("小地图区域", false);
+        LinearLayout.LayoutParams regionParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 42));
+        regionParams.setMargins(pad, 0, pad, pad);
         region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
-        Theme.ChalkButton close = new Theme.ChalkButton(this, "返回游戏"); panel.addView(close);
-        close.setOnClickListener(v -> closeQuickSettings());
+        shell.addView(actions, new LinearLayout.LayoutParams(-1, -2));
+        shell.addView(region, regionParams);
+
         quickSettings = shell;
         WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 320)),
-                Math.min(height - pad * 2, Theme.px(this, 330)), true);
-        p.x = (width - p.width) / 2; p.y = Theme.px(this, 20);
+                Math.min(height - pad * 2, Theme.px(this, 320)), true);
+        p.x = (width - p.width) / 2;
+        // Park it on the side the button is not: the ball has to stay tappable
+        // to be a second way out of here.
+        boolean ballBelow = badgeParams.y + ballWidth / 2 > height / 2;
+        p.y = ballBelow ? Theme.px(this, 12) : Math.max(Theme.px(this, 12), height - p.height - Theme.px(this, 12));
         title.setOnTouchListener(new View.OnTouchListener() {
             float x,y; int startX,startY;
             public boolean onTouch(View v, MotionEvent e) {
@@ -953,9 +1288,85 @@ public class CaptureService extends Service {
         windows.addView(shell, p);
     }
 
+    /**
+     * Retune the live overlay. Shared with the home screen through the same
+     * preference key, so whichever control was touched last is the one that
+     * takes effect on the next start.
+     */
+    private void applyOpacity(int percent) {
+        opacity = Math.max(.05f, Math.min(.70f, percent / 100f));
+        if (overlayParams != null) {
+            overlayParams.alpha = opacity;
+            try { windows.updateViewLayout(overlay, overlayParams); } catch (Exception ignored) {}
+        }
+        getSharedPreferences("mobile", 0).edit().putInt("opacity", percent).apply();
+    }
+
+    /**
+     * Persist a difficulty or route change and rebuild the matcher.
+     *
+     * Rebuilding is what makes the change take effect and it costs about a
+     * second, so it runs on the worker while the panel stays open. Doing it only
+     * from the "重新识别" button -- as it was -- meant picking a difficulty and
+     * closing the panel changed nothing at all.
+     */
+    private void applyRecognition(String difficulty, String mode, TextView applied) {
+        getSharedPreferences("mobile", 0).edit()
+                .putString("difficulty", difficulty).putString("mode", mode).apply();
+        final int token = ++applyToken;
+        applying = true;
+        ready = false;
+        applied.setText("正在应用…");
+        compute.execute(() -> {
+            String error = null;
+            try {
+                bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode);
+            } catch (Exception e) {
+                error = e.getMessage();
+            }
+            final String failure = error;
+            main.post(() -> {
+                // A later change owns the panel now; it will report for itself.
+                if (destroyed || token != applyToken) return;
+                applying = false;
+                ready = true;
+                lastMatch = 0;
+                applied.setText(failure == null
+                        ? "已应用：" + difficultyLabel(difficulty, mode)
+                        : "设置失败，请重试");
+                repoll(100);
+            });
+        });
+    }
+
+    private static String difficultyLabel(String difficulty, String mode) {
+        return (difficulty.equals("nightmare") ? "噩梦" : "困难")
+                + " · " + (mode.equals("duo") ? "多人路线" : "单人路线");
+    }
+
+    /** Panel text, slightly larger than the home screen's but kept compact. */
+    private TextView label(String value, float sizeDp, int color, float topMarginDp) {
+        TextView view = Theme.muted(this, value);
+        view.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, sizeDp);
+        view.setTextColor(color);
+        if (topMarginDp > 0) {
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2);
+            params.topMargin = Theme.px(this, topMarginDp);
+            view.setLayoutParams(params);
+        }
+        return view;
+    }
+
+    private Theme.ChalkButton button(String text, boolean primary) {
+        Theme.ChalkButton view = new Theme.ChalkButton(this, text, primary);
+        view.setMinHeight(Theme.px(this, 42));
+        return view;
+    }
+
     private void closeQuickSettings() {
         if (quickSettings != null) { windows.removeView(quickSettings); quickSettings = null; }
-        badge.setVisibility(View.VISIBLE); refreshTapRegion(); repoll(200);
+        badge.setVisibility(View.VISIBLE); refreshTapRegion();
+        if (!applying) repoll(200);
     }
 
     private void showCalibration() {
@@ -1010,8 +1421,11 @@ public class CaptureService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        if (current == this) current = null;
         generation++;
         main.removeCallbacksAndMessages(null);
+        if (spin != null) spin.cancel();
+        if (bubbleAnim != null) bubbleAnim.cancel();
         if (display != null) display.release();
         if (reader != null) reader.close();
         if (projection != null) projection.stop();

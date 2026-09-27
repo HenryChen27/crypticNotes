@@ -99,12 +99,14 @@ public final class Theme {
         switch (mode) {
             case DEEP: palette = new int[]{16, 29, 40}; break;
             case DARK: palette = new int[]{35, 54, 70}; break;
-            case WHITE: palette = new int[]{242, 245, 247}; break;
+            case WHITE: palette = new int[]{210, 225, 232}; break;
             case BRIGHT: palette = new int[]{190, 209, 219}; break;
             default: palette = new int[]{158, 181, 197}; break;
         }
-        float grain = 6.5f * scale, featherUnit = 4.5f * scale, jitter = 2.5f * scale;
-        float radius = 4f * scale;
+        float grain = 10f, featherUnit = 6f * scale, jitter = 2.5f * scale;
+        // Softer than the desktop's 4dp: phone controls sit alone against a
+        // bright game, where the squarer corner read as a clipped rectangle.
+        float radius = 3f * scale;
         float alphaBase = bright ? 235f : 190f, alphaJitter = 4f * scale;
 
         int[] pixels = new int[w * h];
@@ -125,6 +127,14 @@ public final class Theme {
                 if ("circle".equals(shape)) {
                     edge = Math.min(w, h) / 2f - .5f
                             - (float) Math.hypot(x - (w - 1) / 2f, y - (h - 1) / 2f);
+                } else if ("band".equals(shape)) {
+                    // Feather the two ends only, leaving flat top and bottom
+                    // edges: a message that grows sideways out of the round
+                    // button reads as one strip instead of a floating blob.
+                    // Doubled so the fade is a soft ramp rather than a barely
+                    // visible bevel -- callers keep the label clear of it with
+                    // horizontal padding, so a wider feather costs no text.
+                    edge = Math.min(x, w - 1 - x) * 2f;
                 } else if ("rounded".equals(shape)) {
                     float dx = Math.max(leftEdge ? radius - x : 0,
                             rightEdge ? x - (w - 1 - radius) : 0);
@@ -179,7 +189,7 @@ public final class Theme {
         @Override protected void onBoundsChange(Rect bounds) {
             int w = Math.max(1, bounds.width());
             gradientPaint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
-                    new int[]{0xf7283d4f, 0xf71e3141, 0xfa0d1b27},
+                    new int[]{0xf03b5264, 0xf02c4355, 0xf31d3040},
                     new float[]{0f, .55f, 1f}, Shader.TileMode.CLAMP));
             glowPaint.setShader(new RadialGradient(bounds.left + w * .4f, bounds.top + 30 * scale,
                     Math.max(1f, w * .8f), 0x189cb7cc, 0x009cb7cc, Shader.TileMode.CLAMP));
@@ -290,29 +300,40 @@ public final class Theme {
             setText(label);
             setAllCaps(false);
             setGravity(Gravity.CENTER);
-            setMinHeight(px(context, 39));
+            setMinHeight(px(context, 46));
+            setMinimumHeight(px(context, 46));
+            setStateListAnimator(null);
             setPadding(px(context, 12), px(context, 8), px(context, 12), px(context, 8));
             text(this, 15, INK);
         }
 
         @Override protected void drawableStateChanged() {
             super.drawableStateChanged();
-            surface.setOpacity(isPressed() ? 1f : .92f);
+            if (surface != null) surface.setOpacity(!isEnabled() ? .38f : isPressed() ? .75f : .96f);
             invalidate();
         }
 
         @Override protected void onDraw(Canvas canvas) {
-            surface.setBounds(0, 0, getWidth(), getHeight());
+            int inset = px(getContext(), 4);
+            surface.setBounds(0, inset, getWidth(), getHeight() - inset);
             surface.draw(canvas);
             super.onDraw(canvas);
         }
     }
 
-    /** Dark frosted group with a chalk heading — the FoldSection heading, without the folding. */
+    /**
+     * Dark frosted group heading — the FoldSection heading. Once
+     * {@link #setExpanded} has been called it also draws the fold arrow, so the
+     * heading itself becomes the section's only control and no separate
+     * disclosure button is needed.
+     */
     public static class SectionHeading extends View {
         private final ChalkDrawable surface = new ChalkDrawable(getContext(), Chalk.DEEP, .7f, "rounded", true, true);
         private final String label;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path arrow = new Path();
+        private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private boolean foldable, expanded;
 
         public SectionHeading(Context context, String label) {
             super(context);
@@ -320,7 +341,18 @@ public final class Theme {
             paint.setTypeface(typeface(context));
             paint.setTextSize(px(context, 15));
             paint.setColor(HEADING);
+            arrowPaint.setColor(HEADING);
+            arrowPaint.setStyle(Paint.Style.FILL);
         }
+
+        /** Mark the heading foldable and record which way it currently points. */
+        public void setExpanded(boolean value) {
+            foldable = true;
+            expanded = value;
+            invalidate();
+        }
+
+        public boolean isExpanded() { return expanded; }
 
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             setMeasuredDimension(resolveSize(0, widthSpec), px(getContext(), 32));
@@ -333,6 +365,23 @@ public final class Theme {
             Paint.FontMetrics metrics = paint.getFontMetrics();
             float baseline = getHeight() / 2f - (metrics.ascent + metrics.descent) / 2f;
             canvas.drawText(label, px(getContext(), 14), baseline, paint);
+            if (!foldable) return;
+            // Drawn, not typed: the bundled font has no verified triangle glyph,
+            // and a missing one renders as a tofu box.
+            float size = px(getContext(), 5);
+            float cx = getWidth() - px(getContext(), 18), cy = getHeight() / 2f;
+            arrow.reset();
+            if (expanded) {
+                arrow.moveTo(cx - size, cy - size / 2f);
+                arrow.lineTo(cx + size, cy - size / 2f);
+                arrow.lineTo(cx, cy + size);
+            } else {
+                arrow.moveTo(cx - size / 2f, cy - size);
+                arrow.lineTo(cx + size, cy);
+                arrow.lineTo(cx - size / 2f, cy + size);
+            }
+            arrow.close();
+            canvas.drawPath(arrow, arrowPaint);
         }
     }
 
@@ -353,6 +402,16 @@ public final class Theme {
             paint.setTypeface(typeface(context));
             paint.setTextSize(px(context, 15));
             paint.setTextAlign(Paint.Align.CENTER);
+        }
+
+        /**
+         * Labels are read at arm's length in-game, where the app's normal size
+         * is too small; the in-game panel raises it without changing the home
+         * screen, which is read at a normal distance.
+         */
+        public void setLabelSizeDp(float dp) {
+            paint.setTextSize(px(getContext(), dp));
+            invalidate();
         }
 
         public void setListener(Listener value) { listener = value; }
@@ -391,14 +450,56 @@ public final class Theme {
                 int left = Math.round(i * getWidth() / (float) labels.length);
                 int width = (i == labels.length - 1 ? getWidth() : cell * (i + 1)) - left;
                 if (width <= 0) continue;
-                Bitmap bitmap = chalk(getContext(), width, getHeight(),
+                int inset = px(getContext(), 4);
+                Bitmap bitmap = chalk(getContext(), width, Math.max(2, getHeight() - inset * 2),
                         i == index ? Chalk.BRIGHT : Chalk.DARK, .7f, "rounded",
                         i == 0, i == labels.length - 1);
-                canvas.drawBitmap(bitmap, null, new Rect(left, 0, left + width, getHeight()),
+                canvas.drawBitmap(bitmap, null, new Rect(left, inset, left + width, getHeight() - inset),
                         SCALE);
                 paint.setColor(i == index ? INK : CHOICE_IDLE);
                 canvas.drawText(labels[i], left + width / 2f, baseline, paint);
             }
+        }
+    }
+
+    /**
+     * Round chalk button drawing a cross, for dismissing a panel.
+     *
+     * The cross is painted rather than typed: the bundled font has no verified
+     * glyph for any of the multiplication or ballot-x characters, and a missing
+     * one renders as a tofu box.
+     */
+    public static class CloseButton extends View {
+        private final ChalkDrawable surface = new ChalkDrawable(getContext(), Chalk.DARK, .7f, "circle", true, true);
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        public CloseButton(Context context) {
+            super(context);
+            setClickable(true);
+            setContentDescription("关闭");
+            paint.setColor(TEXT);
+            paint.setStrokeWidth(Math.max(2f, 1.6f * dp(context)));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+        }
+
+        @Override protected void drawableStateChanged() {
+            super.drawableStateChanged();
+            surface.setOpacity(isPressed() ? 1f : .8f);
+            invalidate();
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            int size = px(getContext(), 34);
+            setMeasuredDimension(resolveSize(size, widthSpec), resolveSize(size, heightSpec));
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            surface.setBounds(0, 0, getWidth(), getHeight());
+            surface.draw(canvas);
+            float arm = Math.min(getWidth(), getHeight()) * .19f;
+            float cx = getWidth() / 2f, cy = getHeight() / 2f;
+            canvas.drawLine(cx - arm, cy - arm, cx + arm, cy + arm, paint);
+            canvas.drawLine(cx + arm, cy - arm, cx - arm, cy + arm, paint);
         }
     }
 
@@ -434,6 +535,52 @@ public final class Theme {
         }
     }
 
+    /**
+     * The emblem, turning. Used wherever the app is waiting on something.
+     *
+     * A spinner rather than a progress bar: the update check spends most of its
+     * time on a single opaque transfer, so a percentage would sit still and read
+     * as a stall, while the turning emblem is the same object the in-game button
+     * uses to say "working" -- one vocabulary for both screens.
+     */
+    public static class Spinner extends android.widget.ImageView {
+        private static final long TURN_MS = 1100;
+        private android.animation.ObjectAnimator turn;
+
+        public Spinner(Context context) {
+            super(context);
+            setImageResource(R.drawable.floating_emblem);
+            setScaleType(ScaleType.FIT_CENTER);
+            setContentDescription("正在加载");
+            setVisibility(GONE);
+        }
+
+        @Override protected void onAttachedToWindow() {
+            super.onAttachedToWindow();
+            if (getVisibility() == VISIBLE) start();
+        }
+
+        @Override protected void onDetachedFromWindow() {
+            stop();
+            super.onDetachedFromWindow();
+        }
+
+        public void start() {
+            if (turn == null) {
+                turn = android.animation.ObjectAnimator.ofFloat(this, "rotation", 0f, 360f);
+                turn.setDuration(TURN_MS);
+                turn.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                turn.setInterpolator(new android.view.animation.LinearInterpolator());
+            }
+            if (!turn.isStarted()) turn.start();
+        }
+
+        public void stop() {
+            if (turn != null) turn.cancel();
+            setRotation(0f);
+        }
+    }
+
     /** ChalkToggle equivalent: a labelled 开/关 pair on one switch surface. */
     public static class ChalkToggle extends android.widget.LinearLayout {
         public interface Listener { void onToggled(boolean checked); }
@@ -444,10 +591,11 @@ public final class Theme {
 
         public ChalkToggle(Context context, String label, float widthDp) {
             super(context);
-            setOrientation(VERTICAL);
+            setOrientation(HORIZONTAL);
+            setGravity(Gravity.CENTER_VERTICAL);
             TextView caption = new TextView(context);
             caption.setText(label);
-            addView(text(caption, 15, TEXT));
+            addView(text(caption, 15, TEXT), new android.widget.LinearLayout.LayoutParams(0, -2, 1));
             choice = new ChalkChoice(context, new String[]{"开", "关"});
             android.widget.LinearLayout.LayoutParams params = new android.widget.LinearLayout.LayoutParams(
                     px(context, widthDp), android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -471,6 +619,35 @@ public final class Theme {
 
     // ---- layout helpers ----------------------------------------------------
 
+    /** Compact superscript help with a generous touch target, also accessible by tap. */
+    public static android.widget.LinearLayout helpLabel(Context context, String label, String explanation) {
+        android.widget.LinearLayout row = new android.widget.LinearLayout(context);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView caption = new TextView(context);
+        caption.setText(label);
+        row.addView(text(caption, 15, TEXT), new android.widget.LinearLayout.LayoutParams(0, -2, 1));
+        TextView help = new TextView(context);
+        help.setText("?"); help.setTypeface(Typeface.DEFAULT_BOLD);
+        help.setTextColor(MUTED); help.setTextSize(12);
+        help.setGravity(Gravity.TOP | Gravity.CENTER_HORIZONTAL);
+        help.setPadding(0, px(context, 6), 0, 0);
+        help.setContentDescription(label + "说明：" + explanation);
+        row.addView(help, new android.widget.LinearLayout.LayoutParams(px(context, 44), px(context, 44)));
+        Runnable show = () -> {
+            TextView detail = muted(context, explanation);
+            detail.setPadding(px(context, 16), px(context, 12), px(context, 16), px(context, 12));
+            detail.setBackground(new MistDrawable(context));
+            android.widget.PopupWindow popup = new android.widget.PopupWindow(detail,
+                    Math.min(context.getResources().getDisplayMetrics().widthPixels - px(context, 32), px(context, 280)), -2, true);
+            popup.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.TRANSPARENT));
+            popup.setOutsideTouchable(true);
+            popup.showAsDropDown(help, -px(context, 220), 0);
+        };
+        help.setOnLongClickListener(v -> { show.run(); return true; });
+        help.setOnClickListener(v -> show.run());
+        return row;
+    }
+
     /** Dark frosted panel. */
     public static class MistPanel extends android.widget.LinearLayout {
         private final MistDrawable surface;
@@ -483,6 +660,29 @@ public final class Theme {
         }
 
         public MistDrawable surface() { return surface; }
+    }
+
+    /** Hairline that fades out at both ends, for separating blocks of content. */
+    public static class Rule extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        public Rule(Context context) {
+            super(context);
+        }
+
+        @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+            paint.setShader(new LinearGradient(0, 0, Math.max(1, width), 0,
+                    new int[]{0x00859daf, 0x66859daf, 0x00859daf},
+                    new float[]{0f, .5f, 1f}, Shader.TileMode.CLAMP));
+        }
+
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            setMeasuredDimension(resolveSize(0, widthSpec), resolveSize(px(getContext(), 1), heightSpec));
+        }
+
+        @Override protected void onDraw(Canvas canvas) {
+            canvas.drawRect(0, 0, getWidth(), getHeight(), paint);
+        }
     }
 
     public static View space(Context context, float heightDp) {
@@ -527,51 +727,5 @@ public final class Theme {
         view.setBackground(new StatusDrawable(context));
         view.setPadding(px(context, 12), px(context, 10), px(context, 12), px(context, 10));
         return text(view, 14, TEXT);
-    }
-
-    /**
-     * A solid triangle, for the status strip's collapse handle.
-     *
-     * Drawn as a path rather than a text glyph on purpose: the bundled face is
-     * a Chinese UI font and there is no guarantee it carries ◂/▸, which would
-     * come out as tofu boxes.
-     */
-    public static class Chevron extends View {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Path path = new Path();
-        private boolean pointingLeft = true;
-
-        public Chevron(Context context) {
-            super(context);
-            paint.setColor(CHOICE_IDLE);
-        }
-
-        /** Left means "collapse", right means "expand". */
-        public void setPointingLeft(boolean value) {
-            if (pointingLeft == value) return;
-            pointingLeft = value;
-            invalidate();
-        }
-
-        @Override protected void onDraw(Canvas canvas) {
-            float w = getWidth(), h = getHeight();
-            float size = Math.min(w, h) * .30f, half = size * .62f;
-            float cx = w / 2f, cy = h / 2f;
-            path.reset();
-            if (pointingLeft) {
-                path.moveTo(cx - half, cy);
-                path.lineTo(cx + half, cy - half);
-                path.lineTo(cx + half, cy + half);
-            } else {
-                path.moveTo(cx + half, cy);
-                path.lineTo(cx - half, cy - half);
-                path.lineTo(cx - half, cy + half);
-            }
-            path.close();
-            canvas.drawPath(path, paint);
-        }
-        // No setAlpha(float) override: that is View's own alpha channel, and
-        // hijacking it to tint the paint double-applies whenever the framework
-        // (or a parent's alpha) drives it.
     }
 }

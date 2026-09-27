@@ -88,12 +88,12 @@ public class MapLibraryActivity extends Activity {
         content.addView(back, backParams);
         back.setOnClickListener(v -> finish());
 
-        content.addView(Theme.muted(this, "内置地图库只读：改动会被下次启动重新同步，录入新图请在电脑端完成。"));
+        content.addView(Theme.helpLabel(this, "内置地图", "地图库为只读，新增地图请在电脑端录入后随安装包发布。"));
 
         content.addView(heading("筛选"));
         Theme.MistPanel filters = panel();
         content.addView(filters);
-        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, new String[]{"全部", "困难", "噩梦·单人", "噩梦·双人"});
+        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, new String[]{"全部", "困难", "单人", "多人"});
         filters.addView(filter, wrap());
         filter.setListener(index -> {
             filterIndex = index;
