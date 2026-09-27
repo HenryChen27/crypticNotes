@@ -522,8 +522,10 @@ public class CaptureService extends Service {
         if (calibration != null || quickSettings != null) { repoll(500); return; }
         if (checking) { repoll(100); return; }
         if (SystemClock.elapsedRealtime() - lastGateAt >= 800) {
-            gateOnly = overlayLayer != null;
-            blink(); return;
+            // Map controls lie outside the map layer: inspect them without
+            // removing either window. Never feed this composited frame to matching.
+            gateOnly = true;
+            capture(); return;
         }
         // A match that never returned would otherwise hold `busy` forever and
         // freeze the overlay with nothing on screen to explain it.
@@ -603,7 +605,6 @@ public class CaptureService extends Service {
     private void blink() {
         invalidateSamples();
         showOverlay(false);
-        badge.setVisibility(View.INVISIBLE);
         try (Image stale = reader.acquireLatestImage()) {} catch (Exception ignored) {}
         main.postDelayed(this::capture, HIDE_MILLIS);
     }
@@ -629,6 +630,14 @@ public class CaptureService extends Service {
         if (bitmap == null) { badge.setVisibility(View.VISIBLE); repoll(200); return; }
 
         final int[] framePixels = signature(bitmap);
+        // Remove the permanent badge from evidence in the captured copy only.
+        final float[] excluded = {Math.max(0, badgeParams.x - 6) / (float) width,
+                Math.max(0, badgeParams.y - 6) / (float) height,
+                Math.min(width, badgeParams.x + badgeParams.width + 6) / (float) width,
+                Math.min(height, badgeParams.y + badge.getHeight() + 6) / (float) height};
+        Canvas clean = new Canvas(bitmap);
+        Paint erase = new Paint(); erase.setColor(Color.BLACK);
+        clean.drawRect(excluded[0]*width, excluded[1]*height, excluded[2]*width, excluded[3]*height, erase);
         final boolean verifyOnly = gateOnly;
         gateOnly = false;
         lastGateAt = SystemClock.elapsedRealtime();
@@ -641,7 +650,7 @@ public class CaptureService extends Service {
                 if (frame != null) {
                     try {
                         visible = new JSONObject(
-                                bridge.callAttr("inspect", frame).toString()).getBoolean("visible");
+                                bridge.callAttr("inspect", frame, excluded).toString()).getBoolean("visible");
                         ok = true;
                     } catch (Exception ignored) {
                     }
@@ -667,9 +676,9 @@ public class CaptureService extends Service {
                     }
                     missStreak = 0;
                     controlPixels = framePixels;
-                    if (verifyOnly && overlayLayer != null && matchPixels != null
-                            && difference(matchPixels, framePixels) < REALIGN_LIMIT) {
-                        showOverlay(true);
+                    if (verifyOnly) {
+                        // Watch samples handle motion. A heartbeat only checks
+                        // visibility and must not realign against our own overlay.
                         repoll(WATCH_MS);
                         return;
                     }

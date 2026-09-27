@@ -33,9 +33,9 @@ def _label(map_id):
 def decode(data):
     return cv2.imdecode(np.frombuffer(bytes(data),np.uint8),cv2.IMREAD_COLOR)
 
-def inspect(data):
+def inspect(data, excluded=None):
     pixels=decode(data)
-    return json.dumps(inspect_map_ui(pixels))
+    return json.dumps(inspect_map_ui(pixels, excluded))
 
 def match(data, output, gated=False):
     """Register the open map. `gated=True` when the caller already ran the
