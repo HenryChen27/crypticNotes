@@ -34,6 +34,11 @@ public class MainActivity extends Activity {
         root.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(root);
+        root.setOnApplyWindowInsetsListener((v, insets) -> {
+            v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
+                    insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
+            return insets.consumeSystemWindowInsets();
+        });
 
         TextView title = new TextView(this);
         title.setText("加页手记");
@@ -48,12 +53,19 @@ public class MainActivity extends Activity {
         recognition.addView(fieldLabel("难度"));
         difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         recognition.addView(difficulty, matchWrap());
-        recognition.addView(fieldLabel("路线"));
+        TextView routeLabel = fieldLabel("参考路线");
+        recognition.addView(routeLabel);
         party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
         recognition.addView(party, matchWrap());
         difficulty.setIndex(getSharedPreferences("mobile", 0).getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
         party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
-        difficulty.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("difficulty", i == 0 ? "hard" : "nightmare").apply());
+        difficulty.setListener(i -> {
+            getSharedPreferences("mobile", 0).edit().putString("difficulty", i == 0 ? "hard" : "nightmare").apply();
+            party.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+            routeLabel.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+        });
+        party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
+        routeLabel.setVisibility(party.getVisibility());
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
 
         final TextView opacityLabel = fieldLabel("叠图不透明度 30%");
@@ -70,22 +82,28 @@ public class MainActivity extends Activity {
         });
         opacity = 30;
 
-        content.addView(heading("操作"));
         LinearLayout actions = card();
-        content.addView(actions);
+        content.addView(actions, 2);
+        LinearLayout serviceActions = new LinearLayout(this);
+        actions.addView(serviceActions, matchWrap());
         Theme.ChalkButton start = new Theme.ChalkButton(this, "开启自动识图", true);
-        actions.addView(start, matchWrap());
+        LinearLayout.LayoutParams startParams = new LinearLayout.LayoutParams(0, Theme.px(this, 48), 2);
+        startParams.rightMargin = Theme.px(this, 8);
+        serviceActions.addView(start, startParams);
         start.setOnClickListener(v -> startCapture());
-        Theme.ChalkButton stop = new Theme.ChalkButton(this, "停止识图与叠图");
-        actions.addView(stop, matchWrap());
+        Theme.ChalkButton stop = new Theme.ChalkButton(this, "停止");
+        serviceActions.addView(stop, new LinearLayout.LayoutParams(0, Theme.px(this, 48), 1));
         stop.setOnClickListener(v -> {
             stopService(new Intent(this, CaptureService.class));
             status.setText("已停止");
         });
 
-        content.addView(heading("辅助"));
+        Theme.ChalkButton advanced = new Theme.ChalkButton(this, "更多设置  ›");
+        content.addView(advanced, matchWrap());
         LinearLayout extras = card();
         content.addView(extras);
+        extras.setVisibility(View.GONE);
+        advanced.setOnClickListener(v -> extras.setVisibility(extras.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE));
         final Theme.ChalkToggle tapMode = new Theme.ChalkToggle(this, "点击区域触发（需无障碍手势授权）", 140);
         tapMode.setChecked(getSharedPreferences("mobile", 0).getBoolean("tap_mode", false));
         extras.addView(tapMode, matchWrap());
@@ -97,16 +115,27 @@ public class MainActivity extends Activity {
         Theme.ChalkButton manage = new Theme.ChalkButton(this, "地图管理");
         extras.addView(manage, matchWrap());
         manage.setOnClickListener(v -> startActivity(new Intent(this, MapLibraryActivity.class)));
-        extras.addView(Theme.muted(this, "拖动状态条调整位置，点击收边，长按进入游戏设置和入口校准。"));
+        extras.addView(Theme.muted(this, "游戏内拖动小悬浮按钮调整位置，点击打开设置。"));
 
         status = Theme.status(this);
         status.setText("首次启动需要悬浮窗与屏幕采集授权。");
         LinearLayout.LayoutParams statusParams = matchWrap();
         statusParams.topMargin = Theme.px(this, 18);
-        content.addView(status, statusParams);
-        updater = new AppUpdater(this, status);
+        actions.addView(status, statusParams);
+        content.addView(heading("应用更新"));
+        LinearLayout updates = card();
+        content.addView(updates);
+        TextView updateStatus = Theme.muted(this, "检查新版本，保留已有设置");
+        ProgressBar progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
+        progress.setMax(100);
+        progress.setProgressTintList(android.content.res.ColorStateList.valueOf(Theme.TEXT));
+        progress.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(0xff263b49));
+        progress.setVisibility(View.GONE);
+        updater = new AppUpdater(this, updateStatus, progress);
         Theme.ChalkButton update = new Theme.ChalkButton(this, "检查应用更新");
-        content.addView(update, matchWrap());
+        updates.addView(update, matchWrap());
+        updates.addView(progress, new LinearLayout.LayoutParams(-1, Theme.px(this, 12)));
+        updates.addView(updateStatus, matchWrap());
         update.setOnClickListener(v -> updater.check());
 
         TextView footnote = new TextView(this);

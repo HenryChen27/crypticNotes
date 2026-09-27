@@ -17,9 +17,18 @@ final class AppUpdater {
     static final String ASSET = "IdentityVMapAssistant-Android-arm64.apk";
     private final Activity activity;
     private final TextView status;
+    private final android.widget.ProgressBar progress;
     private boolean running, awaitingPermission;
     private static long version(PackageInfo info) { return android.os.Build.VERSION.SDK_INT >= 28 ? info.getLongVersionCode() : info.versionCode; }
-    AppUpdater(Activity activity, TextView status) { this.activity=activity; this.status=status; }
+    AppUpdater(Activity activity, TextView status, android.widget.ProgressBar progress) { this.activity=activity; this.status=status; this.progress=progress; }
+    private void progress(int value) {
+        activity.runOnUiThread(() -> {
+            if(activity.isDestroyed()) return;
+            progress.setVisibility(android.view.View.VISIBLE);
+            progress.setIndeterminate(value<0);
+            if(value>=0) progress.setProgress(value);
+        });
+    }
     private void message(String text) { activity.runOnUiThread(() -> { if (!activity.isDestroyed()) status.setText(text); }); }
     private static HttpURLConnection connect(String url) throws IOException {
         if (!url.startsWith("https://")) throw new IOException("更新地址必须为 HTTPS");
@@ -32,6 +41,7 @@ final class AppUpdater {
     void check() {
         if (running) return;
         running=true; message("正在检查安卓更新…");
+        progress(-1);
         new Thread(() -> {
             File temp=new File(activity.getCacheDir(), "update.download");
             try {
@@ -78,7 +88,7 @@ final class AppUpdater {
                         received+=n; if(received>expected) throw new IOException("更新包大小不符");
                         out.write(b,0,n); sha.update(b,0,n);
                         int percent=(int)(received*100/expected);
-                        if(percent/5!=last) { last=percent/5; message("下载更新 "+percent+"%"); }
+                        if(percent/5!=last) { last=percent/5; progress(percent); message("下载更新 "+percent+"%"); }
                     }
                 } finally { c.disconnect(); }
                 StringBuilder hex=new StringBuilder(); for(byte b:sha.digest()) hex.append(String.format("%02x", b&255));
@@ -98,7 +108,7 @@ final class AppUpdater {
                 if(!temp.renameTo(apk)) throw new IOException("无法保存更新包");
                 activity.runOnUiThread(() -> { if(!activity.isDestroyed()) install(); });
             } catch(Exception e) { message("更新失败："+e.getMessage()+"。可稍后重试。"); }
-            finally { temp.delete(); activity.runOnUiThread(() -> running=false); }
+            finally { temp.delete(); activity.runOnUiThread(() -> { running=false; if(!activity.isDestroyed()) progress.setVisibility(android.view.View.GONE); }); }
         },"app-update").start();
     }
     void resume() { if(awaitingPermission && activity.getPackageManager().canRequestPackageInstalls()) { awaitingPermission=false; install(); } }

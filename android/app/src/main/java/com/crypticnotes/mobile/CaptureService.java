@@ -285,7 +285,7 @@ public class CaptureService extends Service {
                     if (badgeCollapsed) setBadgeCollapsed(true);
                 }
                 else if (!badgeLongPressed) {
-                    setBadgeCollapsed(!badgeCollapsed);
+                    showQuickSettings();
                 }
                 badgeDragged = false;
                 badgeLongPressed = false;
@@ -344,16 +344,22 @@ public class CaptureService extends Service {
     private void layoutBadge() {
         if (badge == null || width <= 0) return;
         SharedPreferences prefs = getSharedPreferences("mobile", 0);
-        badgeCollapsed = prefs.getBoolean("badge_collapsed", false);
+        badgeCollapsed = true;
         badgeLabel.setMaxLines(badgeCollapsed ? 1 : 3);
         badgeHandle.setPointingLeft(!badgeCollapsed);
-        badgeLabel.setVisibility(badgeCollapsed && !badgeMessage ? View.GONE : View.VISIBLE);
-        badgeParams.width = badgeCollapsed && !badgeMessage ? Theme.px(this, 36) : Math.round(width * BADGE_W);
+        badgeHandle.setVisibility(View.GONE);
+        badgeLabel.setVisibility(View.VISIBLE);
+        badgeLabel.setGravity(Gravity.CENTER);
+        badgeLabel.setText(badgeMessage ? badgeText : "图");
+        badge.setBackground(new Theme.ChalkDrawable(this, Theme.Chalk.DEEP, .7f,
+                badgeMessage ? "rounded" : "circle", true, true));
+        badge.setContentDescription("地图助手：点击设置，拖动移动");
+        badgeParams.width = Theme.px(this, badgeMessage ? 200 : 44);
+        badgeParams.height = badgeMessage ? -2 : Theme.px(this, 44);
         int limit = width - badgeParams.width;
         badgeParams.x = Math.max(0, Math.min(Math.round(prefs.getFloat("badge_x", BADGE_X) * width),
                 Math.max(0, limit)));
         badgeParams.y = Math.max(0, Math.min(height - Theme.px(this, 60), Math.round(prefs.getFloat("badge_y", BADGE_Y) * height)));
-        if (badgeCollapsed) badgeParams.x = prefs.getBoolean("badge_right", false) ? width - badgeParams.width : 0;
         try { windows.updateViewLayout(badge, badgeParams); } catch (Exception ignored) {}
     }
 
@@ -891,13 +897,23 @@ public class CaptureService extends Service {
         SharedPreferences prefs = getSharedPreferences("mobile", 0);
         Theme.MistPanel panel = new Theme.MistPanel(this);
         int pad = Theme.px(this, 16); panel.setPadding(pad, pad, pad, pad);
-        panel.addView(Theme.muted(this, "游戏设置 · 长按状态条打开"));
+        Theme.MistPanel shell = new Theme.MistPanel(this);
+        LinearLayout header = new LinearLayout(this);
+        TextView title = Theme.muted(this, "游戏设置 · 拖动这里移动");
+        header.addView(title, new LinearLayout.LayoutParams(0, Theme.px(this, 44), 1));
+        Theme.ChalkButton dismiss = new Theme.ChalkButton(this, "关闭");
+        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 72), Theme.px(this, 44)));
+        dismiss.setOnClickListener(v -> closeQuickSettings());
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
+        shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         Theme.ChalkChoice difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         difficulty.setIndex(prefs.getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
-        panel.addView(difficulty);
+        panel.addView(difficulty, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
         Theme.ChalkChoice party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
         party.setIndex(prefs.getString("mode", "solo").equals("duo") ? 1 : 0);
-        panel.addView(party);
+        panel.addView(party, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
         party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
         difficulty.setListener(i -> party.setVisibility(i == 1 ? View.VISIBLE : View.GONE));
         Theme.ChalkButton save = new Theme.ChalkButton(this, "应用设置 / 重新识别", true);
@@ -918,10 +934,23 @@ public class CaptureService extends Service {
         region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
         Theme.ChalkButton close = new Theme.ChalkButton(this, "返回游戏"); panel.addView(close);
         close.setOnClickListener(v -> closeQuickSettings());
-        quickSettings = panel;
-        WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 320)), -2, true);
+        quickSettings = shell;
+        WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 320)),
+                Math.min(height - pad * 2, Theme.px(this, 330)), true);
         p.x = (width - p.width) / 2; p.y = Theme.px(this, 20);
-        windows.addView(panel, p);
+        title.setOnTouchListener(new View.OnTouchListener() {
+            float x,y; int startX,startY;
+            public boolean onTouch(View v, MotionEvent e) {
+                if(e.getActionMasked()==MotionEvent.ACTION_DOWN) { x=e.getRawX(); y=e.getRawY(); startX=p.x; startY=p.y; }
+                if(e.getActionMasked()==MotionEvent.ACTION_MOVE) {
+                    p.x=Math.max(0,Math.min(width-p.width,startX+Math.round(e.getRawX()-x)));
+                    p.y=Math.max(0,Math.min(height-p.height,startY+Math.round(e.getRawY()-y)));
+                    windows.updateViewLayout(shell,p);
+                }
+                return true;
+            }
+        });
+        windows.addView(shell, p);
     }
 
     private void closeQuickSettings() {
@@ -955,7 +984,12 @@ public class CaptureService extends Service {
         refreshTapRegion();
     }
 
-    @Override public void onConfigurationChanged(Configuration c) { super.onConfigurationChanged(c); if (projection != null) resizeCapture(); }
+    @Override public void onConfigurationChanged(Configuration c) {
+        super.onConfigurationChanged(c);
+        if (quickSettings != null) closeQuickSettings();
+        if (calibration != null) finishCalibration();
+        if (projection != null) resizeCapture();
+    }
 
     private void copyAssets(String name, File target) throws IOException {
         String[] children = getAssets().list(name);

@@ -359,6 +359,11 @@ public final class Theme {
 
         public int getIndex() { return index; }
 
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            setMeasuredDimension(resolveSize(px(getContext(), 220), widthSpec),
+                    resolveSize(px(getContext(), 42), heightSpec));
+        }
+
         public void setIndex(int value) {
             if (value < 0 || value >= labels.length || value == index) return;
             index = value;
