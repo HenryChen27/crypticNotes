@@ -10,3 +10,5 @@
 *.npz binary
 *.ttf binary
 *.ico binary
+
+scripts/update-client.ps1 -text

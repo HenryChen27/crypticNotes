@@ -208,7 +208,8 @@ function Invoke-Main {
     # --- assets ---
     $assets = @(
         @{ Name = 'IdentityVMapAssistant-Windows-x64.zip'; Path = (Join-Path $Root 'release\IdentityVMapAssistant-Windows-x64.zip') },
-        @{ Name = 'SHA256SUMS.txt';                        Path = (Join-Path $Root 'release\SHA256SUMS.txt') }
+        @{ Name = 'SHA256SUMS.txt';                        Path = (Join-Path $Root 'release\SHA256SUMS.txt') },
+        @{ Name = 'windows-update.json';                  Path = (Join-Path $Root 'release\windows-update.json') }
     )
     foreach ($asset in $assets) {
         if (-not (Test-Path $asset.Path)) { throw "missing release asset: $($asset.Path)" }

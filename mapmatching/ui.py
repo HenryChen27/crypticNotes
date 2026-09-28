@@ -656,7 +656,7 @@ class Companion(W.QWidget):
         self.opacity.setValue(max(5,min(80,int(self.settings.get('opacity',30)))))
         preferences.addWidget(self.opacity)
         self.delay = DelaySlider()
-        self.delay.setValue(max(100,min(1000,int(self.settings.get('delay',350)))))
+        self.delay.setValue(max(100,min(1000,int(self.settings.get('delay',150)))))
         self.delay_label=W.QLabel()
         self.delay.valueChanged.connect(lambda value: self.delay_label.setText(f'展开等待    {value} ms'))
         self.delay_label.setText(f'展开等待    {self.delay.value()} ms')
@@ -758,6 +758,9 @@ class Companion(W.QWidget):
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
         preferences.addLayout(pet_row)
+        update_button = ChalkButton('检查更新')
+        update_button.clicked.connect(self.check_update)
+        preferences.addWidget(update_button)
         layout.addWidget(self.panel)
         self.panel.hide()
         self.toast = SpeechBubble()
@@ -1141,6 +1144,21 @@ class Companion(W.QWidget):
         """
         foreground = win32gui.GetForegroundWindow()
         return foreground != int(self.winId()) and not self.is_game(foreground)
+
+    def check_update(self):
+        import subprocess
+        from .paths import FROZEN
+        if not FROZEN:
+            self.notify('源码版请更新源码；一键更新适用于打包版')
+            return
+        try:
+            self.save()
+            subprocess.Popen([
+                'powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
+                '-File', str(ROOT/'scripts/update-client.ps1')],
+                creationflags=subprocess.CREATE_NO_WINDOW, cwd=str(ROOT))
+        except OSError as exc:
+            self.notify(f'无法启动更新：{exc}')
 
     def retry(self):
         self.cached_candidate = None

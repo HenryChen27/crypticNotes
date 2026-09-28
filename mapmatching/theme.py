@@ -245,7 +245,7 @@ class DelaySlider(ChalkSlider):
         self.setRange(100,1000)
         self.setSingleStep(25)
         self.setPageStep(100)
-        self.setValue(350)
+        self.setValue(150)
 
     def currentData(self):
         return self.value()
