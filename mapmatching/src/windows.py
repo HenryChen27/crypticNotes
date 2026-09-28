@@ -54,12 +54,23 @@ def place_overlay(hwnd, rect):
     win32gui.SetWindowPos(hwnd,win32con.HWND_TOPMOST,x,y,w,h,win32con.SWP_NOACTIVATE)
 
 
+# 0x01~0x06 在任何键盘上都是鼠标键（左/右/中/侧1/侧2）。用来判断某个键的
+# 按下态该由鼠标还是键盘的 Raw Input 负责。与 mouse_input.BUTTON_VKS 同源。
+MOUSE_VKS = frozenset((0x01,0x02,0x04,0x05,0x06))
+
+
 class Keys:
     def __init__(self):
         self.down = set()
         self.pending_edges = set()
         self.toggle_key = 0x47
         self.hide_key = 0x08  # Backspace
+        # 两类设备各自是否注册上了 Raw Input。**必须分开记**：只用一个
+        # raw_active 时，键盘注册成功、鼠标没注册上（或反过来）会让没注册的那类
+        # 键永远等不到释放边，按下态一旦置上就再也清不掉 —— 症状是「这个快捷键
+        # 按一次有反应，之后按多少次都没反应」。
+        self.raw_keyboard = False
+        self.raw_mouse = False
 
     def raw_edge(self,key,released):
         if key not in (self.toggle_key,self.hide_key,0x1B):return
@@ -69,13 +80,20 @@ class Keys:
             self.down.add(key)
             self.pending_edges.add(key)
 
+    def _raw_owns(self,key):
+        return self.raw_mouse if key in MOUSE_VKS else self.raw_keyboard
+
     def edges(self):
-        pressed = {key for key in (self.toggle_key,self.hide_key,0x1B) if user32.GetAsyncKeyState(key) & 0x8000}
+        watched = (self.toggle_key,self.hide_key,0x1B)
+        pressed = {key for key in watched if user32.GetAsyncKeyState(key) & 0x8000}
         rising = (pressed - self.down) | self.pending_edges
         self.pending_edges.clear()
-        # Raw Input owns release edges when registered; polling is a fallback.
-        if not getattr(self,'raw_active',False):
-            self.down = pressed
-        else:
-            self.down |= pressed
+        for key in watched:
+            if key in pressed:
+                self.down.add(key)
+            elif not self._raw_owns(key):
+                # 没有 Raw Input 负责这个键时，轮询是唯一的信息源，它说松开了就是
+                # 松开了。Raw Input 在管的时候不能这么清：提权游戏下 UIPI 会让轮询
+                # 恒返回 0，清空等于把 Raw Input 的信号一起抹掉。
+                self.down.discard(key)
         return rising

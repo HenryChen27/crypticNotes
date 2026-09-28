@@ -8,7 +8,7 @@ from mapmatching.src.windows import Keys
 
 class OpeningCaptureTests(unittest.TestCase):
     def test_short_press_survives_release_before_poll_and_repeat(self):
-        keys=Keys();keys.raw_active=True
+        keys=Keys();keys.raw_keyboard=True
         with patch('mapmatching.src.windows.user32.GetAsyncKeyState',return_value=0):
             keys.raw_edge(71,False);keys.raw_edge(71,False);keys.raw_edge(71,True)
             self.assertEqual(keys.edges(),{71})

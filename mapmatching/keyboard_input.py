@@ -14,8 +14,7 @@ class RAWKEYBOARD(ctypes.Structure):
 
 class KeyboardWatcher(MouseWatcher):
     def __init__(self,keys):
-        super().__init__()
-        self.keys=keys
+        super().__init__(keys)
 
     def register(self,hwnd):
         app=C.QCoreApplication.instance()

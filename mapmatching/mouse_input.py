@@ -91,14 +91,19 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
 
     注册失败时 `ok=False`，`interacting()` 恒为 False（fail open）——
     一个静默失效的监听，远好于一个永远不恢复的叠图。
+
+    `keys` 是可选的：给了它，鼠标按键的按下/松开会一并转给 `Keys`，
+    侧键/中键因此也能当「打开地图」的快捷键。键盘 watcher 是同一个类的子类，
+    走的就是这条线。
     """
 
     WHEEL_HOLD = 0.120     # 滚轮停多久算「停稳」
     STUCK_TIMEOUT = 30.0   # 持有按键却这么久没有任何边沿 -> 判定为丢了 release
 
-    def __init__(self):
+    def __init__(self, keys=None):
         super().__init__()
         self.ok = False
+        self.keys = keys
         self.buttons = set()
         self.last_wheel = 0.0
         self.last_edge = 0.0
@@ -179,8 +184,15 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
         for down_bit, up_bit, vk in BUTTON_EDGES:
             if flags & down_bit:
                 self.buttons.add(vk)
+                self._hotkey_edge(vk, False)
             elif flags & up_bit:
                 self.buttons.discard(vk)
+                self._hotkey_edge(vk, True)
+
+    def _hotkey_edge(self, vk, released):
+        """把鼠标按键的边沿转给快捷键状态机（`Keys` 自己会挑出它关心的那几个键）。"""
+        if self.keys is not None:
+            self.keys.raw_edge(vk, released)
 
     # ── 查询 ───────────────────────────────────────────────────
     def interacting(self, now=None):

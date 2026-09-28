@@ -84,7 +84,18 @@
 
 如果你不想进游戏测试，可以双击「本地截图测试.cmd」，选择一张游戏截图，在弹出的截图窗口里按 G。这样可以假装那张图就是游戏画面。
 
-地图开关快捷键和隐藏叠图快捷键不能设置成同一个按键；发生冲突时会提示并拒绝保存。
+### 快捷键能选哪些键
+
+点快捷键旁边的铅笔就能改，**按一下你想用的那个键就行**，不用记名字。除了字母和数字，还能选：
+
+- **鼠标**：中键、侧键 1（靠后那个）、侧键 2（靠前那个）。侧键直接把鼠标指针放在那个小框里按。左键和右键选不了——左键是游戏里拖动地图的手势，助手靠它判断你什么时候停手。
+- **修饰键**：Ctrl、Shift、Alt（不分左右，按哪边都算）。
+- **功能键**：F1–F24、方向键、小键盘 0–9 与 `* + - . /`、大写锁定、数字锁定、Tab、空格、回车、退格、Insert/Delete/Home/End/PageUp/PageDown、Pause、PrintScreen、ScrollLock、菜单键。
+- **符号键**：`- = [ ] \ ; ' , . / `` `。
+
+滚轮不能当快捷键：它既是游戏的缩放，也是助手判断「停手了」的信号。Win 键也不行——单独按它会弹出开始菜单。
+
+地图开关快捷键和隐藏叠图快捷键不能设置成同一个按键；发生冲突时会提示并拒绝保存。鼠标键只有在助手能监听鼠标时才收得到（启动时会提示）；游戏以管理员权限运行时，用管理员权限启动助手更稳。
 
 ## 管理和新增地图
 
@@ -192,8 +203,9 @@ Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余
 
 本地检查结果：
 
-- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：58 个测试通过。
-- `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 93/93 通过。
+- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：114 个测试通过。
+- `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 126/126 通过。
+- 快捷键：`tests/test_hotkey_choices.py` 核对键表与 Qt 映射，并用一条**自己造的** WM_INPUT 缓冲验证鼠标侧键能走完「按下-松开-再按下」（不合成任何真实输入）。Top-1/Top-3 与改动前相同（0.429 / 0.714）；`benchmarks/benchmark.py` 不加载 `ui.py`、`mouse_input.py` 和 `windows.py`，所以这条链路不参与匹配。
 - 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、67 张地图和匹配子进程。
 - `maps/floors.json`：67 张地图无重复 ID、无缺失原图、无 SHA256 不一致。
 - 分发通道 `更新.cmd` 端到端跑通：首次接入、增量更新、软删除状态、协作者自录地图不被删除，以及中文提示的编码。

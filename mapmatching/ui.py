@@ -107,6 +107,23 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: trans
 '''
 
 
+# 鼠标按键和键盘共用同一套虚拟键码，所以能直接塞进同一张表：0x04 中键、
+# 0x05 / 0x06 是两个侧键。**左键和右键故意不开放** —— 左键是游戏里拖动地图的手势，
+# 助手靠它判断「停手了，重新贴合」，绑成快捷键会让叠图每拖一下重来一次；右键是游戏
+# 自己的常用键。滚轮同理不做：它既是游戏的缩放，也是跟随的停手信号。
+MOUSE_HOTKEYS = {'MOUSE_MIDDLE':0x04, 'MOUSE_SIDE1':0x05, 'MOUSE_SIDE2':0x06}
+
+# 这些虚拟键码在任何键盘上都是鼠标键（`src/windows.py` 用它区分「哪一类设备
+# 的 Raw Input 在负责这个键」）。
+MOUSE_VKS = frozenset(MOUSE_HOTKEYS.values())
+
+# 修饰键自己也能当快捷键。**只给不分左右的那一个**：Raw Input 对左右 Ctrl/Alt
+# 报的都是同一个 VKey（靠 RI_KEY_E0 区分），而 Qt 的按键事件里左右也都是
+# Key_Control / Key_Alt，选择框根本分不出来 —— 与其列出一堆选不中的名字，
+# 不如就一个「Ctrl 键，左右都算」。
+# Win 键不在表里：单独按它会弹出开始菜单，正违背「挑一个不冲突的键」这件事。
+MODIFIER_HOTKEYS = {'CTRL':0x11, 'SHIFT':0x10, 'ALT':0x12}
+
 HOTKEYS = {**{chr(k):k for k in range(65,91)},
            **{str(k):48+k for k in range(10)},
            **{f'F{k}':111+k for k in range(1,13)},
@@ -115,7 +132,19 @@ HOTKEYS = {**{chr(k):k for k in range(65,91)},
            'TAB': 0x09, 'SPACE': 0x20, 'ENTER': 0x0D,
            'BACKSPACE': 0x08, 'INSERT': 0x2D, 'DELETE': 0x2E,
            'RETURN': 0x0D,
-           'HOME': 0x24, 'END': 0x23, 'PAGEUP': 0x21, 'PAGEDOWN': 0x22}
+           'HOME': 0x24, 'END': 0x23, 'PAGEUP': 0x21, 'PAGEDOWN': 0x22,
+           'CAPSLOCK': 0x14, 'NUMLOCK': 0x90,
+           'UP': 0x26, 'DOWN': 0x28, 'LEFT': 0x25, 'RIGHT': 0x27,
+           **{f'NUM{k}':0x60+k for k in range(10)},
+           'NUMMUL': 0x6A, 'NUMADD': 0x6B, 'NUMSUB': 0x6D, 'NUMDEC': 0x6E, 'NUMDIV': 0x6F,
+           'MINUS': 0xBD, 'EQUAL': 0xBB, 'LBRACKET': 0xDB, 'RBRACKET': 0xDD,
+           'BACKSLASH': 0xDC, 'SEMICOLON': 0xBA, 'QUOTE': 0xDE,
+           'COMMA': 0xBC, 'PERIOD': 0xBE, 'SLASH': 0xBF, 'GRAVE': 0xC0,
+           **MODIFIER_HOTKEYS,
+           'PAUSE': 0x13, 'PRINTSCREEN': 0x2C, 'SCROLLLOCK': 0x91, 'APPS': 0x5D,
+           **{f'F{k}':0x6F+k for k in range(13,25)},   # F13~F24：键盘上没有，
+                                                       # 但鼠标/键盘驱动常把侧键映射到它们
+           **MOUSE_HOTKEYS}
 
 
 def advise(details,message):
@@ -218,8 +247,100 @@ TOAST_BRIEF = {
 }
 
 
+HOTKEY_LABELS = {
+    'BACKSPACE':'退格键','TAB':'Tab','SPACE':'空格','ENTER':'回车','RETURN':'回车',
+    'INSERT':'Insert','DELETE':'Delete','HOME':'Home','END':'End',
+    'PAGEUP':'PageUp','PAGEDOWN':'PageDown',
+    'CAPSLOCK':'大写锁定','NUMLOCK':'数字锁定',
+    'CTRL':'Ctrl 键','SHIFT':'Shift 键','ALT':'Alt 键',
+    'PAUSE':'Pause','PRINTSCREEN':'PrintScreen','SCROLLLOCK':'ScrollLock','APPS':'菜单键',
+    'UP':'方向键 ↑','DOWN':'方向键 ↓','LEFT':'方向键 ←','RIGHT':'方向键 →',
+    'NUMMUL':'小键盘 *','NUMADD':'小键盘 +','NUMSUB':'小键盘 -',
+    'NUMDEC':'小键盘 .','NUMDIV':'小键盘 /',
+    'MINUS':'-','EQUAL':'=','LBRACKET':'[','RBRACKET':']','BACKSLASH':'\\',
+    'SEMICOLON':';','QUOTE':"'",'COMMA':',','PERIOD':'.','SLASH':'/','GRAVE':'`',
+    # 1 是靠后那个（鼠标驱动里的「后退」），2 是靠前的「前进」。
+    'MOUSE_MIDDLE':'鼠标中键','MOUSE_SIDE1':'鼠标侧键 1','MOUSE_SIDE2':'鼠标侧键 2',
+}
+
+
 def hotkey_text(name):
-    return {'BACKSPACE':'退格键','TAB':'Tab','SPACE':'空格','ENTER':'回车','RETURN':'回车'}.get(name,name)
+    if name in HOTKEY_LABELS:
+        return HOTKEY_LABELS[name]
+    if name.startswith('NUM') and name[3:].isdigit():
+        return f'小键盘 {name[3:]}'
+    return name
+
+
+def resolve_hotkeys(settings):
+    """从设置里读出一对可用的（地图开关, 隐藏叠图）。
+
+    **两个键不能相同**：`tick()` 先看隐藏键再看开关键，一旦撞上，开关键就再也轮不到
+    （用户看到的正是「这个快捷键没反应」）。旧配置、手改过的配置文件里都可能存着
+    一对相同的键，所以读取时就得拆开，不能只在设置对话框里拦。
+    """
+    hotkey = settings.get('hotkey','G')
+    if hotkey not in HOTKEYS:
+        hotkey = 'G'
+    hide = settings.get('hide_hotkey','BACKSPACE')
+    if hide not in HOTKEYS:
+        hide = 'BACKSPACE'
+    if hide == hotkey:
+        hide = next(name for name in ('BACKSPACE','TAB','SPACE') if name != hotkey)
+    return hotkey,hide
+
+
+# Qt 键 -> HOTKEYS 里的名字。**不用 QKeySequence**：它把同样一个键按当前修饰键
+# 拼成不同的串（小键盘数字是 "Num+0"，Shift 状态还会换字符），而这里要的是
+# 「一个物理键就是一个名字」，否则同一颗键会因为 NumLock / Shift 变成两个身份。
+QT_HOTKEYS = {
+    C.Qt.Key_Backspace:'BACKSPACE', C.Qt.Key_Tab:'TAB', C.Qt.Key_Space:'SPACE',
+    C.Qt.Key_Return:'ENTER', C.Qt.Key_Enter:'ENTER',
+    C.Qt.Key_CapsLock:'CAPSLOCK', C.Qt.Key_NumLock:'NUMLOCK',
+    C.Qt.Key_Insert:'INSERT', C.Qt.Key_Delete:'DELETE',
+    C.Qt.Key_Home:'HOME', C.Qt.Key_End:'END',
+    C.Qt.Key_PageUp:'PAGEUP', C.Qt.Key_PageDown:'PAGEDOWN',
+    C.Qt.Key_Up:'UP', C.Qt.Key_Down:'DOWN', C.Qt.Key_Left:'LEFT', C.Qt.Key_Right:'RIGHT',
+    C.Qt.Key_Minus:'MINUS', C.Qt.Key_Equal:'EQUAL',
+    C.Qt.Key_BracketLeft:'LBRACKET', C.Qt.Key_BracketRight:'RBRACKET',
+    C.Qt.Key_Backslash:'BACKSLASH', C.Qt.Key_Semicolon:'SEMICOLON',
+    C.Qt.Key_Apostrophe:'QUOTE', C.Qt.Key_Comma:'COMMA', C.Qt.Key_Period:'PERIOD',
+    C.Qt.Key_Slash:'SLASH', C.Qt.Key_QuoteLeft:'GRAVE',
+    C.Qt.Key_Pause:'PAUSE', C.Qt.Key_Print:'PRINTSCREEN', C.Qt.Key_ScrollLock:'SCROLLLOCK',
+    C.Qt.Key_Menu:'APPS',
+    **{getattr(C.Qt, f'Key_F{k}'):f'F{k}' for k in range(13,25)},
+}
+
+# 修饰键自己当快捷键时，`modifiers()` 里必然带着它自己（按 Alt 就是 Key_Alt +
+# AltModifier），所以这几个要在「拒绝一切修饰键」那一关**之前**认下来。
+# Qt 不区分左右：左 Ctrl 和右 Ctrl 都是 Key_Control，与键表里只给一个 CTRL 一致。
+QT_MODIFIERS = {C.Qt.Key_Control:'CTRL', C.Qt.Key_Shift:'SHIFT', C.Qt.Key_Alt:'ALT'}
+
+QT_KEYPAD = {C.Qt.Key_Asterisk:'NUMMUL', C.Qt.Key_Plus:'NUMADD', C.Qt.Key_Minus:'NUMSUB',
+             C.Qt.Key_Period:'NUMDEC', C.Qt.Key_Slash:'NUMDIV'}
+
+
+def hotkey_from_event(event):
+    """Qt 按键事件 -> HOTKEYS 里的名字；不认的键返回 None。
+
+    `KeypadModifier` 要单独摘掉：小键盘的 0~9 就是带着它报上来的，把它当成
+    「按了修饰键」会让整个小键盘都用不了。
+    """
+    key = event.key()
+    if key in QT_MODIFIERS:
+        return QT_MODIFIERS[key]
+    mods = event.modifiers()
+    if mods & ~C.Qt.KeypadModifier:
+        return None
+    if C.Qt.Key_A <= key <= C.Qt.Key_Z:
+        return chr(key)
+    if C.Qt.Key_0 <= key <= C.Qt.Key_9:
+        return f'NUM{key - C.Qt.Key_0}' if mods & C.Qt.KeypadModifier else chr(key)
+    if C.Qt.Key_F1 <= key <= C.Qt.Key_F12:
+        return f'F{key - C.Qt.Key_F1 + 1}'
+    if mods & C.Qt.KeypadModifier:
+        return QT_KEYPAD.get(key)
+    return QT_HOTKEYS.get(key)
 
 
 class HotkeyDialog(W.QDialog):
@@ -244,8 +365,12 @@ class HotkeyDialog(W.QDialog):
         self.readout.setAlignment(C.Qt.AlignCenter)
         self.readout.setStyleSheet('font-size:28px;padding:12px;')
         layout.addWidget(self.readout)
-        self.hint=W.QLabel('按下字母、数字或 F1–F12\nEsc 保留为隐藏 / 取消')
+        self.hint=W.QLabel('按一下要用的键。字母 / 数字 / F1–F24 / 方向键 / 小键盘 /\n'
+                           'Ctrl / Shift / Alt / 大写锁定 / 符号键都行，\n'
+                           '鼠标中键和侧键也可以（指针放在这个框里按）\n'
+                           'Esc 保留为隐藏 / 取消')
         self.hint.setObjectName('muted')
+        self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
         row=W.QHBoxLayout()
         for label,action in [('恢复默认',self.reset),('取消',self.reject),('保存',self.accept)]:
@@ -255,20 +380,38 @@ class HotkeyDialog(W.QDialog):
             row.addWidget(button)
         layout.addLayout(row)
 
+    # 鼠标侧键在 Qt 里叫 Back/Forward（就是 XButton1/2），中键是 MiddleButton。
+    # 点左键不算数：它是这个框里唯一「点按钮」用的键。
+    MOUSE_BUTTONS = {C.Qt.MiddleButton:'MOUSE_MIDDLE',
+                     C.Qt.BackButton:'MOUSE_SIDE1',
+                     C.Qt.ForwardButton:'MOUSE_SIDE2'}
+
     def reset(self):
             self.selected=self.default
             self.readout.setText(hotkey_text(self.default))
+
+    def pick(self,name):
+        self.selected=name
+        self.readout.setText(hotkey_text(name))
 
     def keyPressEvent(self,event):
         if event.key()==C.Qt.Key_Escape:
             self.reject()
             return
-        name=G.QKeySequence(event.key()).toString().upper()
-        if name in HOTKEYS and not (event.modifiers() & (C.Qt.ControlModifier | C.Qt.AltModifier | C.Qt.ShiftModifier | C.Qt.MetaModifier)):
-            self.selected=name
-            self.readout.setText(hotkey_text(name))
+        name=hotkey_from_event(event)
+        if name:
+            self.pick(name)
         else:
-            self.hint.setText('请选择单个字母、数字或 F1–F12\nEsc 保留为隐藏 / 取消')
+            self.hint.setText('这个键不能用作快捷键，请换一个\nEsc 保留为隐藏 / 取消')
+
+    def mousePressEvent(self,event):
+        # 侧键/中键根本没有对应的键盘事件，只能从鼠标事件里认。子控件（标签、
+        # 按钮）不处理这些键时会忽略事件，于是冒泡到这里。
+        name=self.MOUSE_BUTTONS.get(event.button())
+        if name:
+            self.pick(name)
+            return
+        super().mousePressEvent(event)
 
 
 class Overlay(W.QWidget):
@@ -426,7 +569,9 @@ class Companion(W.QWidget):
         self.demo_window = None
         self.started = 0
         # 跟随地图的缩放/移动：交互期间隐藏叠图，停手后重新对齐一次。
-        self.mouse = MouseWatcher()
+        # 同一个 watcher 也把按键边沿转给 keys —— 鼠标键当快捷键时（中键/侧键）
+        # 没有键盘事件可听，只有这一条信息来源。
+        self.mouse = MouseWatcher(self.keys)
         self.mouse_follow = True
         self.follow_active = False
         self.follow_dirty = False
@@ -442,13 +587,8 @@ class Companion(W.QWidget):
             self.settings = json.loads(self.settings_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):
             pass
-        self.hotkey = self.settings.get('hotkey','G')
-        if self.hotkey not in HOTKEYS:
-            self.hotkey = 'G'
+        self.hotkey, self.hide_hotkey = resolve_hotkeys(self.settings)
         self.keys.toggle_key = HOTKEYS[self.hotkey]
-        self.hide_hotkey = self.settings.get('hide_hotkey','BACKSPACE')
-        if self.hide_hotkey not in HOTKEYS or self.hide_hotkey == self.hotkey:
-            self.hide_hotkey = 'BACKSPACE'
         self.keys.hide_key = HOTKEYS[self.hide_hotkey]
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(3,3,3,3)
@@ -552,7 +692,7 @@ class Companion(W.QWidget):
         preferences.addWidget(self.delay_label)
         preferences.addWidget(self.delay)
         hotkeys=W.QHBoxLayout()
-        self.hotkey_label=W.QLabel(f'启用快捷键({self.hotkey}/esc)')
+        self.hotkey_label=W.QLabel(f'启用快捷键({hotkey_text(self.hotkey)}/esc)')
         hotkeys.addWidget(self.hotkey_label)
         pencil=EditButton()
         pencil.clicked.connect(self.edit_hotkey)
@@ -560,7 +700,7 @@ class Companion(W.QWidget):
         hotkeys.addWidget(self.enabled,1)
         preferences.addLayout(hotkeys)
         hidekeys=W.QHBoxLayout()
-        self.hide_hotkey_label=W.QLabel(f'隐藏叠图({self.hide_hotkey})')
+        self.hide_hotkey_label=W.QLabel(f'隐藏叠图({hotkey_text(self.hide_hotkey)})')
         hidekeys.addWidget(self.hide_hotkey_label)
         hide_pencil=EditButton()
         hide_pencil.clicked.connect(self.edit_hide_hotkey)
@@ -642,13 +782,19 @@ class Companion(W.QWidget):
             # 只有齿轮的位置才是用户真正看到的那个「右上角」。
             screen = W.QApplication.primaryScreen().availableGeometry()
             self.place_gear(C.QPoint(screen.right()-20-self.gear.width(),screen.top()+30))
-        self.keys.raw_active = self.keyboard.register(int(self.winId()))
-        if not self.keys.raw_active:
+        self.keys.raw_keyboard = self.keyboard.register(int(self.winId()))
+        if not self.keys.raw_keyboard:
             self.notify('快捷键事件监听失败，已使用轮询；请检查运行权限')
-        if not self.mouse.register(int(self.winId())):
+        self.keys.raw_mouse = self.mouse.register(int(self.winId()))
+        if not self.keys.raw_mouse:
             # fail open：一个静默失效的监听，远好于一个永远不恢复的叠图。
             self.mouse_follow = False
-            C.QTimer.singleShot(0,lambda: self.notify('鼠标监听未启用，跟随缩放/移动已关闭'))
+            # 鼠标键当快捷键时这条监听就是唯一的信息源，得单独说一声 ——
+            # 否则用户只会看到「按侧键没反应」，而提示还在讲跟随。
+            mouse_hotkey = self.hotkey in MOUSE_HOTKEYS or self.hide_hotkey in MOUSE_HOTKEYS
+            C.QTimer.singleShot(0,lambda: self.notify(
+                '鼠标监听未启用：跟随已关闭，鼠标快捷键也收不到'
+                if mouse_hotkey else '鼠标监听未启用，跟随缩放/移动已关闭'))
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
         # Prepare the filtered index while the gear is idle, before the first G.
         C.QTimer.singleShot(0,self.start_worker)
@@ -824,9 +970,9 @@ class Companion(W.QWidget):
                 return
             self.hotkey=dialog.selected
             self.keys.toggle_key=HOTKEYS[self.hotkey]
-            self.hotkey_label.setText(f'启用快捷键({self.hotkey}/esc)')
+            self.hotkey_label.setText(f'启用快捷键({hotkey_text(self.hotkey)}/esc)')
             self.save()
-            self.notify(f'快捷键已改为 {self.hotkey}')
+            self.notify(f'快捷键已改为 {hotkey_text(self.hotkey)}')
 
     def edit_hide_hotkey(self):
         dialog=HotkeyDialog(self.hide_hotkey,self,default='BACKSPACE')
@@ -836,9 +982,9 @@ class Companion(W.QWidget):
                 return
             self.hide_hotkey=dialog.selected
             self.keys.hide_key=HOTKEYS[self.hide_hotkey]
-            self.hide_hotkey_label.setText(f'隐藏叠图({self.hide_hotkey})')
+            self.hide_hotkey_label.setText(f'隐藏叠图({hotkey_text(self.hide_hotkey)})')
             self.save()
-            self.notify(f'隐藏键已改为 {self.hide_hotkey}')
+            self.notify(f'隐藏键已改为 {hotkey_text(self.hide_hotkey)}')
 
     def opacity_changed(self):
         self.opacity_label.setText(f'不透明度    {self.opacity.value()}%')
@@ -957,7 +1103,7 @@ class Companion(W.QWidget):
         window.activateWindow()
         self.return_game.show()
         self.bound_label.setText('本地截图：'+path.name)
-        self.notify('点击截图窗口，按 G 开始匹配；Esc 隐藏')
+        self.notify(f'点击截图窗口，按 {hotkey_text(self.hotkey)} 开始匹配；Esc 隐藏')
         if self.panel.isVisible():
             self.adjustSize()
         return True
@@ -1007,7 +1153,7 @@ class Companion(W.QWidget):
             C.QTimer.singleShot(1000,lambda: self.open_map("manual_retry") if self.is_game(win32gui.GetForegroundWindow()) else self.notify('请先切到截图或游戏画面'))
 
     def open_map(self, reason="map_hotkey"):
-        trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_active",False))
+        trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
         token = self.state.open()
