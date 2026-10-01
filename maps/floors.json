@@ -3863,6 +3863,198 @@
         ]
       ],
       "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/北 - 骑士1门（09.30更新）",
+      "name": "北 - 骑士1门（09.30更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/北 - 骑士1门（09.30更新）.jpg",
+      "sha256": "fc8edf1015912af6f7f3f80caf838a1cb152ef4737520cda38b02eb70fc95175",
+      "pixel_sha256": "1ddfe6e6e601366f3ab9b610a1d623f653d7686de1acc962d1e8d959b28d7bb9",
+      "size": [
+        1000,
+        2900
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            34,
+            1188,
+            920,
+            2009
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            25,
+            451,
+            941,
+            1196
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            34,
+            2029,
+            808,
+            2621
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          34,
+          1188,
+          920,
+          2009
+        ],
+        [
+          25,
+          451,
+          941,
+          1196
+        ],
+        [
+          34,
+          2029,
+          808,
+          2621
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - z门（09.30更新）",
+      "name": "左 - z门（09.30更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - z门（09.30更新）.jpg",
+      "sha256": "00eced796fb9a0d5ef7b3da5d49912c91188e84e323645eb015e5517c3f58998",
+      "pixel_sha256": "1e816b54c1c080055ee6baac4d4ccbae26f217e86acec882a2b15a9f8d925d8f",
+      "size": [
+        1000,
+        2900
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            29,
+            1250,
+            950,
+            1982
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            35,
+            469,
+            921,
+            1239
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            29,
+            2012,
+            902,
+            2640
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          29,
+          1250,
+          950,
+          1982
+        ],
+        [
+          35,
+          469,
+          921,
+          1239
+        ],
+        [
+          29,
+          2012,
+          902,
+          2640
+        ]
+      ],
+      "review": ""
+    },
+    {
+      "map_id": "nightmare/solo/左 - 十字门（09.30更新）",
+      "name": "左 - 十字门（09.30更新）",
+      "difficulty": "nightmare",
+      "mode": "solo",
+      "source": "maps/nightmare/solo/左 - 十字门（09.30更新）.jpg",
+      "sha256": "c50c8f79d73a7cb2e7f4ea27cc19880986644b3105679e14f85b18d0cd025bcc",
+      "pixel_sha256": "3023c1d3536b4f4d727e9f5179d86a5ec9a6d9256eaeb446bfcd2e20f8eb59b8",
+      "size": [
+        1000,
+        2900
+      ],
+      "regions": [
+        {
+          "floor": 1,
+          "bbox": [
+            42,
+            1152,
+            949,
+            1988
+          ]
+        },
+        {
+          "floor": 2,
+          "bbox": [
+            28,
+            476,
+            930,
+            1144
+          ]
+        },
+        {
+          "floor": -1,
+          "bbox": [
+            71,
+            2066,
+            893,
+            2614
+          ]
+        }
+      ],
+      "exclude_regions": [],
+      "include_regions": [
+        [
+          42,
+          1152,
+          949,
+          1988
+        ],
+        [
+          28,
+          476,
+          930,
+          1144
+        ],
+        [
+          71,
+          2066,
+          893,
+          2614
+        ]
+      ],
+      "review": ""
     }
   ]
 }
