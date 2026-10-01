@@ -34,6 +34,7 @@ class MatchResult:
 
 class MapMatcher:
     def __init__(self, index: Path, *, difficulty: str, mode: str | None = None):
+        self.floor_hint = None
         self.context = SessionContext(difficulty, mode)
         self.references = load(index, difficulty=difficulty, mode=mode)
         if not self.references:
@@ -78,7 +79,9 @@ class MapMatcher:
         extracted = time.perf_counter()
         if len(evidence.corners) < 4:
             return MatchResult(reason='insufficient_visible_structure', diagnostics=evidence.diagnostics)
-        retrieved = retrieve(evidence, self.floor_references)
+        refs = [r for r in self.floor_references if self.floor_hint is None
+                or any(region['floor'] == self.floor_hint for region in r.regions)]
+        retrieved = retrieve(evidence, refs)
         ranked = time.perf_counter()
         candidates = sorted([register(evidence, r) for r in retrieved[:10]], key=lambda c: -(c.explained or 0))
         end = time.perf_counter()
@@ -101,18 +104,32 @@ class MapMatcher:
         search identities in the library. Every call uses the current pixels.
         """
         start = time.perf_counter()
-        refs = [r for r in self.floor_references if r.map_id == map_id]
+        refs = [r for r in self.floor_references if r.map_id == map_id
+                and (self.floor_hint is None or any(region['floor'] == self.floor_hint for region in r.regions))]
         if not refs:
             return MatchResult(reason='cached_map_outside_context')
-        evidence = extract(screenshot)
-        candidates = []
-        if len(evidence.corners) >= 4:
-            candidates = sorted([register(evidence,r) for r in retrieve(evidence,refs)],
-                                key=lambda c: -(c.explained or 0))
-        return MatchResult(candidates=candidates, diagnostics={**evidence.diagnostics,
-                           'reference_count': 1, 'identity_search_performed': False,
-                           'confidence_calibrated': False,
-                           'timing_ms': {'total': (time.perf_counter()-start)*1000}})
+        from .live import presentation_candidate
+        def align(full_view):
+            evidence = extract(screenshot, full_view=full_view)
+            candidates = []
+            if len(evidence.corners) >= 4:
+                candidates = sorted([register(evidence,r) for r in retrieve(evidence,refs)],
+                                    key=lambda c: -(c.explained or 0))
+            return MatchResult(candidates=candidates, diagnostics={**evidence.diagnostics,
+                               'full_view': full_view,
+                               'reference_count': 1, 'identity_search_performed': False,
+                               'confidence_calibrated': False,
+                               'timing_ms': {'total': (time.perf_counter()-start)*1000}})
+        initial = align(False)
+        candidate = presentation_candidate(initial)[0]
+        if candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20:
+            return initial
+        expanded = align(True)
+        candidate = presentation_candidate(expanded)[0]
+        if candidate is not None and candidate.explained >= .65 and candidate.contradiction <= .25:
+            expanded.diagnostics['pipeline_view'] = 'cached_expanded_view_retry'
+            return expanded
+        return initial
 
 
 class MatchSession:

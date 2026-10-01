@@ -20,6 +20,7 @@ def event(key, modifiers=C.Qt.NoModifier):
 
 class HotkeyTableTests(unittest.TestCase):
     def test_mouse_buttons_and_capslock_are_offered(self):
+        self.assertEqual(HOTKEYS['MOUSE_RIGHT'], 0x02)
         self.assertEqual(HOTKEYS['MOUSE_MIDDLE'], 0x04)
         self.assertEqual(HOTKEYS['MOUSE_SIDE1'], 0x05)
         self.assertEqual(HOTKEYS['MOUSE_SIDE2'], 0x06)
@@ -34,10 +35,14 @@ class HotkeyTableTests(unittest.TestCase):
         for vk in (0x5B, 0x5C):
             self.assertNotIn(vk, HOTKEYS.values())
 
-    def test_left_and_right_button_stay_out(self):
-        """左键是游戏里拖动地图的手势，右键是游戏自己的键，都不能当快捷键。"""
+    def test_only_the_left_button_stays_out(self):
+        """左键是游戏里拖动地图的手势，助手靠它判断「停手了，重新贴合」，不能绑。
+
+        右键能绑：跟随只看左键和滚轮（`map_interacting()`），右键进来不影响它 ——
+        这条由 `tests/test_frame_guard.py` 的 `test_only_left_button_or_wheel_...` 守着。
+        """
         self.assertNotIn(0x01, HOTKEYS.values())
-        self.assertNotIn(0x02, HOTKEYS.values())
+        self.assertIn(0x02, HOTKEYS.values())
 
     def test_virtual_key_codes_are_what_they_claim(self):
         for name, vk in (('UP', 0x26), ('DOWN', 0x28), ('LEFT', 0x25), ('RIGHT', 0x27),
@@ -152,14 +157,14 @@ class MouseHotkeyTests(unittest.TestCase):
             keys.raw_edge(0x06, False)
             self.assertEqual(keys.edges(), {0x06})
 
-    def test_mouse_watcher_turns_a_side_button_event_into_an_edge(self):
+    @staticmethod
+    def feed_button(ulButtons):
         """造一条真的 WM_INPUT 缓冲喂给 `_read()`，走完解析那一层。"""
         keys = Keys()
-        keys.toggle_key = HOTKEYS['MOUSE_SIDE1']
         watcher = MouseWatcher(keys)
         raw = RAWINPUT()
         raw.header.dwType = RIM_TYPEMOUSE
-        raw.data.mouse.ulButtons = 0x0040     # RI_MOUSE_BUTTON_4_DOWN
+        raw.data.mouse.ulButtons = ulButtons
         payload = bytes(raw)
 
         def get_raw_input_data(handle, kind, buffer, size, header_size):
@@ -175,7 +180,19 @@ class MouseHotkeyTests(unittest.TestCase):
         with patch('mapmatching.mouse_input.user32.GetRawInputData',
                    side_effect=get_raw_input_data):
             watcher._read(0)
-        self.assertEqual(edges, [(0x05, False)])
+        return edges
+
+    def test_mouse_watcher_turns_a_side_button_event_into_an_edge(self):
+        self.assertEqual(self.feed_button(0x0040), [(0x05, False)])   # BUTTON_4_DOWN
+
+    def test_mouse_watcher_turns_a_right_button_event_into_an_edge(self):
+        """右键走的是同一条线：Raw Input -> MouseWatcher._read -> Keys.raw_edge。
+
+        左键同样会被转发，但 `Keys.raw_edge` 只认自己关心的键，而左键永远不在
+        `HOTKEYS` 里，所以它到不了快捷键状态机。
+        """
+        self.assertEqual(self.feed_button(0x0004), [(0x02, False)])   # BUTTON_2_DOWN
+        self.assertEqual(self.feed_button(0x0008), [(0x02, True)])    # BUTTON_2_UP
 
     def test_mouse_watcher_without_keys_is_still_fine(self):
         """跟随功能用的那个 watcher 不传 keys，行为一个字都不该变。"""

@@ -6,6 +6,39 @@ from mapmatching.src.live import ToggleState
 
 
 class SyncTests(unittest.TestCase):
+    def test_blank_floor_keeps_session_and_return_can_overlay(self):
+        from mapmatching.ui import Companion,W,win32gui,no_map_evidence
+        from mapmatching.src.types import Candidate,Pose
+        import time
+        state=ToggleState(); token=state.open()
+        candidate=Candidate('hard/test','hard',None,10,Pose(1,0,0),.9,.1,1)
+        subject=Mock()
+        subject.state=state
+        subject.keys.edges.return_value=set()
+        subject.enabled.isChecked.return_value=False
+        subject.foreground_lost.return_value=False
+        subject.target=42
+        subject.winId.return_value=43
+        subject.opacity.value.return_value=30
+        subject.rect_at_capture=None
+        subject.connection.poll.return_value=True
+        subject.mouse_busy.return_value=False
+        subject.follow_active=subject.follow_dirty=False
+        subject.cached_candidate=None
+        subject.started=time.perf_counter()
+        subject.close_map=Mock(side_effect=state.close)
+        visible={'diagnostics':{'map_ui':{'visible':True},'anchors':400},'candidates':[]}
+        self.assertFalse(no_map_evidence(visible))
+        with patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42):
+            for layer,current in ((object(),candidate),(None,None),(object(),candidate)):
+                subject.connection.recv.return_value=('result',(token,layer,'ambiguous',current,1,visible))
+                Companion.tick(subject)
+                self.assertTrue(state.opened)
+                self.assertIs(subject.cached_candidate,candidate)
+        subject.close_map.assert_not_called()
+        self.assertEqual(subject.overlay.display.call_count,2)
+        subject.overlay.hide.assert_called_once()
+
     def subject(self,opened,local=False):
         state=ToggleState(opened=opened)
         subject=SimpleNamespace(state=state,keys=SimpleNamespace(toggle_key=71,hide_key=8,edges=lambda:{71}),

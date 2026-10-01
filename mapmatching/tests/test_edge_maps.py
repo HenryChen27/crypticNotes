@@ -46,6 +46,12 @@ class EdgeMapTests(unittest.TestCase):
         self.assertIsNotNone(selected)
         self.assertEqual((selected.map_id,selected.floor),('hard/北-1门',2))
         self.assertTrue(result.diagnostics['full_view'])
+        known = self.hard.register_known(image, 'hard/北-1门')
+        aligned, _ = presentation_candidate(known)
+        self.assertIsNotNone(aligned)
+        self.assertEqual((aligned.map_id, aligned.floor), ('hard/北-1门', 2))
+        self.assertTrue(known.diagnostics['full_view'])
+        self.assertFalse(known.diagnostics['identity_search_performed'])
 
     def test_blank_frame_stays_rejected_after_expansion(self):
         result=self.hard.match(np.zeros((600,800,3),np.uint8))

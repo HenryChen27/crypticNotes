@@ -68,7 +68,8 @@ body = '''《第五人格》加页手记地图助手。根据屏幕截图识别�
 首次使用默认展开等待为 150 毫秒，已有自定义值保留。开图后请稍作停留，立即关闭仍可能来不及识别。可使用布偶外观和对话提示，关闭个性外观即可恢复齿轮。运行 `create-shortcut.cmd` 可以生成桌面快捷方式。
 
 截图在本地处理，不读取或修改游戏内存。可选记录成功与失败案例，每类保留最近 20 条；分享记录前请检查私人信息。地图与路线素材来自凉哈皮。详细说明见仓库 README。'''
-api('/releases/'+str(entry['id']), {'body': body+android}, 'PATCH')
+# Windows publishing only replaces the Windows attachments. Keep the existing
+# release notes intact so Android notes and manually edited text are preserved.
 published = api('/releases/'+str(entry['id']))
 for name, asset_id, digest in uploaded:
     asset = next(a for a in published['assets'] if a['name'] == name)

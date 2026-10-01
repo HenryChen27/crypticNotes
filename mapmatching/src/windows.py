@@ -27,6 +27,17 @@ def monitor_rect(hwnd):
     return x0,y0,x1-x0,y1-y0
 
 
+def mask_screen_rect(pixels, capture_rect, excluded_rect):
+    """Mask an assistant window in physical screen coordinates, in place."""
+    x,y,w,h = capture_rect
+    ex,ey,ew,eh = excluded_rect
+    left,top = max(0,ex-x),max(0,ey-y)
+    right,bottom = min(w,ex+ew-x),min(h,ey+eh-y)
+    if right>left and bottom>top:
+        pixels[top:bottom,left:right] = 0
+    return pixels
+
+
 def capture(rect):
     x,y,w,h = rect
     if w < 100 or h < 100:

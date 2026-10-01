@@ -44,12 +44,50 @@ class OcclusionCacheTests(unittest.TestCase):
         matcher.match.assert_called_once()
         self.assertEqual(result.diagnostics['pipeline'],'recognition_fallback')
 
+    def test_floor_hint_updates_before_alignment_and_clears_when_unknown(self):
+        from mapmatching.tests.test_floor_tabs import tab_frame
+        matcher=Mock()
+        matcher.floor_hint=None
+        matcher.match.return_value=MatchResult()
+        for floor in (-1,2,1,None):
+            match_with_cache(matcher,tab_frame(floor))
+            self.assertEqual(matcher.floor_hint,floor)
+
     def test_empty_cache_recognizes(self):
         matcher=Mock()
         matcher.match.return_value=MatchResult()
         result,c,_=match_with_cache(matcher,np.zeros((5,5,3),np.uint8))
         matcher.register_known.assert_not_called()
         self.assertIsNone(c)
+
+    def test_strong_new_floor_does_not_search_all_maps(self):
+        matcher=Mock()
+        previous=candidate(.98)
+        current=candidate(.80)
+        current.floor=2
+        matcher.register_known.return_value=MatchResult(candidates=[current])
+        _, selected, _=match_with_cache(matcher,None,previous)
+        self.assertIs(selected,current)
+        matcher.match.assert_not_called()
+
+    def test_weak_other_map_does_not_replace_remembered_map(self):
+        matcher=Mock()
+        previous=candidate()
+        other=candidate(.65);other.map_id='hard/other'
+        matcher.register_known.return_value=MatchResult()
+        matcher.match.return_value=MatchResult(candidates=[other])
+        result,selected,_=match_with_cache(matcher,None,previous)
+        self.assertIsNone(selected)
+        self.assertEqual(previous.map_id,'hard/test')
+        self.assertEqual(result.diagnostics['map_switch_rejected'],'hard/other')
+
+    def test_strong_unambiguous_other_map_can_replace_cache(self):
+        matcher=Mock()
+        other=candidate(.9);other.map_id='hard/other'
+        matcher.register_known.return_value=MatchResult()
+        matcher.match.return_value=MatchResult(candidates=[other,candidate(.7)])
+        _,selected,_=match_with_cache(matcher,None,candidate())
+        self.assertIs(selected,other)
 
 
 if __name__=='__main__':

@@ -43,6 +43,17 @@ def chalk_texture(width,height,bright=False,roughness=1.0,shape='rect',left_edge
 
 
 class ChalkButton(W.QPushButton):
+    def set_update_available(self, available):
+        self.update_available = available
+        self.update()
+
+    def paint_update_dot(self, painter):
+        if getattr(self, 'update_available', False):
+            painter.setRenderHint(G.QPainter.Antialiasing)
+            painter.setPen(C.Qt.NoPen)
+            painter.setBrush(G.QColor('#c56967'))
+            painter.drawEllipse(C.QPointF(self.width()-32, self.height()/2), 3.5, 3.5)
+
     def __init__(self,text):
         super().__init__(text)
         self.setMinimumHeight(39)
@@ -54,6 +65,7 @@ class ChalkButton(W.QPushButton):
         p.setPen(G.QColor('#152635'))
         p.setFont(self.font())
         p.drawText(self.rect(),C.Qt.AlignCenter,self.text())
+        self.paint_update_dot(p)
 
 
 class FoldSection(W.QWidget):
@@ -79,6 +91,7 @@ class FoldSection(W.QWidget):
                 p.setPen(G.QPen(G.QColor('#aabfcd'), 1.5))
                 points = [(x-4,y-2),(x,y+2),(x+4,y-2)] if self.isChecked() else [(x-2,y-4),(x+2,y),(x-2,y+4)]
                 p.drawPolyline(G.QPolygonF([C.QPointF(*point) for point in points]))
+                self.paint_update_dot(p)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)

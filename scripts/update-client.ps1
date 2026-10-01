@@ -18,10 +18,25 @@ function Resolve-Child([string]$Root, [string]$Relative) {
 }
 
 function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup) {
-    # Preserve the whole local map library (including enrollment, deletions and caches).
-    # Settings/records already live in LOCALAPPDATA; never mirror/delete the user's folder.
+    # The published map library is authoritative. Back up the installed library, then
+    # replace it as one unit so removed/renamed maps do not survive an update.
+    # Settings/records live in LOCALAPPDATA and are not touched here.
     $changed = [Collections.Generic.List[object]]::new()
+    $payloadMaps = Resolve-Child $Payload 'maps'
+    $targetMaps = Resolve-Child $Destination 'maps'
+    $savedMaps = Resolve-Child $Backup 'maps'
+    $hadMaps = Test-Path -LiteralPath $targetMaps -PathType Container
+    $mapsInstalled = $false
     try {
+        if (Test-Path -LiteralPath $payloadMaps -PathType Container) {
+            if (Test-Path -LiteralPath $targetMaps -PathType Leaf) { throw '目标 maps 被同名文件占用' }
+            if ($hadMaps) {
+                [void][IO.Directory]::CreateDirectory((Split-Path -Parent $savedMaps))
+                Move-Item -LiteralPath $targetMaps -Destination $savedMaps
+            }
+            Copy-Item -LiteralPath $payloadMaps -Destination $targetMaps -Recurse
+            $mapsInstalled = $true
+        }
         foreach ($file in Get-ChildItem -LiteralPath $Payload -File -Recurse) {
             $relative = $file.FullName.Substring($Payload.TrimEnd('\').Length + 1)
             if ($relative -match '^(maps|out|records|\.git)(\\|$)' -or $relative -eq '.windows-update.json') { continue }
@@ -47,6 +62,14 @@ function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup
                 elseif (Test-Path -LiteralPath $entry.Target -PathType Leaf) { Remove-Item -LiteralPath $entry.Target -Force }
             } catch { $rollbackErrors += $_.Exception.Message }
         }
+        try {
+            if ($mapsInstalled -and (Test-Path -LiteralPath $targetMaps -PathType Container)) {
+                Remove-Item -LiteralPath $targetMaps -Recurse -Force
+            }
+            if ($hadMaps -and (Test-Path -LiteralPath $savedMaps -PathType Container)) {
+                Move-Item -LiteralPath $savedMaps -Destination $targetMaps
+            }
+        } catch { $rollbackErrors += $_.Exception.Message }
         if ($rollbackErrors.Count) { throw "更新失败且部分回退失败；备份：$Backup。请勿启动程序。$($rollbackErrors -join '; ')" }
         throw "替换失败，已恢复原文件。$($failure.Exception.Message)"
     }
@@ -184,7 +207,7 @@ try {
         }
         Install-Payload $payload $InstallRoot (Join-Path $work 'backup')
         @{sha256=$expected} | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding UTF8
-        $label.Text = '更新完成，设置和本地地图库已保留。'
+        $label.Text = '更新完成，设置已保留，地图库已同步到最新版。'
         Start-Process -FilePath $appPath -WorkingDirectory $InstallRoot -WindowStyle Hidden
     }
     $bar.Style = 'Continuous'

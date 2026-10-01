@@ -104,7 +104,7 @@ def composite(screenshot, layer, opacity=.30):
     return np.rint(screenshot*(1-alpha)+layer[:,:,:3]*alpha).clip(0,255).astype(np.uint8)
 
 
-def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False):
+def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floor_hint=None):
     """Try one-map registration first, then reacquire only when it fails.
 
     The cache is a provisional identity, never an old screen-space transform.
@@ -122,21 +122,43 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False):
             return (MatchResult(reason='map_ui_not_confirmed',diagnostics=dict(
                 map_ui=visibility,identity_search_performed=False,pipeline='screen_gate')),
                 None,'未确认地图已展开，已停止叠图')
+    from .matcher import MapMatcher
+    from .floor_tabs import inspect_floor_tabs
+    floor_reading = inspect_floor_tabs(pixels) if floor_hint is None else dict(floor=floor_hint, reason='caller_floor_tabs')
+    if hasattr(matcher, 'floor_hint'):
+        matcher.floor_hint = floor_reading['floor']
+        if isinstance(matcher, MultiplayerFallback):
+            matcher.primary.floor_hint = matcher.floor_hint
+            if matcher.solo is not None:
+                matcher.solo.floor_hint = matcher.floor_hint
     fallback = None
     if cached is not None:
         result = matcher.register_known(pixels,cached.map_id)
+        result.diagnostics['floor_tabs'] = floor_reading
         if visibility is not None:
             result.diagnostics['map_ui'] = visibility
         candidate,message = presentation_candidate(result)
-        if candidate is not None and (candidate.explained or 0) >= max(.55,(cached.explained or 0)-.05) and candidate.contradiction <= min(.40,(cached.contradiction or 0)+.05):
+        # A different floor/viewport has different visible evidence. A strong
+        # current fit need not match the previous frame's near-perfect score.
+        strong_current = candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20
+        comparable_fit = candidate is not None and (candidate.explained or 0) >= max(.55,(cached.explained or 0)-.05) and candidate.contradiction <= min(.40,(cached.contradiction or 0)+.05)
+        if strong_current or comparable_fit:
             result.diagnostics.update(pipeline='cached_registration',cached_map_id=cached.map_id,
                                       identity_search_performed=False)
             return result,candidate,'沿用上次地图 · 已重新对齐'
         fallback = 'cached_alignment_rejected'
     result = matcher.match(pixels)
+    result.diagnostics['floor_tabs'] = floor_reading
     if visibility is not None:
         result.diagnostics['map_ui'] = visibility
     candidate,message = presentation_candidate(result)
+    if cached is not None and candidate is not None and candidate.map_id != cached.map_id:
+        rivals = [c for c in result.candidates if c.map_id != candidate.map_id]
+        margin = candidate.explained - max((c.explained or 0 for c in rivals), default=0)
+        if candidate.explained < .75 or candidate.contradiction > .20 or margin < .06:
+            result.diagnostics['map_switch_rejected'] = candidate.map_id
+            candidate = None
+            message = '暂时无法对齐，已记住上次地图；请增加可见线索'
     result.diagnostics.update(pipeline='recognition_fallback' if cached is not None else 'recognition',
                               identity_search_performed=True,cache_fallback_reason=fallback,
                               pipeline_ms=(time.perf_counter()-start)*1000)
@@ -150,6 +172,7 @@ class MultiplayerFallback:
         self.primary = primary
         self.solo_factory = solo_factory
         self.solo = None
+        self.floor_hint = None
 
     @property
     def references(self):
@@ -161,6 +184,7 @@ class MultiplayerFallback:
             return result
         if self.solo is None:
             self.solo = self.solo_factory()
+        self.solo.floor_hint = self.floor_hint
         solo_result = self.solo.match(pixels)
         if presentation_candidate(solo_result)[0] is not None:
             solo_result.diagnostics['multiplayer_solo_fallback'] = True
@@ -172,6 +196,7 @@ class MultiplayerFallback:
         if map_id.startswith('nightmare/solo/'):
             if self.solo is None:
                 self.solo = self.solo_factory()
+            self.solo.floor_hint = self.floor_hint
             result = self.solo.register_known(pixels, map_id)
             result.diagnostics['multiplayer_solo_fallback'] = True
             return result

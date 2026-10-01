@@ -35,10 +35,8 @@ def api(path, data=None, method=None):
 entry = api('/releases/latest')
 print('Updating existing release:', entry['html_url'], flush=True)
 for name, path in [(NAME, APK), ('android-update.json', output)]:
-    for old in entry['assets']:
-        if old['name']==name:
-            api('/releases/assets/'+str(old['id']), method='DELETE')
-    url=urlsplit(entry['upload_url'].split('{')[0]+'?name='+name)
+    temporary=name+'.pending-'+str(manifest['versionCode'])
+    url=urlsplit(entry['upload_url'].split('{')[0]+'?name='+temporary)
     conn=http.client.HTTPSConnection(url.hostname,timeout=600)
     with path.open('rb') as stream:
         conn.request('POST',url.path+'?'+url.query,body=stream,headers={**headers,
@@ -48,17 +46,30 @@ for name, path in [(NAME, APK), ('android-update.json', output)]:
     if response.status!=201: raise RuntimeError('Upload failed: '+str(response.status))
     expected=hashlib.sha256(path.read_bytes()).hexdigest()
     if result.get('digest')!='sha256:'+expected: raise RuntimeError('Remote digest mismatch')
+    for old in entry['assets']:
+        if old['name']==name:
+            api('/releases/assets/'+str(old['id']), method='DELETE')
+    api('/releases/assets/'+str(result['id']), {'name':name}, 'PATCH')
     print('Verified:',name,result['size'],flush=True)
 body=entry.get('body') or ''
 heading='### Android 手机预览版'
 if heading in body: body=body.split(heading)[0].rstrip()
-body+=('\n\n'+heading+'\n\n'
- '下载 `'+NAME+'` 安装（Android 8+，arm64）。允许悬浮窗和屏幕采集后，回到游戏打开地图即可自动识别与叠图。\n\n'
- '游戏内的小圆钮**一直显示**，可以拖到任意位置，建议留在屏幕左侧。空闲时只显示纹章；识别中纹章持续旋转（不再用文字遮挡地图）；出结果时纹章旁边像对话框一样冒出一条短提示，约 1.8 秒后自动收回，拖动时立刻收起。**单击开关游戏设置、双击立刻重新识别、长按关闭识别**（小圆钮同时消失）。双击会撤掉旧叠图并马上重跑一次检测，不用再干等下一轮；它不绕过地图展开验证，地图没展开时仍然不匹配。因为要区分单双击，单击设置会比平时晚约 0.3 秒生效。长按的判定时间放宽到 0.9 秒（比系统默认的 0.5 秒长），这是四个手势里唯一会关掉识别的，宁可按住久一点，也别误触。\n\n'
- '游戏设置面板整体缩小：横屏下不用滑动就能看到全部按钮，标题不再贴着顶边，右上角是一个独立的叉。面板内难度与参考路线**改动即生效**（后台重建匹配器约 1 秒），并显示当前生效的组合；新增「隐藏叠图」，可临时把叠图收起来。\n\n'
- '首页的「游戏设置」折叠栏点标题展开／收起，样式与应用更新一致，**默认展开**；悬浮球尺寸与叠图不透明度的改动**立即生效**，不必重启。检查应用更新时不再有进度条，改为旋转的纹章。\n\n'
- '**修复**：上一版首页的「游戏设置」整栏不见了。原因是折叠栏的标题从来没被加进界面（漏了一行 `addView`），内容又默认收起，于是整栏凭空消失——编译、检查、运行都不报错，难度/尺寸/地图管理等设置因此在首页完全点不到。现在折叠栏的标题与内容由同一个方法一次建成，并加了源码级检查防止再漏。\n\n'
- '应用首页“检查应用更新”会先读取小体积版本清单，有新版才下载安装包，按系统提示确认覆盖安装，保留设置。首次安装仍需下载安装包；无需 Git 或电脑。预览版尚需更多真机验证。\n')
+body += f"""
+
+{heading}
+
+当前版本：**{manifest['versionName']}**（Android 8+，arm64）。下载 `{NAME}`，已有安装可在应用内检查更新，覆盖安装保留设置。
+
+- **录屏设置移至 App 内**：声音可选择无声或内部声音，悬浮窗只保留开始／停止录制。Android 10+ 内部声音需要系统录音授权，不采集麦克风；游戏禁止第三方采集时可能仍无声。
+- 录制时悬浮花纹持续平滑淡入淡出，可与匹配旋转叠加，停止录制后恢复。
+- **辅助设置 → 轻触反馈**：控制按钮、开关及关闭操作的微震动；自动匹配结果不震动，并遵循系统触感设置。
+- Android 10+ 视频保存到相册 `Movies/CrypticNotes`；Android 8/9 保存至应用外部 Movies 目录。最长边 1280、最高 24 帧，转屏会结束当前录制。实际性能和兼容性仍待更多真机测试。
+- 支持系统提供的单应用共享选项，不再强制整屏共享。单应用共享通常不包含插件悬浮窗；录制叠图演示请选择整个屏幕。暂不支持分屏或自由窗口的坐标适配。
+- 启动后台检查更新，有新版时更新栏显示红点，不自动下载。
+- 改进楼层标签判定、缓存地图对齐和手机匹配筛选。探索少但特征明确的地图仍可匹配，证据不足时不强行叠图。
+
+系统自带录屏仍可能与识图冲突。内置录屏共用原屏幕采集，默认不录制、默认无声。内部声音及音画同步仍需真机验证；内部声音可能包括其他应用的媒体播放声音。识图时临时隐藏叠图的过程可能出现在视频里。画质为最长边 1280、最高 24 帧、4 Mbps，不跟随系统录屏设置。
+"""
 api('/releases/'+str(entry['id']), {'body':body}, 'PATCH')
 published=api('/releases/'+str(entry['id']))
 assert {NAME,'android-update.json'} <= {a['name'] for a in published['assets']}

@@ -107,11 +107,15 @@ QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: trans
 '''
 
 
-# 鼠标按键和键盘共用同一套虚拟键码，所以能直接塞进同一张表：0x04 中键、
-# 0x05 / 0x06 是两个侧键。**左键和右键故意不开放** —— 左键是游戏里拖动地图的手势，
-# 助手靠它判断「停手了，重新贴合」，绑成快捷键会让叠图每拖一下重来一次；右键是游戏
-# 自己的常用键。滚轮同理不做：它既是游戏的缩放，也是跟随的停手信号。
-MOUSE_HOTKEYS = {'MOUSE_MIDDLE':0x04, 'MOUSE_SIDE1':0x05, 'MOUSE_SIDE2':0x06}
+# 鼠标按键和键盘共用同一套虚拟键码，所以能直接塞进同一张表：0x02 右键、
+# 0x04 中键、0x05 / 0x06 是两个侧键。
+# **只有左键故意不开放**：它是游戏里拖动地图的手势，`map_interacting()` 靠它判断
+# 「停手了，重新贴合」，绑成快捷键会让叠图每拖一下重来一次。滚轮同理不做：
+# 它既是游戏的缩放，也是跟随的停手信号。
+# 右键能进来是因为**跟随根本不看它**（`map_interacting()` 只认 0x01 和滚轮），
+# 不会像左键那样一绑就把跟随弄坏；它和游戏自身按键的冲突交给用户自己权衡。
+MOUSE_HOTKEYS = {'MOUSE_RIGHT':0x02, 'MOUSE_MIDDLE':0x04,
+                 'MOUSE_SIDE1':0x05, 'MOUSE_SIDE2':0x06}
 
 # 这些虚拟键码在任何键盘上都是鼠标键（`src/windows.py` 用它区分「哪一类设备
 # 的 Raw Input 在负责这个键」）。
@@ -204,6 +208,10 @@ def no_map_evidence(details):
     「这不是地图」）。门的后半段 —— 两张图过于相似、楼层未确认 —— **不在这里**：
     那两种情况说明地图明明在屏幕上，绝不能拿来当退出的理由。
     """
+    # An independently confirmed open panel can be empty on an unexplored
+    # floor. Geometry failure must not override the UI visibility check.
+    if ((details or {}).get('diagnostics') or {}).get('map_ui', {}).get('visible') is True:
+        return False
     if not details or details.get('reason') == 'insufficient_visible_structure':
         return False
     # 角点在 diagnostics 里，不在顶层 —— `to_dict()` 是 asdict(MatchResult)，
@@ -260,7 +268,8 @@ HOTKEY_LABELS = {
     'MINUS':'-','EQUAL':'=','LBRACKET':'[','RBRACKET':']','BACKSLASH':'\\',
     'SEMICOLON':';','QUOTE':"'",'COMMA':',','PERIOD':'.','SLASH':'/','GRAVE':'`',
     # 1 是靠后那个（鼠标驱动里的「后退」），2 是靠前的「前进」。
-    'MOUSE_MIDDLE':'鼠标中键','MOUSE_SIDE1':'鼠标侧键 1','MOUSE_SIDE2':'鼠标侧键 2',
+    'MOUSE_RIGHT':'鼠标右键','MOUSE_MIDDLE':'鼠标中键',
+    'MOUSE_SIDE1':'鼠标侧键 1','MOUSE_SIDE2':'鼠标侧键 2',
 }
 
 
@@ -367,7 +376,7 @@ class HotkeyDialog(W.QDialog):
         layout.addWidget(self.readout)
         self.hint=W.QLabel('按一下要用的键。字母 / 数字 / F1–F24 / 方向键 / 小键盘 /\n'
                            'Ctrl / Shift / Alt / 大写锁定 / 符号键都行，\n'
-                           '鼠标中键和侧键也可以（指针放在这个框里按）\n'
+                           '鼠标右键、中键和侧键也可以（指针放在这个框里按）\n'
                            'Esc 保留为隐藏 / 取消')
         self.hint.setObjectName('muted')
         self.hint.setWordWrap(True)
@@ -382,7 +391,8 @@ class HotkeyDialog(W.QDialog):
 
     # 鼠标侧键在 Qt 里叫 Back/Forward（就是 XButton1/2），中键是 MiddleButton。
     # 点左键不算数：它是这个框里唯一「点按钮」用的键。
-    MOUSE_BUTTONS = {C.Qt.MiddleButton:'MOUSE_MIDDLE',
+    MOUSE_BUTTONS = {C.Qt.RightButton:'MOUSE_RIGHT',
+                     C.Qt.MiddleButton:'MOUSE_MIDDLE',
                      C.Qt.BackButton:'MOUSE_SIDE1',
                      C.Qt.ForwardButton:'MOUSE_SIDE2'}
 
@@ -759,6 +769,7 @@ class Companion(W.QWidget):
         box.addWidget(quit_button)
         preferences.addLayout(pet_row)
         update_button = ChalkButton('检查更新')
+        self.update_button = update_button
         update_button.clicked.connect(self.check_update)
         preferences.addWidget(update_button)
         layout.addWidget(self.panel)
@@ -801,6 +812,13 @@ class Companion(W.QWidget):
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
         # Prepare the filtered index while the gear is idle, before the first G.
         C.QTimer.singleShot(0,self.start_worker)
+
+        from .update_notice import watch_once
+        def update_notice(available):
+            self.update_button.set_update_available(available)
+            self.setting_sections[1].header.set_update_available(available)
+            self.update_button.setToolTip('发现新版本，点击更新' if available else '')
+        watch_once(self, ROOT, update_notice)
 
     def event(self,event):
         """点到游戏/桌面时把展开的设置面板收回成齿轮。
@@ -1139,7 +1157,7 @@ class Companion(W.QWidget):
         """前台既不是游戏、也不是我们自己 —— 只有真的切走了才算丢。
 
         面板刚被点过（改不透明度/难度）时前台是我们的窗口，但那不代表用户离开了地图；
-        take_capture 本来就会 self.hide() 把自己的窗口收掉再截屏。少了这条例外，
+        截图时布偶保持可见，并在识别图中屏蔽自身区域。少了这条例外，
         一次跟随重算就会误判「切走了」并 close_map，症状正是「调整之后就不认了」。
         """
         foreground = win32gui.GetForegroundWindow()
@@ -1193,14 +1211,13 @@ class Companion(W.QWidget):
             return
         self.overlay.hide()
         self.toast.hide()
-        self.hide()
-        # Let DWM remove our own UI before reading desktop pixels.
+        # Keep the companion visible; mask it in the recognition frame instead.
+        # Only the map overlay/toast need time to leave the desktop compositor.
         C.QTimer.singleShot(60,lambda: self.capture_after_hide(token))
 
     def capture_after_hide(self,token):
         if not self.state.accepts(token):
             self._capturing = False
-            self.show()
             return
         try:
             if self.foreground_lost():
@@ -1208,6 +1225,12 @@ class Companion(W.QWidget):
                 return
             self.rect_at_capture = self.capture_rect()
             pixels = native.capture(self.rect_at_capture)
+            self.capture_exclusion = None
+            is_visible = getattr(self, 'isVisible', None)
+            if callable(is_visible) and is_visible():
+                self.capture_exclusion = native.client_rect(int(self.winId()))
+                native.mask_screen_rect(pixels,self.rect_at_capture,
+                                        self.capture_exclusion)
             if getattr(self,'opening',False) and self.demo_window is None:
                 from .src.map_visibility import inspect_map_ui
                 visibility=inspect_map_ui(pixels)
@@ -1230,7 +1253,6 @@ class Companion(W.QWidget):
             self.notify('截屏失败：'+str(error))
         finally:
             self._capturing = False
-            self.show()
 
     def capture_rect(self):
         if self.demo_window is not None:
@@ -1249,6 +1271,7 @@ class Companion(W.QWidget):
         # 状态就没法一一对应了。
         if self.ready and self.pending is not None and not self.busy:
             self.request_pixels = self.pending[1]
+            self.request_exclusion = getattr(self,'capture_exclusion',None)
             trace("worker_request",token=self.pending[0])
             self.connection.send(self.pending)
             self.pending = None
@@ -1420,7 +1443,12 @@ class Companion(W.QWidget):
                                 # overlay is hidden by follow() while dirty.
                                 from .src.frame_guard import unchanged_map
                                 try:
-                                    same,check=unchanged_map(getattr(self,'request_pixels',None),native.capture(self.capture_rect()))
+                                    current_rect=self.capture_rect()
+                                    current_pixels=native.capture(current_rect)
+                                    exclusion=getattr(self,'request_exclusion',None)
+                                    if exclusion is not None:
+                                        native.mask_screen_rect(current_pixels,current_rect,exclusion)
+                                    same,check=unchanged_map(getattr(self,'request_pixels',None),current_pixels)
                                 except Exception as error:
                                     same,check=False,dict(reason='verification_failed',error=str(error))
                                 trace('result_frame_check',token=token,same=same,**check)
@@ -1463,6 +1491,13 @@ class Companion(W.QWidget):
                                 else:
                                     self.notify('正在确认地图已关闭…')
                                     C.QTimer.singleShot(250,lambda t=token:self.confirm_map_closed(t))
+                            elif (details.get('diagnostics') or {}).get('map_ui', {}).get('visible') is True:
+                                # Keep listening for the next pan/floor click. A
+                                # blank floor is not a closed map or a new identity.
+                                self.overlay.hide()
+                                self.no_map_streak = 0
+                                self.notify('当前楼层线索不足，已保留地图；切换楼层后自动重试'
+                                            if self.cached_candidate is not None else advise(details,message))
                             else:
                                 # A rejected fit cannot establish that the game map
                                 # remains open. Stop following ordinary gameplay;
