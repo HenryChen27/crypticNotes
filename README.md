@@ -25,7 +25,7 @@
 - 如果上一轮已经识别过地图，下一次会优先复用这张图，只重新对齐位置，速度更快。
 - 识别失败时会在齿轮旁边给一句简短提示，比如“未匹配”“内容太少”“请先打开地图”。
 
-目前内置 70 张地图：困难 28 张、噩梦单人 24 张、噩梦多人 18 张。（数字由 `maps/floors.json` 现场数出，Release 正文里的那份是自动填的；这行是手写的，改地图库时记得一起改。）
+目前内置 73 张地图：困难 28 张、噩梦单人 27 张、噩梦多人 18 张。（数字由 `maps/floors.json` 现场数出，Release 正文里的那份是自动填的；这行是手写的，改地图库时记得一起改。）
 
 ## 下载和启动
 
@@ -201,13 +201,13 @@ Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余
 
 本地检查结果：
 
-- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：114 个测试通过。
+- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：127 个测试通过。
 - `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 126/126 通过。
 - 快捷键：`tests/test_hotkey_choices.py` 核对键表与 Qt 映射，并用**自己造的** WM_INPUT 缓冲验证鼠标右键与侧键能走完「按下-松开-再按下」（不合成任何真实输入）；`tests/test_frame_guard.py` 守着「只有左键和滚轮会让叠图失效」，所以把右键绑成快捷键不会影响跟随。Top-1/Top-3 与改动前相同（0.429 / 0.714）；`benchmarks/benchmark.py` 不加载 `ui.py`、`mouse_input.py` 和 `windows.py`，所以这条链路不参与匹配。
-- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、70 张地图和匹配子进程（`reference_count: 70`，`ok: true`）。
-- `maps/floors.json`：70 张地图无重复 ID、无缺失原图、无 SHA256 不一致（逐条重算源图哈希核对）。
+- 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、73 张地图和匹配子进程（`reference_count: 73`，`ok: true`）。
+- `maps/floors.json`：73 张地图无重复 ID、无缺失原图、无 SHA256 不一致（逐条重算源图哈希核对）。
 - 分发通道 `更新.cmd` 端到端跑通：首次接入、增量更新、软删除状态、协作者自录地图不被删除，以及中文提示的编码。
-- 发版流水线 `scripts/release.sh --local` 跑通：打包 → 注入更新入口 → 压缩 → 整理分享仓库 → 提交分发分支，全程无推送。产出 zip 613 个文件，`更新.cmd` 与 `scripts/update-client.ps1` 都在里面且与成品目录逐字节相同；打包 EXE 自检 `ok: true`。
+- 发版流水线 `scripts/release.sh --local` 跑通：打包 → 注入更新入口 → 压缩 → 整理分享仓库 → 提交分发分支，全程无推送。产出 zip 637 个文件，`更新.cmd` 与 `scripts/update-client.ps1` 都在里面且与成品目录逐字节相同；打包 EXE 自检 `ok: true`。
 - 两个更新入口的字节在 `core.autocrlf` 的 `true`/`false`/`input` 三档下签出结果逐字节相同（`.gitattributes` 里对它们标了 `-text`）。协作者那台机器的设置我们看不到，所以不能只靠「本机这次没坏」。
 
 噩梦测试目前主要是原图派生的合成场景，能证明地图库和叠图链路没断；真实迷雾、不同分辨率和不同游戏布局仍需要更多实战截图验证。看不清、候选过于相似或楼层不确定时，程序会拒绝叠图。
