@@ -209,19 +209,17 @@ def keep_floating(window):
 class _WindowAPI:
     own_window = 0
 
-    @staticmethod
-    def GetForegroundWindow():
+    def GetForegroundWindow(self):
         app = NSWorkspace.sharedWorkspace().frontmostApplication()
         if not app:
             return 0
         pid=int(app.processIdentifier())
-        return _WindowAPI.own_window if pid == os.getpid() else pid
+        return self.own_window if pid == os.getpid() else pid
 
-    @staticmethod
-    def IsWindow(pid):
+    def IsWindow(self,pid):
         if not pid:
             return False
-        if pid == _WindowAPI.own_window:
+        if pid == self.own_window:
             return True
         try:
             os.kill(int(pid), 0)
