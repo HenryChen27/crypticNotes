@@ -5,10 +5,31 @@ import os
 import numpy as np
 from AppKit import NSWorkspace, NSScreen
 import Quartz
+from .ui_trace import trace
+
+_capture_window = None
+
+
+def _select_window(window_id, pid, rect):
+    global _capture_window
+    _capture_window = (int(window_id), int(pid), tuple(rect))
+    trace('mac_capture_target',window_id=int(window_id),pid=int(pid),rect=list(rect))
 
 
 def dpi_aware():
-    pass
+    # A floating utility must not activate a regular Dock application and move
+    # the user out of the game's full-screen Space.
+    from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
+    NSApplication.sharedApplication().setActivationPolicy_(NSApplicationActivationPolicyAccessory)
+
+
+def bind_local_window(handle):
+    panel = _panel_for(handle)
+    if panel is None:
+        raise RuntimeError('无法绑定本地截图窗口')
+    rect = client_rect(handle)
+    _select_window(panel.windowNumber(),os.getpid(),rect)
+    return rect
 
 
 def _screen_rect():
@@ -30,8 +51,12 @@ def monitor_rect(target):
         bounds = window.get('kCGWindowBounds',{})
         rect = tuple(round(bounds.get(key,0)) for key in ('X','Y','Width','Height'))
         if rect[2] >= 100 and rect[3] >= 100:
-            candidates.append(rect)
-    return max(candidates,key=lambda r:r[2]*r[3]) if candidates else _screen_rect()
+            candidates.append((rect,int(window.get('kCGWindowNumber',0))))
+    if not candidates:
+        raise RuntimeError('未找到目标应用的可见窗口；请点击游戏窗口后重试')
+    rect,window_id = max(candidates,key=lambda item:item[0][2]*item[0][3])
+    _select_window(window_id,target,rect)
+    return rect
 
 
 def client_rect(_window):
@@ -60,18 +85,27 @@ def capture(rect):
     x,y,w,h = map(int, rect)
     if w < 100 or h < 100:
         raise ValueError('游戏窗口过小或已最小化')
-    image = Quartz.CGWindowListCreateImage(
-        Quartz.CGRectMake(x,y,w,h),
-        Quartz.kCGWindowListOptionOnScreenOnly,
-        Quartz.kCGNullWindowID,
-        Quartz.kCGWindowImageDefault)
-    if image is None:
-        raise PermissionError('无法读取屏幕，请在系统设置中允许“屏幕录制”权限后重启应用')
+    permission = bool(Quartz.CGPreflightScreenCaptureAccess())
+    trace('mac_capture_permission',granted=permission,pid=os.getpid())
+    if not permission:
+        Quartz.CGRequestScreenCaptureAccess()
+        raise PermissionError('当前进程没有屏幕录制权限；请授权当前版本的加页手记后完全退出并重新打开')
+    if _capture_window is None or tuple(rect) != _capture_window[2]:
+        raise RuntimeError('截图目标未绑定，已停止截图以避免读取桌面背景')
+    from .macos_capture import capture_window
+    window_id,pid,_ = _capture_window
+    try:
+        image = capture_window(window_id,pid)
+    except Exception as error:
+        trace('mac_capture_failed',window_id=window_id,pid=pid,error=str(error))
+        raise
     width, height = Quartz.CGImageGetWidth(image), Quartz.CGImageGetHeight(image)
     provider = Quartz.CGImageGetDataProvider(image)
     raw = bytes(Quartz.CGDataProviderCopyData(provider))
     row_bytes = Quartz.CGImageGetBytesPerRow(image)
     frame = np.frombuffer(raw, np.uint8).reshape(height, row_bytes)[:, :width*4].reshape(height,width,4)
+    trace('mac_capture_complete',backend='ScreenCaptureKit',window_id=window_id,
+          pid=pid,width=width,height=height)
     # CGWindow images use premultiplied BGRA on current Intel and Apple Silicon Macs.
     return frame[:,:,:3].copy()
 
@@ -157,10 +191,17 @@ def keep_floating(window):
             _appkit('NSWindowCollectionBehaviorCanJoinAllSpaces', 1 << 0) |
             _appkit('NSWindowCollectionBehaviorStationary', 1 << 4) |
             _appkit('NSWindowCollectionBehaviorFullScreenAuxiliary', 1 << 8))
-    except Exception:
+        import AppKit
+        join = getattr(AppKit,'NSWindowCollectionBehaviorCanJoinAllApplications',None)
+        if join is not None:
+            panel.setCollectionBehavior_(int(panel.collectionBehavior()) | int(join))
+        trace('mac_panel_configured',window=int(window),level=int(panel.level()),
+              behavior=int(panel.collectionBehavior()))
+    except Exception as error:
         # Never let a cosmetic hardening pass break the overlay it is meant to
         # rescue; the window simply stays as Qt left it.
         _panels.pop(int(window), None)
+        trace('mac_panel_failed',window=int(window),error=str(error))
         return False
     return True
 

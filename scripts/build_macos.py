@@ -16,6 +16,7 @@ def main():
     args=[sys.executable,'-m','PyInstaller','--noconfirm','--windowed','--onedir',
           '--name','加页手记','--paths',str(ROOT),
           '--hidden-import','mapmatching.portable_check',
+          '--hidden-import','ScreenCaptureKit',
           '--osx-bundle-identifier','com.henrychen.crypticnotes',
           '--distpath',str(ROOT/'dist-macos'),'--workpath',str(ROOT/'build/pyinstaller-macos'),
           '--specpath',str(ROOT/'build')]

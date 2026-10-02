@@ -3,4 +3,5 @@ PySide6==6.11.2
 pywin32>=310; sys_platform == "win32"
 pyobjc-framework-Quartz>=11.1; sys_platform == "darwin"
 pyobjc-framework-Cocoa>=11.1; sys_platform == "darwin"
+pyobjc-framework-ScreenCaptureKit>=11.1; sys_platform == "darwin"
 psutil>=7

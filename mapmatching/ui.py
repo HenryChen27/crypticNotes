@@ -1337,6 +1337,8 @@ class Companion(W.QWidget):
 
     def capture_rect(self):
         if self.demo_window is not None:
+            if sys.platform == 'darwin':
+                return native.bind_local_window(int(self.demo_window.winId()))
             return native.client_rect(int(self.demo_window.winId()))
         return native.monitor_rect(self.target)
 
@@ -1624,6 +1626,8 @@ def main():
         parser.error('--showcase requires --demo')
     native.dpi_aware()
     app = W.QApplication(sys.argv[:1])
+    if sys.platform == 'darwin':
+        native.dpi_aware()  # Qt may reset the application activation policy.
     app.setQuitOnLastWindowClosed(False)
     font_stack()
     lock_path = DATA_ROOT/'out/mapmatching/ui.lock'
