@@ -112,7 +112,7 @@ try { $locked = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { 
 if (-not $locked) { exit }
 $form = [Windows.Forms.Form]::new()
 $form.Text = '加页手记 · 更新'
-$form.ClientSize = [Drawing.Size]::new(440,160)
+$form.ClientSize = [Drawing.Size]::new(440,190)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
@@ -120,13 +120,13 @@ $form.BackColor = [Drawing.Color]::FromArgb(37,55,69)
 $form.ForeColor = [Drawing.Color]::FromArgb(224,235,242)
 $form.Font = [Drawing.Font]::new('Microsoft YaHei UI',10)
 $label = [Windows.Forms.Label]::new()
-$label.SetBounds(22,18,396,62)
+$label.SetBounds(22,18,396,92)
 $label.Text = '正在检查更新…'
 $bar = [Windows.Forms.ProgressBar]::new()
-$bar.SetBounds(22,88,396,12)
+$bar.SetBounds(22,118,396,12)
 $bar.Style = 'Marquee'
 $button = [Windows.Forms.Button]::new()
-$button.SetBounds(308,116,110,30)
+$button.SetBounds(308,146,110,30)
 $button.Text = '取消'
 $button.FlatStyle = 'Flat'
 $button.Add_Click({ $form.Close() })
@@ -145,23 +145,78 @@ function Log([string]$Message) {
     ('{0:yyyy-MM-dd HH:mm:ss.fff}  {1}' -f [DateTime]::Now,$Message) | Add-Content -LiteralPath $logPath -Encoding UTF8
 }
 Log "start installRoot=$InstallRoot"
-function Download([string]$Url, [string]$Path, [long]$Size = 0) {
-    if (-not $Url.StartsWith('https://github.com/HenryChen27/crypticNotes/releases/download/')) { throw '更新地址不是项目官方发布地址' }
-    $task = $client.DownloadFileTaskAsync([Uri]$Url, $Path)
-    $timer = [Diagnostics.Stopwatch]::StartNew()
-    while (-not $task.IsCompleted) {
-        [Windows.Forms.Application]::DoEvents()
-        if ($form.IsDisposed) { $client.CancelAsync(); throw '已取消更新' }
-        if ($timer.Elapsed.TotalMinutes -gt 30) { $client.CancelAsync(); throw '下载超时，请稍后重试' }
-        if ($Size -gt 0 -and (Test-Path -LiteralPath $Path)) {
-            $bytes = (Get-Item -LiteralPath $Path).Length
-            $bar.Style = 'Continuous'
-            $bar.Value = [Math]::Min(100, [int](100*$bytes/$Size))
-            $label.Text = ('正在下载 {0:N1} / {1:N1} MB' -f ($bytes/1MB),($Size/1MB))
-        }
-        Start-Sleep -Milliseconds 80
+
+function New-Client {
+    $fresh = [Net.WebClient]::new()
+    $fresh.Headers['User-Agent'] = 'CrypticNotes-Windows-Updater'
+    return $fresh
+}
+
+# WebClient wraps every failure in one generic WebException whose Message is
+# useless to the user. Walk down to the real cause so the dialog says what
+# actually happened instead of the wrapper.
+function Explain($Exception) {
+    # A failed download arrives as MethodInvocationException (PowerShell wrapping
+    # .GetResult()) around WebException around the real IOException, so the outer
+    # two messages are pure noise: "使用"0"个参数调用"GetResult"时发生异常". Walk to
+    # the deepest cause instead.
+    $node = $Exception
+    $web = $null
+    while ($node) {
+        if (-not $web -and $node -is [Net.WebException]) { $web = $node }
+        if (-not $node.InnerException) { break }
+        $node = $node.InnerException
     }
-    $task.GetAwaiter().GetResult()
+    $text = '' + $Exception.Message
+    if ($Exception -is [Management.Automation.MethodInvocationException] -or $Exception -is [Net.WebException]) {
+        if ($node.Message) { $text = '' + $node.Message }
+    }
+    if ($web -and $web.Status -and $web.Status -ne [Net.WebExceptionStatus]::UnknownError) { $text = "$text（$($web.Status)）" }
+    $text = $text.Trim()
+    if ($text.Length -gt 62) { $text = $text.Substring(0,62) + '…' }
+    if (-not $text) { $text = '未知错误，详见日志' }
+    return $text
+}
+
+function Download([string]$Url, [string]$Path, [long]$Size = 0, [int]$Attempts = 4) {
+    if (-not $Url.StartsWith('https://github.com/HenryChen27/crypticNotes/releases/download/')) { throw '更新地址不是项目官方发布地址' }
+    # GitHub release assets answer Range requests with 501, so an interrupted
+    # 230 MB download cannot be resumed. Retry the whole file rather than
+    # dropping the user back to a manual reinstall.
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if ($attempt -gt 1) {
+            $label.Text = "网络中断，正在重试 $attempt/$Attempts…"
+            $bar.Style = 'Marquee'
+            [Windows.Forms.Application]::DoEvents()
+            Start-Sleep -Seconds (2 * ($attempt - 1))
+        }
+        if (Test-Path -LiteralPath $Path) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+        $client = New-Client
+        try {
+            $task = $client.DownloadFileTaskAsync([Uri]$Url, $Path)
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            while (-not $task.IsCompleted) {
+                [Windows.Forms.Application]::DoEvents()
+                if ($form.IsDisposed) { $client.CancelAsync(); throw '已取消更新' }
+                if ($timer.Elapsed.TotalMinutes -gt 30) { $client.CancelAsync(); throw '下载超时，请稍后重试' }
+                if ($Size -gt 0 -and (Test-Path -LiteralPath $Path)) {
+                    $bytes = (Get-Item -LiteralPath $Path).Length
+                    $bar.Style = 'Continuous'
+                    $bar.Value = [Math]::Min(100, [int](100*$bytes/$Size))
+                    $label.Text = ('正在下载 {0:N1} / {1:N1} MB（第 {2}/{3} 次）' -f ($bytes/1MB),($Size/1MB),$attempt,$Attempts)
+                }
+                Start-Sleep -Milliseconds 80
+            }
+            $task.GetAwaiter().GetResult()
+            return
+        } catch {
+            if ($form.IsDisposed -or $_.Exception.Message -eq '已取消更新') { throw }
+            Log "download $attempt/$Attempts failed: $($_.Exception.ToString())"
+            if ($attempt -eq $Attempts) { throw }
+        } finally {
+            $client.Dispose()
+        }
+    }
 }
 try {
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'IdentityVMapAssistant.exe'))) { throw '请从完整解压的 Windows 程序目录运行更新' }
@@ -201,6 +256,14 @@ try {
     if ($sameBuild -or ($installed -and $installed.sha256 -eq $expected)) {
         $label.Text = '已经是最新版本'
     } else {
+        # The zip and the extracted tree both live in %TEMP%; a full disk used to
+        # surface as "WebClient 请求期间发生异常" somewhere around 90%.
+        $volumeRoot = [IO.Path]::GetPathRoot([IO.Path]::GetFullPath($work))
+        $needed = [long]$asset[0].size * 2 + 256 * 1MB
+        $free = ([IO.DriveInfo]::new($volumeRoot)).AvailableFreeSpace
+        if ($free -lt $needed) {
+            throw ('磁盘空间不足：本次更新需要约 {0:N0} MB，{1} 只剩 {2:N0} MB，请清理后重试' -f ($needed/1MB),$volumeRoot,($free/1MB))
+        }
         $zip = Join-Path $work 'update.zip'
         Download $asset[0].browser_download_url $zip $asset[0].size
         $label.Text = '正在校验并解压…'
@@ -244,7 +307,7 @@ try {
     $completed = $true
 } catch {
     Log "failure $($_.Exception.ToString())"
-    if (-not $form.IsDisposed) { $label.Text = "更新未完成：$($_.Exception.Message)`n日志：$logPath" }
+    if (-not $form.IsDisposed) { $label.Text = "更新未完成：$(Explain $_.Exception)`n日志：$logPath" }
 } finally {
     $client.Dispose()
     if (-not $form.IsDisposed) {

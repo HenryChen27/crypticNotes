@@ -203,7 +203,7 @@ Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余
 
 本地检查结果：
 
-- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：127 个测试通过。
+- `.venv\Scripts\python.exe -m unittest discover -s mapmatching/tests -q`：133 个测试通过。
 - `.venv\Scripts\python.exe -m mapmatching.benchmarks.nightmare_smoke`：噩梦单人/多人合成场景 126/126 通过。
 - 快捷键：`tests/test_hotkey_choices.py` 核对键表与 Qt 映射，并用**自己造的** WM_INPUT 缓冲验证鼠标右键与侧键能走完「按下-松开-再按下」（不合成任何真实输入）；`tests/test_frame_guard.py` 守着「只有左键和滚轮会让叠图失效」，所以把右键绑成快捷键不会影响跟随。Top-1/Top-3 与改动前相同（0.429 / 0.714）；`benchmarks/benchmark.py` 不加载 `ui.py`、`mouse_input.py` 和 `windows.py`，所以这条链路不参与匹配。
 - 打包 EXE 的 `--self-test` 通过：能加载 Qt、字体、73 张地图和匹配子进程（`reference_count: 73`，`ok: true`）。
