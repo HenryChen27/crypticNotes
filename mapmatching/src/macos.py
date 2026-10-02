@@ -221,10 +221,12 @@ class _WindowAPI:
     def IsWindow(pid):
         if not pid:
             return False
+        if pid == _WindowAPI.own_window:
+            return True
         try:
             os.kill(int(pid), 0)
             return True
-        except OSError:
+        except (OSError,OverflowError,ValueError):
             return False
 
     @staticmethod
