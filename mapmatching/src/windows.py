@@ -9,6 +9,21 @@ import win32con
 user32 = ctypes.windll.user32
 
 
+def activate_target(hwnd):
+    """Return focus after a user explicitly presses Re-identify."""
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        return False
+    try:
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd,win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        return win32gui.GetForegroundWindow() == hwnd
+    except Exception:
+        # Windows may deny focus activation. The UI still samples the visible
+        # screen and keeps its normal map-visibility gate.
+        return False
+
+
 def dpi_aware():
     # Per-monitor V2, before creating any windows.
     user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))
@@ -63,6 +78,11 @@ def place_overlay(hwnd, rect):
     style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
     win32gui.SetWindowLong(hwnd,win32con.GWL_EXSTYLE,style | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW)
     win32gui.SetWindowPos(hwnd,win32con.HWND_TOPMOST,x,y,w,h,win32con.SWP_NOACTIVATE)
+
+
+def keep_floating(_window):
+    """Windows 上 HWND_TOPMOST 已经够用，这个钩子只为和 macOS 对称。"""
+    return True
 
 
 # 0x01~0x06 在任何键盘上都是鼠标键（左/右/中/侧1/侧2）。用来判断某个键的

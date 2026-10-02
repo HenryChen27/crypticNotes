@@ -1,3 +1,4 @@
+import sys
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 
 class SpeechBubble(W.QLabel):
@@ -8,6 +9,10 @@ class SpeechBubble(W.QLabel):
                          C.Qt.WindowTransparentForInput)
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setAttribute(C.Qt.WA_ShowWithoutActivating)
+        if sys.platform == 'darwin':
+            # Qt::Tool hides itself whenever the app loses focus; a hint the user
+            # never gets to read is worse than none.
+            self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
         self.setTextFormat(C.Qt.PlainText)
         self.setContentsMargins(19, 12, 19, 12)
         self.tail = 'right'

@@ -7,6 +7,21 @@ from mapmatching.src.live import match_with_cache
 
 
 class MapVisibilityTests(unittest.TestCase):
+    def test_real_desktop_maps_with_degraded_or_obscured_close_control(self):
+        from pathlib import Path
+        from mapmatching.src.reference import read_image
+        root=Path(__file__).resolve().parents[2]
+        for number in (5,6):
+            with self.subTest(example=number):
+                pixels=read_image(root/f'examples/{number}/example.png')
+                self.assertTrue(inspect_map_ui(pixels)['visible'])
+
+    def test_overview_alone_cannot_confirm_map(self):
+        screen=np.full((600,960,3),30,np.uint8)
+        t=templates()['overview']
+        screen[505:505+t.shape[0],810:810+t.shape[1]]=t[:,:,None]
+        self.assertFalse(inspect_map_ui(screen)['visible'])
+
     def test_requires_both_controls_at_different_resolutions(self):
         screen=np.full((600,960,3),30,np.uint8)
         for name,x,y in [('close',890,60),('overview',810,505)]:

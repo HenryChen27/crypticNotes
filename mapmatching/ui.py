@@ -4,6 +4,7 @@ from .src.ui_trace import trace
 import argparse
 import json
 import multiprocessing as mp
+import platform
 from pathlib import Path
 import sys
 import time
@@ -39,12 +40,23 @@ BG = 'rgba(20,28,37,234)'
 # and CJK falls through to the Chinese one.
 FONT_DIR = Path(__file__).resolve().parent/'assets/fonts'
 FONT_FILES = ('EssayText-Italic.ttf','HYDiWRGJ.ttf')
-FONT_FALLBACK = 'Microsoft YaHei UI'
+FONT_FALLBACK = 'PingFang SC' if sys.platform == 'darwin' else 'Microsoft YaHei UI'
 FONT_CACHE = []
 ARROW = (Path(__file__).resolve().parent/'assets/chevron.png').as_posix()
 
 
-def font_stack():
+def show_floating(window):
+    """Show a click-through overlay and re-assert its "above the game" state.
+
+    Windows only needs HWND_TOPMOST, which Qt already sets.  macOS needs the
+    AppKit half as well — see keep_floating() — and it must be re-asserted
+    after every show because Qt reapplies its own window level there.
+    """
+    window.show()
+    native.keep_floating(int(window.winId()))
+
+
+def font_stack(mode='game'):
     """Load the bundled fonts once and return the Qt/CSS family list."""
     if not FONT_CACHE:
         for name in FONT_FILES:
@@ -59,11 +71,17 @@ def font_stack():
             font.setFamilies(FONT_CACHE)
             font.setPixelSize(16)
             app.setFont(font)
+    if mode == 'system':
+        return [FONT_FALLBACK]
+    if mode.startswith('family:'):
+        family = mode[len('family:'):]
+        if family in G.QFontDatabase.families():
+            return [family,FONT_FALLBACK]
     return FONT_CACHE
 
 
-def css_font():
-    return ', '.join(f'"{family}"' for family in font_stack())
+def css_font(mode='game'):
+    return ', '.join('"'+family.replace('\\','\\\\').replace('"','\\"')+'"' for family in font_stack(mode))
 
 
 # 冷调灰蓝雾面、浅色文字：按用户给的两张游戏内参考图定的方向。
@@ -435,6 +453,10 @@ class Overlay(W.QWidget):
         super().__init__(None,C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint | C.Qt.WindowTransparentForInput | C.Qt.WindowDoesNotAcceptFocus)
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setAttribute(C.Qt.WA_ShowWithoutActivating)
+        if sys.platform == 'darwin':
+            # Must be set before the native window exists: Qt reads it once, when
+            # it decides whether NSPanel gets hidesOnDeactivate.
+            self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
         self.picture = None
         self.opacity = .30
 
@@ -442,7 +464,7 @@ class Overlay(W.QWidget):
         h,w = layer.shape[:2]
         self.picture = G.QImage(layer.data,w,h,layer.strides[0],G.QImage.Format_ARGB32).copy()
         self.opacity = opacity
-        self.show()
+        show_floating(self)
         native.place_overlay(int(self.winId()),rect)
         self.update()
 
@@ -568,10 +590,11 @@ class Companion(W.QWidget):
         super().__init__(None,C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint)
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setAttribute(C.Qt.WA_ShowWithoutActivating)
+        if sys.platform == 'darwin':
+            self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
         self.setWindowTitle('加页手记 · 地图助手')
         if sys.platform == 'darwin':
             native.window_api.own_window = int(self.winId())
-        self.setStyleSheet(STYLE.replace('__FONT__',css_font()).replace('__ARROW__',ARROW))
         self.overlay = Overlay()
         self.state = ToggleState()
         self.keys = native.Keys()
@@ -604,6 +627,8 @@ class Companion(W.QWidget):
             self.settings = json.loads(self.settings_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):
             pass
+        self.font_mode = self.settings.get('font_mode','game')
+        self.apply_font(self.font_mode)
         self.hotkey, self.hide_hotkey = resolve_hotkeys(self.settings)
         self.keys.toggle_key = HOTKEYS[self.hotkey]
         self.keys.hide_key = HOTKEYS[self.hide_hotkey]
@@ -672,6 +697,22 @@ class Companion(W.QWidget):
         self.opacity.setRange(5,80)
         self.opacity.setValue(max(5,min(80,int(self.settings.get('opacity',30)))))
         preferences.addWidget(self.opacity)
+        font_row=W.QHBoxLayout()
+        font_label=W.QLabel('界面字体')
+        font_label.setFixedWidth(62)
+        font_row.addWidget(font_label)
+        self.font_choice=W.QComboBox()
+        self.font_choice.addItem('游戏字体（默认）','game')
+        self.font_choice.addItem('系统字体','system')
+        for family in G.QFontDatabase.families():
+            self.font_choice.addItem(family,'family:'+family)
+        self.font_choice.setMinimumWidth(0)
+        self.font_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.font_choice.setMinimumContentsLength(10)
+        self.font_choice.setMaxVisibleItems(12)
+        self.font_choice.setCurrentIndex(max(0,self.font_choice.findData(self.font_mode)))
+        self.font_choice.currentIndexChanged.connect(self.font_changed)
+        font_row.addWidget(self.font_choice,1)
         self.delay = DelaySlider()
         self.delay.setValue(max(100,min(1000,int(self.settings.get('delay',150)))))
         self.delay_label=W.QLabel()
@@ -775,6 +816,7 @@ class Companion(W.QWidget):
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
         preferences.addLayout(pet_row)
+        preferences.addLayout(font_row)
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
@@ -782,8 +824,7 @@ class Companion(W.QWidget):
         layout.addWidget(self.panel)
         self.panel.hide()
         self.toast = SpeechBubble()
-        self.toast.setStyleSheet('QLabel {color:#dbe5ec;background:transparent;border:0;'
-                                'font-size:13px;font-family:'+css_font()+';}')
+        self.apply_font(self.font_mode)
         self.toast_timer = C.QTimer(self)
         self.toast_timer.setSingleShot(True)
         self.toast_timer.timeout.connect(self.toast.hide)
@@ -933,7 +974,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1063,7 +1104,7 @@ class Companion(W.QWidget):
         y=max(area.top(),min(anchor.y(),area.bottom()+1-self.toast.height()))
         self.toast.move(x,y)
         self.toast.point_at(anchor+C.QPoint(self.gear.width()//2,24), self.gear.pet.enabled)
-        self.toast.show()
+        show_floating(self.toast)
         self.toast_timer.start(TOAST_MS)
 
     def choose_screenshot(self):
@@ -1160,6 +1201,24 @@ class Companion(W.QWidget):
         # No game title filter or manual binding. G observes the current screen.
         return hwnd not in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()))
 
+    def apply_font(self, mode):
+        valid_family = isinstance(mode,str) and mode.startswith('family:') and mode[7:] in G.QFontDatabase.families()
+        self.font_mode = mode if mode in ('game','system') or valid_family else 'game'
+        families=font_stack(self.font_mode)
+        font=G.QFont(); font.setFamilies(families); font.setPixelSize(16)
+        app=W.QApplication.instance()
+        if app is not None:
+            app.setFont(font)
+        self.setStyleSheet(STYLE.replace('__FONT__',css_font(self.font_mode)).replace('__ARROW__',ARROW))
+        if hasattr(self,'toast'):
+            self.toast.setStyleSheet('QLabel {color:#dbe5ec;background:transparent;border:0;'
+                                     'font-size:13px;font-family:'+css_font(self.font_mode)+';}')
+
+    def font_changed(self):
+        self.apply_font(self.font_choice.currentData())
+        self.resize_settings()
+        self.save()
+
     def foreground_lost(self):
         """前台既不是游戏、也不是我们自己 —— 只有真的切走了才算丢。
 
@@ -1177,8 +1236,15 @@ class Companion(W.QWidget):
             self.notify('源码版请更新源码；一键更新适用于打包版')
             return
         if sys.platform == 'darwin':
-            G.QDesktopServices.openUrl(C.QUrl('https://github.com/HenryChen27/crypticNotes/releases/latest'))
-            self.notify('已打开下载页；下载新版后替换应用即可')
+            # macOS 没有站内更新器：直接把**本机架构对应的那个包**交给浏览器，
+            # 而不是 releases 页让用户自己挑（挑错架构的包解压后打不开）。
+            # /releases/latest/download/ 这个地址不需要知道 tag。
+            arch = 'arm64' if platform.machine() == 'arm64' else 'x64'
+            chip = 'Apple 芯片' if arch == 'arm64' else 'Intel'
+            G.QDesktopServices.openUrl(C.QUrl(
+                'https://github.com/HenryChen27/crypticNotes/releases/latest/download/'
+                f'IdentityVMapAssistant-macOS-{arch}.zip'))
+            self.notify(f'正在下载 {chip} 版；下载完退出本应用，用新的替换即可')
             return
         try:
             self.save()
@@ -1190,14 +1256,18 @@ class Companion(W.QWidget):
             self.notify(f'无法启动更新：{exc}')
 
     def retry(self):
+        if self.panel.isVisible():
+            self.toggle_panel()
         self.cached_candidate = None
         if self.demo:
             self.demo_window.raise_()
             self.demo_window.activateWindow()
             self.open_map('manual_retry')
         else:
-            self.notify('请切到要识别的画面；1 秒后截屏')
-            C.QTimer.singleShot(1000,lambda: self.open_map("manual_retry") if self.is_game(win32gui.GetForegroundWindow()) else self.notify('请先切到截图或游戏画面'))
+            target = getattr(self,'last_external_target',None)
+            if target:
+                native.activate_target(target)
+            C.QTimer.singleShot(300,lambda: self.open_map("manual_retry"))
 
     def open_map(self, reason="map_hotkey"):
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
@@ -1329,7 +1399,10 @@ class Companion(W.QWidget):
         """
         hwnd = self.mouse.window_at_cursor()
         if not hwnd:
-            return False
+            # Quartz does not expose WindowFromPoint.  The companion occupies a
+            # small, known Qt rectangle, so this fallback distinguishes clicks
+            # on its controls without classifying the full-screen overlay as UI.
+            return sys.platform == 'darwin' and self.frameGeometry().contains(G.QCursor.pos())
         return hwnd in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()))
 
     def mouse_busy(self):
@@ -1398,6 +1471,13 @@ class Companion(W.QWidget):
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
         foreground = win32gui.GetForegroundWindow()
+        if callable(getattr(self,'is_game',None)) and self.is_game(foreground):
+            self.last_external_target = foreground
+            # A manual retry may start while the OS is still handing focus back
+            # to the game. Bind the pending session when that handoff completes.
+            if (self.state.opened
+                    and self.target == int(self.winId())):
+                self.target = foreground
         if self.enabled.isChecked():
             if 0x1B in edges:
                 self.close_map()
@@ -1558,7 +1638,7 @@ def main():
             parser.error('无法读取演示截图')
         if args.showcase:
             C.QTimer.singleShot(500,ui.retry)
-    ui.show()
+    show_floating(ui)
     if args.local_test and not args.demo:
         C.QTimer.singleShot(100,ui.choose_screenshot)
     if args.showcase:

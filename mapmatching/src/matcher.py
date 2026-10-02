@@ -118,7 +118,7 @@ class MapMatcher:
                 and (self.floor_hint is None or any(region['floor'] == self.floor_hint for region in r.regions))]
         if not refs:
             return MatchResult(reason='cached_map_outside_context')
-        from .live import presentation_candidate
+        from .live import cached_alignment_candidate
         def align(full_view):
             evidence = extract(screenshot, full_view=full_view)
             candidates = []
@@ -131,18 +131,18 @@ class MapMatcher:
                                'confidence_calibrated': False,
                                'timing_ms': {'total': (time.perf_counter()-start)*1000}})
         initial = align(False)
-        candidate = presentation_candidate(initial)[0]
+        candidate = cached_alignment_candidate(initial)[0]
         if candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20:
             return initial
         expanded = align(True)
-        candidate = presentation_candidate(expanded)[0]
+        candidate = cached_alignment_candidate(expanded)[0]
         if candidate is not None and candidate.explained >= .65 and candidate.contradiction <= .25:
             expanded.diagnostics['pipeline_view'] = 'cached_expanded_view_retry'
             return expanded
         if self.floor_hint is not None:
             refs = [r for r in self.floor_references if r.map_id == map_id]
             floor_retry = align(True)
-            candidate = presentation_candidate(floor_retry)[0]
+            candidate = cached_alignment_candidate(floor_retry)[0]
             if candidate is not None and candidate.explained >= .65 and candidate.contradiction <= .25:
                 floor_retry.diagnostics.update(pipeline_view='cached_all_floors_retry',
                                                rejected_floor_hint=self.floor_hint)

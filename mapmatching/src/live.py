@@ -40,6 +40,23 @@ def presentation_candidate(result):
     return c, '试用叠图 · 请核对路口'
 
 
+def cached_alignment_candidate(result):
+    """Pose gate for an identity that was already accepted this session.
+
+    A sparse viewport may contain only corridors and therefore has a lower
+    retrieval score than initial recognition.  It can update the pose of the
+    remembered map, but can never establish or switch map identity.
+    """
+    if not result.candidates:
+        return None, '当前区域线索不足，已保留上次地图'
+    c=result.candidates[0]
+    if (c.pose is None or c.floor is None or (c.explained or 0) < .50
+            or c.contradiction is None or c.contradiction > .45
+            or c.retrieval_score < 2):
+        return None, '当前区域线索不足，已保留上次地图'
+    return c, '沿用上次地图 · 已重新对齐'
+
+
 def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_view=False):
     """BGRA original colors at full alpha; UI applies user opacity once.
 
@@ -137,7 +154,7 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
         result.diagnostics['floor_tabs'] = floor_reading
         if visibility is not None:
             result.diagnostics['map_ui'] = visibility
-        candidate,message = presentation_candidate(result)
+        candidate,message = cached_alignment_candidate(result)
         # A different floor/viewport has different visible evidence. A strong
         # current fit need not match the previous frame's near-perfect score.
         strong_current = candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20

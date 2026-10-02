@@ -1,4 +1,4 @@
-"""Independent live-screen gate using two map-only UI controls.
+"""Independent live-screen gate using corroborating map-only UI controls.
 
 Templates are control crops, never map geometry or identity answers.
 An unrecognized layout is not allowed to display a live overlay.
@@ -33,5 +33,17 @@ def inspect_map_ui(pixels):
                 continue
             best = max(best,float(cv2.minMaxLoc(cv2.matchTemplate(roi,sample,cv2.TM_CCOEFF_NORMED))[1]))
         scores[name] = best
-    return dict(visible=all(v>=.80 for v in scores.values()),scores=scores,
-                method='two_map_controls_v1')
+    # A single rigid cutoff rejected real desktop maps (e.g. close=.796,
+    # overview=.977). Require one strong control and a corroborating second
+    # control, rather than allowing either control alone to open the gate.
+    visible = min(scores.values()) >= .75 and max(scores.values()) >= .85
+    floor_tabs = None
+    if not visible and scores['overview'] >= .90:
+        # The companion or another window can cover the top-right close icon.
+        # A recognized floor-button group with a selected floor independently
+        # confirms that the map is open; map geometry itself is not used here.
+        from .floor_tabs import inspect_floor_tabs
+        floor_tabs = inspect_floor_tabs(pixels)
+        visible = floor_tabs.get('floor') is not None
+    return dict(visible=visible,scores=scores,floor_tabs=floor_tabs,
+                method='corroborated_map_controls_v2')

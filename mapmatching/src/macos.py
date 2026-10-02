@@ -16,22 +16,41 @@ def _screen_rect():
     return int(bounds.origin.x), int(bounds.origin.y), int(bounds.size.width), int(bounds.size.height)
 
 
-def monitor_rect(_target):
-    return _screen_rect()
+def monitor_rect(target):
+    # External targets are application PIDs, not Qt window handles. Capture
+    # their visible main window: the primary display may contain only desktop
+    # when the game is windowed or running on an external monitor.
+    windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID) or []
+    candidates = []
+    for window in windows:
+        if (int(window.get('kCGWindowOwnerPID',0)) != target
+                or int(window.get('kCGWindowLayer',-1)) != 0):
+            continue
+        bounds = window.get('kCGWindowBounds',{})
+        rect = tuple(round(bounds.get(key,0)) for key in ('X','Y','Width','Height'))
+        if rect[2] >= 100 and rect[3] >= 100:
+            candidates.append(rect)
+    return max(candidates,key=lambda r:r[2]*r[3]) if candidates else _screen_rect()
 
 
 def client_rect(_window):
-    # Qt's winId is an NSView pointer rather than a CGWindowID. Returning an
-    # empty exclusion is safe; the assistant uses a small translucent ball and
-    # map matching already masks HUD-like regions.
+    from PySide6.QtWidgets import QApplication
+    for widget in QApplication.topLevelWidgets():
+        if int(widget.winId()) == int(_window):
+            r = widget.geometry()
+            return r.x(),r.y(),r.width(),r.height()
     return 0, 0, 0, 0
 
 
 def mask_screen_rect(pixels, capture_rect, excluded_rect):
     x,y,w,h = capture_rect
     ex,ey,ew,eh = excluded_rect
-    left,top = max(0,ex-x),max(0,ey-y)
-    right,bottom = min(w,ex+ew-x),min(h,ey+eh-y)
+    # Quartz rectangles use points; Retina captures contain backing pixels.
+    ph,pw = pixels.shape[:2]
+    sx,sy = pw/w,ph/h
+    left,top = max(0,round((ex-x)*sx)),max(0,round((ey-y)*sy))
+    right,bottom = min(pw,round((ex+ew-x)*sx)),min(ph,round((ey+eh-y)*sy))
     if right > left and bottom > top:
         pixels[top:bottom,left:right] = 0
     return pixels
@@ -60,13 +79,75 @@ def capture(rect):
 def place_overlay(_window, rect):
     from PySide6 import QtCore as C
     from PySide6 import QtWidgets as W
-    # The caller has already shown the overlay; locate it by its transparent,
-    # input-pass-through window flags and apply physical screen geometry.
+    # winId() is an NSView pointer on macOS, but it is still stable enough to
+    # identify the exact Qt widget.  Selecting the first input-transparent
+    # top-level window could resize the toast instead of the map overlay.
     for widget in W.QApplication.topLevelWidgets():
-        if widget.windowFlags() & C.Qt.WindowTransparentForInput:
+        if int(widget.winId()) == int(_window):
             widget.setGeometry(*map(int,rect))
             widget.raise_()
             return
+    # Returning silently here used to mean "matched fine, nothing on screen" with
+    # no way to tell it apart from a window AppKit kept off screen.
+    from .ui_trace import trace
+    trace('overlay_place_missing',window=int(_window),rect=list(map(int,rect)))
+
+
+# Qt::Tool becomes an NSPanel on macOS, and Qt sets hidesOnDeactivate on it, so
+# AppKit pulls the overlay off screen the moment the game takes focus back:
+# capture and matching keep working while nothing is ever drawn.  Qt only skips
+# that when WA_MacAlwaysShowToolWindow was set before the window was created,
+# and even then the panel stays at NSFloatingWindowLevel.  Add the AppKit half
+# here: never hide, float above a full-screen game, and join its Space.
+_panels = {}
+
+
+def _panel_for(window):
+    import objc
+    from AppKit import NSApp
+    key = int(window)
+    if key in _panels:
+        return _panels[key]
+    panel = None
+    for candidate in NSApp.windows() or []:
+        view = candidate.contentView()
+        if view is not None and objc.pyobjc_id(view) == key:
+            panel = candidate
+            break
+    if panel is None:
+        try:
+            panel = objc.objc_object(c_void_p=key).window()
+        except Exception:
+            panel = None
+    if panel is not None:
+        _panels[key] = panel
+        from .ui_trace import trace
+        trace('overlay_panel_bound',window=key,level=int(panel.level()))
+    return panel
+
+
+def keep_floating(window):
+    from AppKit import (NSScreenSaverWindowLevel,
+                        NSWindowCollectionBehaviorCanJoinAllSpaces,
+                        NSWindowCollectionBehaviorFullScreenAuxiliary,
+                        NSWindowCollectionBehaviorStationary)
+    panel = _panel_for(window)
+    if panel is None:
+        from .ui_trace import trace
+        trace('overlay_panel_missing',window=int(window))
+        return False
+    try:
+        panel.setHidesOnDeactivate_(False)
+        panel.setCanHide_(False)
+        panel.setLevel_(NSScreenSaverWindowLevel)
+        panel.setCollectionBehavior_(
+            NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorFullScreenAuxiliary |
+            NSWindowCollectionBehaviorStationary)
+    except Exception:
+        _panels.pop(int(window), None)
+        return False
+    return True
 
 
 class _WindowAPI:
@@ -96,6 +177,15 @@ class _WindowAPI:
 
 
 window_api = _WindowAPI()
+
+
+def activate_target(pid):
+    """Return focus to the app the user was using before opening settings."""
+    from AppKit import NSRunningApplication, NSApplicationActivateIgnoringOtherApps
+    if not pid or pid == os.getpid() or pid == window_api.own_window:
+        return False
+    app = NSRunningApplication.runningApplicationWithProcessIdentifier_(int(pid))
+    return bool(app and app.activateWithOptions_(NSApplicationActivateIgnoringOtherApps))
 
 
 class Keys:
