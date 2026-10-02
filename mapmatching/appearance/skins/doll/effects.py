@@ -47,10 +47,10 @@ def symbol(kind):
     return path
 
 
-def paint_effects(p,mood,t,duration):
+def paint_effects(p,mood,t,duration,effect_scale=1.):
     if mood in ('curious', 'idle') or not 0<t<1:
         return
-    p.save();p.resetTransform()
+    p.save();p.resetTransform();p.scale(effect_scale,effect_scale)
     heart=mood in ('heart','happy')
     seconds=t*duration/1000
     # Staggered births: several hearts can coexist and fade independently.

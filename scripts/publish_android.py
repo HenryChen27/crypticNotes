@@ -70,7 +70,8 @@ body += f"""
 
 系统自带录屏仍可能与识图冲突。内置录屏共用原屏幕采集，默认不录制、默认无声。内部声音及音画同步仍需真机验证；内部声音可能包括其他应用的媒体播放声音。识图时临时隐藏叠图的过程可能出现在视频里。画质为最长边 1280、最高 24 帧、4 Mbps，不跟随系统录屏设置。
 """
-api('/releases/'+str(entry['id']), {'body':body}, 'PATCH')
+# Android publishing only replaces Android attachments. Keep the existing
+# release notes intact so Windows notes and manually edited text are preserved.
 published=api('/releases/'+str(entry['id']))
 assert {NAME,'android-update.json'} <= {a['name'] for a in published['assets']}
 assert {a['name'] for a in entry['assets'] if a['name'] not in (NAME,'android-update.json')} <= {a['name'] for a in published['assets']}

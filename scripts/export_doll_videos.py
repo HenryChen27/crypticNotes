@@ -32,15 +32,17 @@ ACTIONS = [
 class DollCanvas(W.QWidget):
     def __init__(self):
         super().__init__()
-        self.setFixedSize(112, 132)
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent")
         self.animation = PetAnimation(self)
         self.animation.enable(True)
+        # PetAnimation uses the in-app button size when enabled; the exporter
+        # deliberately replaces it afterwards for direct high-resolution paint.
+        self.setFixedSize(896, 1056)
         self.progress = 0.0
 
     def paintEvent(self, event):
-        self.animation.paint(self.progress)
+        self.animation.paint(self.progress, render_scale=2.56, origin=(56, 160))
 
 
 def qimage_array(image: G.QImage) -> np.ndarray:
@@ -62,7 +64,7 @@ def doll_frame(widget: DollCanvas, mood: str, progress: float) -> np.ndarray:
 def background() -> G.QImage:
     w, h = SIZE
     image = G.QImage(w, h, G.QImage.Format_RGBA8888)
-    image.fill(G.QColor("#00ff00"))
+    image.fill(G.QColor("#203544"))
     return image
 
 
@@ -71,7 +73,7 @@ def compose(base: G.QImage, doll: np.ndarray, title: str, subtitle: str) -> np.n
     painter = G.QPainter(frame)
     painter.setRenderHint(G.QPainter.SmoothPixmapTransform)
     qdoll = G.QImage(doll.data, doll.shape[1], doll.shape[0], doll.strides[0], G.QImage.Format_RGBA8888)
-    target = C.QRect(176, 531, 728, 858)
+    target = C.QRect(92, 432, 896, 1056)
     painter.drawImage(target, qdoll)
     painter.end()
     rgba = qimage_array(frame)

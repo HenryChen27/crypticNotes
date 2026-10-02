@@ -7,7 +7,7 @@ if __name__ == '__main__':
     from pathlib import Path
     import traceback
     multiprocessing.freeze_support()
-    if '--admin' in sys.argv:
+    if '--admin' in sys.argv and sys.platform == 'win32':
         sys.argv.remove('--admin')
         if not ctypes.windll.shell32.IsUserAnAdmin():
             shell=ctypes.windll.shell32.ShellExecuteW
@@ -33,6 +33,9 @@ if __name__ == '__main__':
         log.parent.mkdir(parents=True,exist_ok=True)
         log.parent.mkdir(parents=True,exist_ok=True)
         log.write_text(traceback.format_exc(),encoding='utf-8')
-        import ctypes
-        ctypes.windll.user32.MessageBoxW(None,f'启动失败，详情已写入：\n{log}','加页手记',0x10)
+        if sys.platform == 'win32':
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None,f'启动失败，详情已写入：\n{log}','加页手记',0x10)
+        else:
+            print(f'启动失败，详情已写入：{log}', file=sys.stderr)
         raise

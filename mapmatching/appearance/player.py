@@ -77,7 +77,7 @@ class PetAnimation:
     def duration(self):
         return 4000 if self.mood == 'idle' else getattr(self.skin,'DURATIONS',{}).get(self.mood,2200)
 
-    def paint(self, progress=None):
+    def paint(self, progress=None, render_scale=.32, origin=(7,20)):
         p = G.QPainter(self.button)
         p.setRenderHints(G.QPainter.Antialiasing | G.QPainter.SmoothPixmapTransform)
         t = progress if progress is not None else (self.clock.elapsed()/self.duration if self.timer.isActive() else 1)
@@ -88,8 +88,8 @@ class PetAnimation:
                 angles[left], angles[right] = -angles[right], -angles[left]
             angles['head'] *= -1
         # Leave headroom inside the existing widget for the upward float.
-        p.translate(7, 20)
-        p.scale(.32, .32)
+        p.translate(*origin)
+        p.scale(render_scale, render_scale)
         motion = self.skin.body_motion(self.mood,t) if hasattr(self.skin,'body_motion') else dict(x=0,y=0,torso=0,squash=0)
         p.translate(motion['x'],motion['y'])
         p.translate(153,228)
@@ -202,5 +202,6 @@ class PetAnimation:
             arm('right', self.skin.PIVOTS["right_shoulder"], self.skin.PIVOTS["right_elbow"])
         p.restore()
         if hasattr(self.skin,'paint_effects'):
-            self.skin.paint_effects(p,self.mood,t,self.duration)
+            self.skin.paint_effects(p,self.mood,t,self.duration,
+                                    effect_scale=render_scale/.32)
         p.end()

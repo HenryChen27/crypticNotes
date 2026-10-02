@@ -9,4 +9,9 @@ from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
 FROZEN=bool(getattr(sys,'frozen',False))
-DATA_ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'IdentityVMapAssistant' if FROZEN else ROOT
+if FROZEN and sys.platform == 'darwin':
+    DATA_ROOT=Path.home()/'Library/Application Support/IdentityVMapAssistant'
+elif FROZEN:
+    DATA_ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'IdentityVMapAssistant'
+else:
+    DATA_ROOT=ROOT

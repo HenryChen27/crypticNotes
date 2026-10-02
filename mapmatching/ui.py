@@ -1,4 +1,4 @@
-"""Small Windows companion UI; no injection, game hooks or network service."""
+"""Desktop companion UI; no injection, game hooks or network service."""
 from __future__ import annotations
 from .src.ui_trace import trace
 import argparse
@@ -20,12 +20,18 @@ elif _fallback_deps.exists():
 
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .src.live import ToggleState, worker
-from .src import windows as native
-from .mouse_input import MouseWatcher
+if sys.platform == 'darwin':
+    from .src import macos as native
+    from .macos_input import MouseWatcher, KeyboardWatcher
+    win32gui = native.window_api
+else:
+    from .src import windows as native
+    from .mouse_input import MouseWatcher
+    from .keyboard_input import KeyboardWatcher
+    import win32gui
 from .appearance import PetAnimation, SpeechBubble, reaction
 from .panel_dialogs import own_dialog_open
 from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox
-import win32gui
 
 BG = 'rgba(20,28,37,234)'
 # Bundled faces, registered app-locally; nothing is installed system-wide.
@@ -563,11 +569,12 @@ class Companion(W.QWidget):
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setAttribute(C.Qt.WA_ShowWithoutActivating)
         self.setWindowTitle('加页手记 · 地图助手')
+        if sys.platform == 'darwin':
+            native.window_api.own_window = int(self.winId())
         self.setStyleSheet(STYLE.replace('__FONT__',css_font()).replace('__ARROW__',ARROW))
         self.overlay = Overlay()
         self.state = ToggleState()
         self.keys = native.Keys()
-        from .keyboard_input import KeyboardWatcher
         self.keyboard = KeyboardWatcher(self.keys)
         self.process = self.connection = None
         self.busy = False
@@ -1168,6 +1175,10 @@ class Companion(W.QWidget):
         from .paths import FROZEN
         if not FROZEN:
             self.notify('源码版请更新源码；一键更新适用于打包版')
+            return
+        if sys.platform == 'darwin':
+            G.QDesktopServices.openUrl(C.QUrl('https://github.com/HenryChen27/crypticNotes/releases/latest'))
+            self.notify('已打开下载页；下载新版后替换应用即可')
             return
         try:
             self.save()

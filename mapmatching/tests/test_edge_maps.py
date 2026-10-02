@@ -53,6 +53,27 @@ class EdgeMapTests(unittest.TestCase):
         self.assertTrue(known.diagnostics['full_view'])
         self.assertFalse(known.diagnostics['identity_search_performed'])
 
+    def test_wrong_floor_tab_is_advisory_and_retries_all_floors(self):
+        files=sorted((self.root/'examples/new').glob('*.png'))
+        if len(files)!=3:
+            self.skipTest('User regression screenshots unavailable')
+        image=read_image(files[2])
+        self.hard.floor_hint=1  # This regression screenshot is actually floor 2.
+        try:
+            result=self.hard.match(image)
+            selected,_=presentation_candidate(result)
+            self.assertIsNotNone(selected)
+            self.assertEqual(selected.floor,2)
+            self.assertEqual(result.diagnostics['pipeline_view'],'all_floors_retry')
+
+            known=self.hard.register_known(image,selected.map_id)
+            aligned,_=presentation_candidate(known)
+            self.assertIsNotNone(aligned)
+            self.assertEqual(aligned.floor,2)
+            self.assertEqual(known.diagnostics['pipeline_view'],'cached_all_floors_retry')
+        finally:
+            self.hard.floor_hint=None
+
     def test_blank_frame_stays_rejected_after_expansion(self):
         result=self.hard.match(np.zeros((600,800,3),np.uint8))
         self.assertIsNone(presentation_candidate(result)[0])

@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/images/logo.png" alt="加页手记地图插件 Logo" width="160"></p>
 
-这是一个给《第五人格》PC端「加页手记」娱乐模式的 Windows 悬浮地图助手。你打开游戏里的地图后，它会看一眼屏幕，判断你现在是哪张地图，再把对应的完整路线图半透明叠到屏幕上，帮你在没探索完整的地图里找路。
+这是一个给《第五人格》PC端「加页手记」娱乐模式的 Windows / macOS 悬浮地图助手。你打开游戏里的地图后，它会看一眼屏幕，判断你现在是哪张地图，再把对应的完整路线图半透明叠到屏幕上，帮你在没探索完整的地图里找路。
 
 正常使用时，你只需要做一件事：提前打开助手，即可自动显示完整的地图与推荐探索路线。
 
@@ -30,6 +30,8 @@
 ## 下载和启动
 
 打开 [Releases](https://github.com/HenryChen27/crypticNotes/releases/latest)，下载 **IdentityVMapAssistant-Windows-x64.zip**。
+
+macOS 用户按芯片下载 **IdentityVMapAssistant-macOS-arm64.zip**（M1/M2/M3/M4）或 **IdentityVMapAssistant-macOS-x64.zip**（Intel），解压后把“加页手记”拖入“应用程序”。首次启动需要在“系统设置 → 隐私与安全性”中允许屏幕录制和输入监控，然后彻底退出并重新打开。未签名的首个测试版如果被系统拦截，请在“隐私与安全性”页面选择“仍要打开”。
 
 下载后请这样做：
 

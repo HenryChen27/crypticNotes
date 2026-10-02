@@ -58,7 +58,7 @@ class PetTests(unittest.TestCase):
         window.close()
 
     def test_failure_takes_priority_over_floor_text(self):
-        self.assertEqual(reaction('匹配失败：楼层信息不足'), 'puzzled')
+        self.assertEqual(reaction('匹配失败：楼层信息不足'), 'angry')
         self.assertEqual(reaction('地图 · 1层'), 'heart')
         self.assertEqual(reaction('已隐藏'), 'sleep')
 
@@ -78,7 +78,7 @@ class PetTests(unittest.TestCase):
             for endpoint in (0,1):
                 self.assertTrue(all(abs(v)<1e-10 for v in body_motion(mood,endpoint).values()))
             self.assertNotEqual(body_motion(mood,.35)['y'],0)
-        self.assertEqual(reaction('快捷键冲突'),'angry')
+        self.assertEqual(reaction('快捷键冲突'),'puzzled')
 
     def test_speech_tail_tracks_both_sides_and_can_be_disabled(self):
         from PySide6 import QtCore as C

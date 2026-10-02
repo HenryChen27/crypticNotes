@@ -69,17 +69,27 @@ class MapMatcher:
         if recovered is not None and recovered.explained >= .65 and recovered.contradiction <= .25:
             expanded.diagnostics['pipeline_view'] = 'expanded_view_retry'
             return expanded
+        # Floor tabs are a useful ranking hint, but compression, unusual aspect
+        # ratios and transition frames can misread their highlight. Never let a
+        # single tab reading remove the correct map from the search entirely.
+        if self.floor_hint is not None:
+            floor_retry = self._match_view(screenshot, full_view=True, ignore_floor_hint=True)
+            recovered = presentation_candidate(floor_retry)[0]
+            if recovered is not None and recovered.explained >= .65 and recovered.contradiction <= .25:
+                floor_retry.diagnostics.update(pipeline_view='all_floors_retry',
+                                               rejected_floor_hint=self.floor_hint)
+                return floor_retry
         initial.diagnostics['expanded_view_rejected'] = True
         return initial
 
-    def _match_view(self, screenshot: np.ndarray, full_view=False) -> MatchResult:
+    def _match_view(self, screenshot: np.ndarray, full_view=False, ignore_floor_hint=False) -> MatchResult:
         """Accept BGR pixels only; never paths, example IDs, paired maps or GT."""
         start = time.perf_counter()
         evidence = extract(screenshot,full_view=full_view)
         extracted = time.perf_counter()
         if len(evidence.corners) < 4:
             return MatchResult(reason='insufficient_visible_structure', diagnostics=evidence.diagnostics)
-        refs = [r for r in self.floor_references if self.floor_hint is None
+        refs = [r for r in self.floor_references if ignore_floor_hint or self.floor_hint is None
                 or any(region['floor'] == self.floor_hint for region in r.regions)]
         retrieved = retrieve(evidence, refs)
         ranked = time.perf_counter()
@@ -129,6 +139,14 @@ class MapMatcher:
         if candidate is not None and candidate.explained >= .65 and candidate.contradiction <= .25:
             expanded.diagnostics['pipeline_view'] = 'cached_expanded_view_retry'
             return expanded
+        if self.floor_hint is not None:
+            refs = [r for r in self.floor_references if r.map_id == map_id]
+            floor_retry = align(True)
+            candidate = presentation_candidate(floor_retry)[0]
+            if candidate is not None and candidate.explained >= .65 and candidate.contradiction <= .25:
+                floor_retry.diagnostics.update(pipeline_view='cached_all_floors_retry',
+                                               rejected_floor_hint=self.floor_hint)
+                return floor_retry
         return initial
 
 
