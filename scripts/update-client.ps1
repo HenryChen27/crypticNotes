@@ -17,6 +17,22 @@ function Resolve-Child([string]$Root, [string]$Relative) {
     return $target
 }
 
+function Copy-WithRetry([string]$Source, [string]$Destination) {
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        try {
+            Copy-Item -LiteralPath $Source -Destination $Destination -Force
+            return
+        } catch [IO.IOException] {
+            if ($timer.Elapsed.TotalSeconds -ge 15) { throw }
+            Start-Sleep -Milliseconds 250
+        } catch [UnauthorizedAccessException] {
+            if ($timer.Elapsed.TotalSeconds -ge 15) { throw }
+            Start-Sleep -Milliseconds 250
+        }
+    }
+}
+
 function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup) {
     # The published map library is authoritative. Back up the installed library, then
     # replace it as one unit so removed/renamed maps do not survive an update.
@@ -46,11 +62,11 @@ function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup
             $existed = Test-Path -LiteralPath $target -PathType Leaf
             if ($existed) {
                 [void][IO.Directory]::CreateDirectory((Split-Path -Parent $saved))
-                Copy-Item -LiteralPath $target -Destination $saved -Force
+                Copy-WithRetry $target $saved
             }
             $changed.Add(@{Target=$target; Saved=$saved; Existed=$existed})
             [void][IO.Directory]::CreateDirectory((Split-Path -Parent $target))
-            Copy-Item -LiteralPath $file.FullName -Destination $target -Force
+            Copy-WithRetry $file.FullName $target
         }
     } catch {
         $failure = $_
@@ -58,7 +74,7 @@ function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup
         for ($i=$changed.Count-1; $i -ge 0; $i--) {
             $entry = $changed[$i]
             try {
-                if ($entry.Existed) { Copy-Item -LiteralPath $entry.Saved -Destination $entry.Target -Force }
+                if ($entry.Existed) { Copy-WithRetry $entry.Saved $entry.Target }
                 elseif (Test-Path -LiteralPath $entry.Target -PathType Leaf) { Remove-Item -LiteralPath $entry.Target -Force }
             } catch { $rollbackErrors += $_.Exception.Message }
         }
@@ -122,6 +138,13 @@ $client = [Net.WebClient]::new()
 $client.Headers['User-Agent'] = 'CrypticNotes-Windows-Updater'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $completed = $false
+$logRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'IdentityVMapAssistant\out'
+[void][IO.Directory]::CreateDirectory($logRoot)
+$logPath = Join-Path $logRoot 'updater.log'
+function Log([string]$Message) {
+    ('{0:yyyy-MM-dd HH:mm:ss.fff}  {1}' -f [DateTime]::Now,$Message) | Add-Content -LiteralPath $logPath -Encoding UTF8
+}
+Log "start installRoot=$InstallRoot"
 function Download([string]$Url, [string]$Path, [long]$Size = 0) {
     if (-not $Url.StartsWith('https://github.com/HenryChen27/crypticNotes/releases/download/')) { throw '更新地址不是项目官方发布地址' }
     $task = $client.DownloadFileTaskAsync([Uri]$Url, $Path)
@@ -151,6 +174,7 @@ try {
         Start-Sleep -Milliseconds 80
     }
     $release = $task.GetAwaiter().GetResult() | ConvertFrom-Json
+    Log "release=$($release.tag_name) assets=$($release.assets.Count)"
     $asset = @($release.assets | Where-Object name -eq 'IdentityVMapAssistant-Windows-x64.zip')
     $checksum = @($release.assets | Where-Object name -eq 'SHA256SUMS.txt')
     if ($asset.Count -ne 1 -or $checksum.Count -ne 1) { throw '发布包正在维护，请稍后重试' }
@@ -200,21 +224,27 @@ try {
         $appPath = [IO.Path]::GetFullPath((Join-Path $InstallRoot 'IdentityVMapAssistant.exe'))
         $running = @(Get-Process -Name IdentityVMapAssistant -ErrorAction SilentlyContinue | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $appPath })
         foreach ($process in $running) { [void]$process.CloseMainWindow() }
-        if ($running.Count) { Start-Sleep -Milliseconds 1200 }
+        if ($running.Count) { Start-Sleep -Milliseconds 1800 }
         foreach ($process in @(Get-Process -Name IdentityVMapAssistant -ErrorAction SilentlyContinue | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $appPath })) {
-            Stop-Process -Id $process.Id -Force
+            # Python's matching worker is a child process. Killing only the UI
+            # can leave that child holding package/map files long enough for
+            # replacement to fail. taskkill /T scopes the cleanup to this app's
+            # process tree and does not touch another installation.
+            & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
             Wait-Process -Id $process.Id -Timeout 8 -ErrorAction SilentlyContinue
         }
         Install-Payload $payload $InstallRoot (Join-Path $work 'backup')
         @{sha256=$expected} | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding UTF8
         $label.Text = '更新完成，设置已保留，地图库已同步到最新版。'
         Start-Process -FilePath $appPath -WorkingDirectory $InstallRoot -WindowStyle Hidden
+        Log "success sha256=$expected"
     }
     $bar.Style = 'Continuous'
     $bar.Value = 100
     $completed = $true
 } catch {
-    if (-not $form.IsDisposed) { $label.Text = "更新未完成：$($_.Exception.Message)" }
+    Log "failure $($_.Exception.ToString())"
+    if (-not $form.IsDisposed) { $label.Text = "更新未完成：$($_.Exception.Message)`n日志：$logPath" }
 } finally {
     $client.Dispose()
     if (-not $form.IsDisposed) {
