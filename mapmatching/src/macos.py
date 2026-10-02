@@ -116,7 +116,10 @@ def _panel_for(window):
             break
     if panel is None:
         try:
-            panel = objc.objc_object(c_void_p=key).window()
+            import ctypes
+            # pyobjc takes a ctypes.c_void_p here, not a bare int; the Qt winId
+            # may be a subview rather than the window's content view.
+            panel = objc.objc_object(c_void_p=ctypes.c_void_p(key)).window()
         except Exception:
             panel = None
     if panel is not None:
