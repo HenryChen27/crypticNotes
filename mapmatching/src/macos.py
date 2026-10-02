@@ -129,12 +129,22 @@ def _panel_for(window):
     return panel
 
 
+def _appkit(name, value):
+    """AppKit constant, or its documented value.
+
+    pyobjc has been moving NS_OPTIONS/NS_ENUM to enum classes; the module-level
+    names still exist, but a lookup failing must not take the overlay down with
+    it, and these are plain NSInteger values either way.
+    """
+    import AppKit
+    return getattr(AppKit, name, value)
+
+
 def keep_floating(window):
-    from AppKit import (NSScreenSaverWindowLevel,
-                        NSWindowCollectionBehaviorCanJoinAllSpaces,
-                        NSWindowCollectionBehaviorFullScreenAuxiliary,
-                        NSWindowCollectionBehaviorStationary)
-    panel = _panel_for(window)
+    try:
+        panel = _panel_for(window)
+    except Exception:
+        panel = None
     if panel is None:
         from .ui_trace import trace
         trace('overlay_panel_missing',window=int(window))
@@ -142,12 +152,14 @@ def keep_floating(window):
     try:
         panel.setHidesOnDeactivate_(False)
         panel.setCanHide_(False)
-        panel.setLevel_(NSScreenSaverWindowLevel)
+        panel.setLevel_(_appkit('NSScreenSaverWindowLevel', 1000))
         panel.setCollectionBehavior_(
-            NSWindowCollectionBehaviorCanJoinAllSpaces |
-            NSWindowCollectionBehaviorFullScreenAuxiliary |
-            NSWindowCollectionBehaviorStationary)
+            _appkit('NSWindowCollectionBehaviorCanJoinAllSpaces', 1 << 0) |
+            _appkit('NSWindowCollectionBehaviorStationary', 1 << 4) |
+            _appkit('NSWindowCollectionBehaviorFullScreenAuxiliary', 1 << 8))
     except Exception:
+        # Never let a cosmetic hardening pass break the overlay it is meant to
+        # rescue; the window simply stays as Qt left it.
         _panels.pop(int(window), None)
         return False
     return True
