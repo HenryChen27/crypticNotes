@@ -109,13 +109,21 @@ def verify(app,identity):
     """
     result=subprocess.run(['/usr/bin/codesign','-d','-r-','--verbose=4',str(app)],
                           capture_output=True,text=True)
-    text=result.stderr
+    # codesign splits this across both streams: the verbose dump goes to stderr,
+    # the requirement itself to stdout.  Reading only stderr finds no
+    # `designated =>` line at all -- which is indistinguishable from an unsigned
+    # bundle, so the check has to see the concatenation.
+    stdout,stderr=result.stdout,result.stderr
     # Printed unconditionally: a release should leave a permanent record of the
     # requirement its users' permissions are bound to.
-    print(text.strip())
+    print(stdout.strip())
+    print(stderr.strip())
+    text=stdout+'\n'+stderr
     line=next((l for l in text.splitlines() if 'designated =>' in l),None)
     if line is None:
-        raise SystemExit(f'读不出指定要求(DR):\n{text.strip()}')
+        raise SystemExit(
+            '读不出指定要求(DR)：codesign 的两个输出流里都没有 designated => 行。\n'
+            f'--- stdout ---\n{stdout.strip()}\n--- stderr ---\n{stderr.strip()}')
     dr=line.split('designated =>',1)[1].strip()
     if not (f'identifier "{BUNDLE_ID}"' in dr
             and ('certificate leaf[subject.CN]' in dr or 'certificate root[subject.CN]' in dr)

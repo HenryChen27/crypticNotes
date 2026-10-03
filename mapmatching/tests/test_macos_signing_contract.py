@@ -85,6 +85,16 @@ class SigningContractTests(unittest.TestCase):
             '签名后必须断言 DR 绑在证书上，否则 ad-hoc 回落会无人察觉地发出去')
         self.assertIn('cdhash',self.build)
 
+    def test_designated_requirement_reads_both_output_streams(self):
+        # `codesign -d -r- --verbose=4` splits its output: the verbose dump goes
+        # to stderr, the requirement itself to stdout.  A check that reads only
+        # stderr finds no `designated =>` line and fails the build on a bundle
+        # that is in fact correctly signed -- which is exactly what happened on
+        # the first macos-14 runner.
+        self.assertIn('result.stdout',self.build,
+            'DR 断言必须合并 codesign 的两个输出流，只读 stderr 会漏掉要求本身')
+        self.assertIn('result.stderr',self.build)
+
     def test_missing_certificate_fails_the_build(self):
         # Never degrade to unsigned: that is the exact silent path this whole
         # change exists to close.  The escape hatch stays explicit and named.
