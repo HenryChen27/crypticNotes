@@ -1,4 +1,5 @@
 import unittest
+import numpy  # Load native extensions before patch.dict restores sys.modules.
 import importlib.util
 from pathlib import Path
 from unittest.mock import Mock,patch
