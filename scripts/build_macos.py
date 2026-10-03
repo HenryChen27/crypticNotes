@@ -125,10 +125,23 @@ def verify(app,identity):
             '读不出指定要求(DR)：codesign 的两个输出流里都没有 designated => 行。\n'
             f'--- stdout ---\n{stdout.strip()}\n--- stderr ---\n{stderr.strip()}')
     dr=line.split('designated =>',1)[1].strip()
+    # Two acceptable shapes, both stable across rebuilds:
+    #
+    #   certificate leaf[subject.CN] = "<CN>"      the plan expected this one
+    #   certificate root = H"a57b1d48..."          what macos-14 actually emits
+    #
+    # Measured, not assumed: a self-signed certificate that is *not* in the trust
+    # store cannot be anchored, so codesign falls back to pinning the
+    # certificate's own hash instead of naming it.  Stable either way -- the
+    # certificate does not change between builds, only the code does.  The hash
+    # form does carry a sharper edge: it is tied to the certificate bytes, so
+    # regenerating the certificate (not just renaming it) changes the DR and
+    # every existing user has to grant again.
+    by_name=any(pin in dr for pin in ('certificate leaf[subject.CN]','certificate root[subject.CN]'))
+    by_hash=any(pin in dr for pin in ('certificate root = H"','certificate leaf = H"'))
     if not (f'identifier "{BUNDLE_ID}"' in dr
-            and ('certificate leaf[subject.CN]' in dr or 'certificate root[subject.CN]' in dr)
-            and f'"{identity}"' in dr
-            and 'cdhash' not in dr):
+            and 'cdhash' not in dr
+            and ((by_name and f'"{identity}"' in dr) or by_hash)):
         raise SystemExit(
             '签名后的 DR 不是稳定形态，TCC 授权仍会在每次更新后丢失。\n'
             f'  实际: {dr}\n'

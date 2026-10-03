@@ -81,8 +81,13 @@ class SigningContractTests(unittest.TestCase):
     def test_designated_requirement_is_asserted_after_signing(self):
         # This is the check that catches an ad-hoc fallback: an ad-hoc DR reads
         # `identifier "..." and cdhash H"..."`, which changes every build.
-        self.assertIn('certificate leaf[subject.CN]',self.build,
-            '签名后必须断言 DR 绑在证书上，否则 ad-hoc 回落会无人察觉地发出去')
+        self.assertIn('certificate leaf[subject.CN]',self.build)
+        # The hash form is not decoration.  A macos-14 runner emitted
+        # `certificate root = H"a57b1d48..."` rather than the by-name form,
+        # because a self-signed certificate that is not in the trust store has
+        # no anchor to name.  Dropping it would fail every build.
+        self.assertIn('certificate root = H"',self.build,
+            '自签名证书不受信任时 codesign 会钉证书哈希，这个形态必须被接受')
         self.assertIn('cdhash',self.build)
 
     def test_designated_requirement_reads_both_output_streams(self):
