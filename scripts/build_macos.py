@@ -220,6 +220,16 @@ def main():
     # fails.  Zipping the directory rather than the .app with --keepParent puts
     # its contents at the archive root, so the .app stays where it was and the
     # README's "解压后拖入应用程序" still reads correctly.
+    # `--onedir --windowed` leaves the COLLECT directory *and* the BUNDLE:
+    # dist-macos/加页手记/ is the raw pile, 加页手记.app/ is the bundle that
+    # copied it.  Only the bundle ships.  Leaving the raw pile in would roughly
+    # double the ZIP and hand users a directory that looks equally runnable and
+    # is not.  Safe to drop because the bundle is self-contained -- signing found
+    # all 308 Mach-O files inside the .app, not outside it -- and the workflow's
+    # next-but-one step actually launches the bundle and asserts its window.
+    collect=ROOT/'dist-macos'/APP_NAME
+    if collect.is_dir(): shutil.rmtree(collect)
+
     diagnostic=ROOT/'dist-macos'/DIAGNOSTIC
     shutil.copy2(ROOT/'scripts/diagnose_macos.command',diagnostic)
     os.chmod(diagnostic,0o755)

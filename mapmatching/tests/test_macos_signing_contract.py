@@ -126,6 +126,15 @@ class SigningContractTests(unittest.TestCase):
             self.assertNotIn('--keepParent',elements(bracket),
                 '要对 dist-macos 目录打包，--keepParent 会把诊断脚本挡在压缩包外')
 
+    def test_collect_directory_is_dropped_before_packaging(self):
+        # --onedir --windowed emits both dist-macos/加页手记/ (COLLECT) and
+        # dist-macos/加页手记.app/ (BUNDLE).  Archiving the directory instead of
+        # the bundle therefore carries both copies and roughly doubles the ZIP.
+        # The removal has to come *before* ditto; after it is no-op.
+        self.assertLess(self.build.index('shutil.rmtree(collect)'),
+                        self.build.index("['ditto'"),
+                        '必须先删掉 COLLECT 目录再打包，否则 zip 里有两份拷贝')
+
 
 class InputMonitoringContractTests(unittest.TestCase):
     def test_input_monitoring_is_actually_requested(self):
