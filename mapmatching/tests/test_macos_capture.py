@@ -16,6 +16,7 @@ class CaptureTests(unittest.TestCase):
             spec.loader.exec_module(module)
             panel=Mock()
             panel.level.return_value=1000
+            panel.collectionBehavior.return_value=273
             with patch.object(module,'_panel_for',return_value=panel),patch.object(module,'trace') as trace:
                 self.assertTrue(module.keep_floating(123))
                 self.assertEqual(trace.call_args.args[0],'mac_panel_configured')
