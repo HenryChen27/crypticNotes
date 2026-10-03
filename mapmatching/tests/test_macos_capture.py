@@ -7,6 +7,25 @@ from mapmatching.src.macos_capture import await_callback,select_window
 
 
 class CaptureTests(unittest.TestCase):
+    def test_floating_window_success_missing_and_failure_do_not_crash(self):
+        spec=importlib.util.spec_from_file_location('mapmatching.src._macos_test',
+            Path(__file__).resolve().parents[1]/'src/macos.py')
+        module=importlib.util.module_from_spec(spec)
+        appkit=SimpleNamespace(NSWorkspace=Mock(),NSScreen=Mock())
+        with patch.dict('sys.modules',{'AppKit':appkit,'Quartz':Mock()}):
+            spec.loader.exec_module(module)
+            panel=Mock()
+            panel.level.return_value=1000
+            with patch.object(module,'_panel_for',return_value=panel),patch.object(module,'trace') as trace:
+                self.assertTrue(module.keep_floating(123))
+                self.assertEqual(trace.call_args.args[0],'mac_panel_configured')
+                panel.setLevel_.side_effect=RuntimeError('unavailable')
+                self.assertFalse(module.keep_floating(123))
+                self.assertEqual(trace.call_args.args[0],'mac_panel_failed')
+            with patch.object(module,'_panel_for',return_value=None),patch.object(module,'trace') as trace:
+                self.assertFalse(module.keep_floating(123))
+                self.assertEqual(trace.call_args.args[0],'overlay_panel_missing')
+
     def test_native_view_pointer_is_not_treated_as_pid(self):
         spec=importlib.util.spec_from_file_location('mapmatching.src._macos_test',
             Path(__file__).resolve().parents[1]/'src/macos.py')

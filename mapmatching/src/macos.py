@@ -126,7 +126,6 @@ def place_overlay(_window, rect):
             return
     # Returning silently here used to mean "matched fine, nothing on screen" with
     # no way to tell it apart from a window AppKit kept off screen.
-    from .ui_trace import trace
     trace('overlay_place_missing',window=int(_window),rect=list(map(int,rect)))
 
 
@@ -161,7 +160,6 @@ def _panel_for(window):
             panel = None
     if panel is not None:
         _panels[key] = panel
-        from .ui_trace import trace
         trace('overlay_panel_bound',window=key,level=int(panel.level()))
     return panel
 
@@ -183,7 +181,6 @@ def keep_floating(window):
     except Exception:
         panel = None
     if panel is None:
-        from .ui_trace import trace
         trace('overlay_panel_missing',window=int(window))
         return False
     try:
