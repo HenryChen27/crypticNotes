@@ -1621,10 +1621,13 @@ def main():
     parser.add_argument('--demo',type=Path,help='用本地截图演示，推理不读取配对答案')
     parser.add_argument('--local-test',action='store_true',help='启动后直接选择本地截图')
     parser.add_argument('--showcase',type=Path,help='保存真实界面截图并在演示后退出')
+    parser.add_argument('--startup-smoke',type=Path,help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.showcase and not args.demo:
         parser.error('--showcase requires --demo')
-    native.dpi_aware()
+    # Windows DPI awareness must precede Qt; Cocoa initialization must not.
+    if sys.platform != 'darwin':
+        native.dpi_aware()
     app = W.QApplication(sys.argv[:1])
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.
@@ -1643,6 +1646,14 @@ def main():
         if args.showcase:
             C.QTimer.singleShot(500,ui.retry)
     show_floating(ui)
+    if args.startup_smoke:
+        def startup_check():
+            args.startup_smoke.parent.mkdir(parents=True,exist_ok=True)
+            args.startup_smoke.write_text(json.dumps({
+                'visible':ui.isVisible(), 'width':ui.width(), 'height':ui.height(),
+                'platform':sys.platform}),encoding='utf-8')
+            app.quit()
+        C.QTimer.singleShot(1500,startup_check)
     if args.local_test and not args.demo:
         C.QTimer.singleShot(100,ui.choose_screenshot)
     if args.showcase:

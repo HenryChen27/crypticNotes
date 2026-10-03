@@ -19,6 +19,9 @@ def _select_window(window_id, pid, rect):
 def dpi_aware():
     # A floating utility must not activate a regular Dock application and move
     # the user out of the game's full-screen Space.
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        return
     from AppKit import NSApplication, NSApplicationActivationPolicyAccessory
     NSApplication.sharedApplication().setActivationPolicy_(NSApplicationActivationPolicyAccessory)
 

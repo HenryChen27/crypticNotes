@@ -20,6 +20,14 @@ if __name__ == '__main__':
                 ctypes.windll.user32.MessageBoxW(None,'管理员启动未完成。可重新双击启动，或使用普通权限启动。','加页手记',0x40)
             raise SystemExit(0 if result and result>32 else 1)
     try:
+        if sys.platform == 'darwin':
+            import faulthandler
+            from mapmatching.paths import DATA_ROOT
+            crash_dir=DATA_ROOT/'out/mapmatching'
+            crash_dir.mkdir(parents=True,exist_ok=True)
+            # Keep this file open until process exit, including native crashes.
+            crash_log=(crash_dir/'native_crash.log').open('a',encoding='utf-8')
+            faulthandler.enable(file=crash_log,all_threads=True)
         if '--self-test' in sys.argv:
             from mapmatching.portable_check import run
             run(sys.argv[sys.argv.index('--self-test')+1])
@@ -30,7 +38,6 @@ if __name__ == '__main__':
         from mapmatching.paths import DATA_ROOT
         root=DATA_ROOT
         log=root/'out/mapmatching/ui_error.log'
-        log.parent.mkdir(parents=True,exist_ok=True)
         log.parent.mkdir(parents=True,exist_ok=True)
         log.write_text(traceback.format_exc(),encoding='utf-8')
         if sys.platform == 'win32':
