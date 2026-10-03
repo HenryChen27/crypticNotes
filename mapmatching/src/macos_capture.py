@@ -5,6 +5,20 @@ No desktop fallback: a missing window must never silently become wallpaper.
 from threading import Event
 
 
+def bgra_buffer_to_bgr(raw, width, height, row_bytes):
+    """Read logical rows; providers may include allocation padding at the end."""
+    import numpy as np
+    width, height, row_bytes = int(width), int(height), int(row_bytes)
+    if width <= 0 or height <= 0 or row_bytes < width * 4:
+        raise ValueError('截图尺寸或每行字节数无效')
+    needed = (height - 1) * row_bytes + width * 4
+    if len(raw) < needed:
+        raise ValueError(f'截图数据不完整：需要至少 {needed} 字节，实际 {len(raw)} 字节')
+    frame = np.ndarray((height, width, 4), dtype=np.uint8,
+                       buffer=raw, strides=(row_bytes, 4, 1))
+    return frame[:, :, :3].copy()
+
+
 def await_callback(start, timeout=5):
     done=Event()
     result=[]

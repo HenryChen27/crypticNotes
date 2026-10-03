@@ -4,10 +4,27 @@ import importlib.util
 from pathlib import Path
 from unittest.mock import Mock,patch
 from types import SimpleNamespace
-from mapmatching.src.macos_capture import await_callback,select_window
+from mapmatching.src.macos_capture import await_callback,select_window,bgra_buffer_to_bgr
 
 
 class CaptureTests(unittest.TestCase):
+    def test_buffer_rows_ignore_padding_and_own_the_output(self):
+        raw=bytearray([1,2,3,255,4,5,6,255,99,99,99,99,
+                       7,8,9,255,10,11,12,255])
+        expected=[[[1,2,3],[4,5,6]],[[7,8,9],[10,11,12]]]
+        for tail in (b'',bytes(1792)):
+            image=bgra_buffer_to_bgr(raw+tail,2,2,12)
+            self.assertEqual(image.tolist(),expected)
+        image=bgra_buffer_to_bgr(raw,2,2,12)
+        raw[0]=0
+        self.assertEqual(int(image[0,0,0]),1)
+        with self.assertRaises(ValueError): bgra_buffer_to_bgr(raw[:-1],2,2,12)
+        with self.assertRaises(ValueError): bgra_buffer_to_bgr(raw,2,2,7)
+
+    def test_reported_retina_buffer_allocation(self):
+        image=bgra_buffer_to_bgr(bytes(26263552),3360,1954,13440)
+        self.assertEqual(image.shape,(1954,3360,3))
+
     def test_floating_window_success_missing_and_failure_do_not_crash(self):
         spec=importlib.util.spec_from_file_location('mapmatching.src._macos_test',
             Path(__file__).resolve().parents[1]/'src/macos.py')

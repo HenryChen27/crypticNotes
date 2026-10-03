@@ -95,7 +95,7 @@ def capture(rect):
         raise PermissionError('当前进程没有屏幕录制权限；请授权当前版本的加页手记后完全退出并重新打开')
     if _capture_window is None or tuple(rect) != _capture_window[2]:
         raise RuntimeError('截图目标未绑定，已停止截图以避免读取桌面背景')
-    from .macos_capture import capture_window
+    from .macos_capture import capture_window, bgra_buffer_to_bgr
     window_id,pid,_ = _capture_window
     try:
         image = capture_window(window_id,pid)
@@ -106,11 +106,13 @@ def capture(rect):
     provider = Quartz.CGImageGetDataProvider(image)
     raw = bytes(Quartz.CGDataProviderCopyData(provider))
     row_bytes = Quartz.CGImageGetBytesPerRow(image)
-    frame = np.frombuffer(raw, np.uint8).reshape(height, row_bytes)[:, :width*4].reshape(height,width,4)
+    if Quartz.CGImageGetBitsPerPixel(image) != 32 or Quartz.CGImageGetBitsPerComponent(image) != 8:
+        raise ValueError('截图像素格式不是预期的 8 位 BGRA，请反馈截图日志')
+    frame = bgra_buffer_to_bgr(raw, width, height, row_bytes)
     trace('mac_capture_complete',backend='ScreenCaptureKit',window_id=window_id,
-          pid=pid,width=width,height=height)
+          pid=pid,width=width,height=height,row_bytes=row_bytes,buffer_bytes=len(raw))
     # CGWindow images use premultiplied BGRA on current Intel and Apple Silicon Macs.
-    return frame[:,:,:3].copy()
+    return frame
 
 
 def place_overlay(_window, rect):
