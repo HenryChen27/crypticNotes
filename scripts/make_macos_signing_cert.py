@@ -43,6 +43,11 @@ CN = 'IdentityVMapAssistant Self-Signed Code Signing'
 P12_PASSWORD_SECRET = 'MACOS_SIGNING_P12_PASSWORD'
 P12_SECRET = 'MACOS_SIGNING_P12'
 
+# `openssl asn1parse` prints digest algorithm identifiers by name, not by OID --
+# it says `:sha1`, never `1.3.14.3.2.26`.  Measured against both formats.
+SHA1_MAC = 'sha1'
+SHA256_MAC = 'sha256'
+
 
 def run(args):
     """Run openssl, echo the command, and fail loudly with its stderr."""
@@ -65,7 +70,7 @@ def check_openssl():
         raise SystemExit('openssl 版本过低（需要 >= 1.1.1 才有 -addext）。')
 
 
-def generate(password, legacy):
+def generate(password):
     key = OUT / 'key.pem'
     crt = OUT / 'codesign.crt'
     p12 = OUT / 'codesign.p12'
@@ -77,15 +82,36 @@ def generate(password, legacy):
          '-addext', 'keyUsage=critical,digitalSignature',
          '-addext', 'extendedKeyUsage=codeSigning',
          '-addext', 'subjectKeyIdentifier=hash'])
-    export = ['openssl', 'pkcs12', '-export', '-inkey', str(key), '-in', str(crt),
-              '-name', CN, '-out', str(p12), '-passout', f'pass:{password}']
-    if legacy:
-        # OpenSSL 3 defaults to a SHA-256 MAC, which macOS 14/15 read fine.  This
-        # is the escape hatch if a runner ever answers "MAC verification failed
-        # during PKCS12 import".
-        export.insert(2, '-legacy')
-    run(export)
+    # -legacy, unconditionally.  OpenSSL 3 switched the default PKCS#12 MAC to
+    # SHA-256, and `security import` on macOS 14 answers that with
+    #     SecKeychainItemImport: MAC verification failed during PKCS12 import
+    # which reads exactly like a wrong password and sends you hunting for a
+    # password bug that is not there.  Measured on a macos-14 runner, not
+    # assumed.  The only consumer of this file is macOS's own keychain, so the
+    # modern default buys nothing; legacy (RC2-40 + SHA-1) is what it reads.
+    run(['openssl', 'pkcs12', '-export', '-legacy', '-inkey', str(key), '-in', str(crt),
+         '-name', CN, '-out', str(p12), '-passout', f'pass:{password}'])
     return key, crt, p12
+
+
+def assert_legacy_mac(p12):
+    """Refuse to ship a PKCS#12 whose MAC older `security import` cannot verify.
+
+    Reading the file back with OpenSSL proves nothing here: OpenSSL 3 reads both
+    formats happily, so `pkcs12 -in -noout` succeeds on exactly the file that
+    fails on macOS.  Only the algorithm identifier in the DER tells them apart.
+    """
+    dump = run(['openssl', 'asn1parse', '-inform', 'DER', '-in', str(p12)])
+    digests = {line.rsplit(':', 1)[-1].strip() for line in dump.splitlines()
+               if line.rstrip().endswith((SHA1_MAC, SHA256_MAC))}
+    if SHA256_MAC in digests:
+        raise SystemExit(
+            'PKCS#12 用了 SHA-256 MAC，macOS 14 的 security import 会报\n'
+            '"MAC verification failed during PKCS12 import"（看起来像密码错，实际是格式）。\n'
+            '导出时必须带 -legacy。')
+    if SHA1_MAC not in digests:
+        raise SystemExit(f'PKCS#12 里找不到 SHA-1 MAC，需要人工确认:\n{dump}')
+    print('p12 MAC: SHA-1（macOS 可读）')
 
 
 def verify(crt):
@@ -110,8 +136,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--force', action='store_true',
                         help='覆盖已有证书。换证书 = 所有已授权用户重新授权一遍。')
-    parser.add_argument('--legacy', action='store_true',
-                        help='用 -legacy 导出 p12（仅当 runner 报 PKCS12 MAC 校验失败时用）')
     options = parser.parse_args()
 
     # Git Bash is UTF-8; without this the Chinese lines come out as mojibake.
@@ -131,8 +155,9 @@ def main():
     password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
 
     print('生成证书...')
-    key, crt, p12 = generate(password, options.legacy)
+    key, crt, p12 = generate(password)
     verify(crt)
+    assert_legacy_mac(p12)
 
     blob = base64.b64encode(p12.read_bytes()).decode('ascii')
     (OUT / 'codesign.p12.b64.txt').write_text(blob + '\n', encoding='ascii')
