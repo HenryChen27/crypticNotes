@@ -177,7 +177,7 @@ def _appkit(name, value):
     return getattr(AppKit, name, value)
 
 
-def keep_floating(window):
+def keep_floating(window, level=None):
     try:
         panel = _panel_for(window)
     except Exception:
@@ -188,7 +188,7 @@ def keep_floating(window):
     try:
         panel.setHidesOnDeactivate_(False)
         panel.setCanHide_(False)
-        panel.setLevel_(_appkit('NSScreenSaverWindowLevel', 1000))
+        panel.setLevel_(_appkit('NSScreenSaverWindowLevel', 1000) if level is None else level)
         panel.setCollectionBehavior_(
             _appkit('NSWindowCollectionBehaviorCanJoinAllSpaces', 1 << 0) |
             _appkit('NSWindowCollectionBehaviorStationary', 1 << 4) |
@@ -206,6 +206,32 @@ def keep_floating(window):
         trace('mac_panel_failed',window=int(window),error=str(error))
         return False
     return True
+
+
+def install_window_policy(app):
+    """Keep modal controls above the companion without activating the game overlay."""
+    from PySide6 import QtCore as C, QtWidgets as W
+
+    class WindowPolicy(C.QObject):
+        def eventFilter(self, watched, event):
+            if event.type() == C.QEvent.Show and isinstance(watched, W.QWidget) and watched.isWindow():
+                kind=watched.windowType()
+                if isinstance(watched,W.QDialog) or kind in (C.Qt.Popup,C.Qt.ToolTip):
+                    def promote():
+                        try:
+                            if not watched.isVisible():
+                                return
+                            keep_floating(int(watched.winId()),1001)
+                            watched.raise_()
+                            if isinstance(watched,W.QDialog):
+                                watched.activateWindow()
+                        except RuntimeError:
+                            pass  # A transient popup may already have been deleted.
+                    C.QTimer.singleShot(0,promote)
+            return False
+
+    app._mac_window_policy=WindowPolicy(app)
+    app.installEventFilter(app._mac_window_policy)
 
 
 class _WindowAPI:

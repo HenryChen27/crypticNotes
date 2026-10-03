@@ -17,6 +17,7 @@ try:
     result.check_returncode()
     data=json.loads(report.read_text())
     assert data['visible'] and data['width']>0 and data['height']>0,data
+    assert data['dialog_above_companion'] and data['dialog_accepts_mouse'],data
     print('Packaged GUI startup passed:',data)
 finally:
     logs=Path.home()/'Library/Application Support/IdentityVMapAssistant/out/mapmatching'

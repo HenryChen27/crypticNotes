@@ -1305,10 +1305,18 @@ class Companion(W.QWidget):
                 self.close_map()
                 return
             self.rect_at_capture = self.capture_rect()
-            pixels = native.capture(self.rect_at_capture)
+            capture_started = time.perf_counter()
+            if sys.platform == 'darwin' and self.demo_window is not None:
+                from .src.reference import read_image
+                pixels = read_image(self.demo)
+            else:
+                pixels = native.capture(self.rect_at_capture)
+            if sys.platform == 'darwin':
+                trace('mac_frame_ready',elapsed_ms=(time.perf_counter()-capture_started)*1000,
+                      shape=list(pixels.shape),local=self.demo_window is not None)
             self.capture_exclusion = None
             is_visible = getattr(self, 'isVisible', None)
-            if callable(is_visible) and is_visible():
+            if sys.platform != 'darwin' and callable(is_visible) and is_visible():
                 self.capture_exclusion = native.client_rect(int(self.winId()))
                 native.mask_screen_rect(pixels,self.rect_at_capture,
                                         self.capture_exclusion)
@@ -1338,7 +1346,7 @@ class Companion(W.QWidget):
     def capture_rect(self):
         if self.demo_window is not None:
             if sys.platform == 'darwin':
-                return native.bind_local_window(int(self.demo_window.winId()))
+                return native.client_rect(int(self.demo_window.winId()))
             return native.client_rect(int(self.demo_window.winId()))
         return native.monitor_rect(self.target)
 
@@ -1390,7 +1398,7 @@ class Companion(W.QWidget):
         self._capturing = False
         # 状态结束 = 计数归零。下次按 G 是新会话，不该背着上一次的失败次数。
         self.no_map_streak = 0
-        if self.busy or (self.process is not None and not getattr(self,'ready',False)):
+        if self.busy or (sys.platform != 'darwin' and self.process is not None and not getattr(self,'ready',False)):
             self.stop_worker()
         if not silent:
             self.notify('已隐藏')
@@ -1643,6 +1651,7 @@ def main():
     app = W.QApplication(sys.argv[:1])
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.
+        native.install_window_policy(app)
     app.setQuitOnLastWindowClosed(False)
     font_stack()
     lock_path = DATA_ROOT/'out/mapmatching/ui.lock'
@@ -1659,11 +1668,20 @@ def main():
             C.QTimer.singleShot(500,ui.retry)
     show_floating(ui)
     if args.startup_smoke:
+        smoke_dialog = None
+        if sys.platform == 'darwin':
+            smoke_dialog = HotkeyDialog('G',ui)
+            C.QTimer.singleShot(300,smoke_dialog.show)
         def startup_check():
             args.startup_smoke.parent.mkdir(parents=True,exist_ok=True)
-            args.startup_smoke.write_text(json.dumps({
+            report={
                 'visible':ui.isVisible(), 'width':ui.width(), 'height':ui.height(),
-                'platform':sys.platform}),encoding='utf-8')
+                'platform':sys.platform}
+            if smoke_dialog is not None:
+                report['dialog_above_companion']=int(native._panel_for(int(smoke_dialog.winId())).level()) > int(native._panel_for(int(ui.winId())).level())
+                report['dialog_accepts_mouse']=not native._panel_for(int(smoke_dialog.winId())).ignoresMouseEvents()
+                smoke_dialog.close()
+            args.startup_smoke.write_text(json.dumps(report),encoding='utf-8')
             app.quit()
         C.QTimer.singleShot(1500,startup_check)
     if args.local_test and not args.demo:
