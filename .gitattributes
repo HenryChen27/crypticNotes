@@ -12,3 +12,7 @@
 *.ico binary
 
 scripts/update-client.ps1 -text
+
+# `.command` 是 macOS 上双击运行的 shell 脚本，必须 LF：
+# CRLF 版本会直接报 "bad interpreter: /bin/bash^M" 跑不起来。
+*.command text eol=lf

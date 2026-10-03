@@ -20,6 +20,38 @@ jobs:
           python-version: '3.13'
       - name: Install build dependencies
         run: python -m pip install -r requirements-build.txt
+      # 自签名证书必须导入，否则 build_macos.py 会直接失败。这是仓库的第一条 secret：
+      # 没有它就只能签 ad-hoc，而 ad-hoc 的 DR 钉住 cdhash，用户每次更新都要重新授权。
+      - name: Import signing certificate
+        env:
+          SIGNING_P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          SIGNING_P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SIGNING_P12:-}" ] || [ -z "${SIGNING_P12_PASSWORD:-}" ]; then
+            echo "::error title=缺少签名证书::仓库没有配置 MACOS_SIGNING_P12 / MACOS_SIGNING_P12_PASSWORD。拒绝构建 ad-hoc 版本——ad-hoc 签名会让用户每次更新都重新授权屏幕录制和输入监控。"
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          P12="$RUNNER_TEMP/signing.p12"
+          # printf 而非 echo：不追加换行、也不解释反斜杠。
+          printf '%s' "$SIGNING_P12" | base64 --decode > "$P12"
+          security create-keychain -p "$SIGNING_P12_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$SIGNING_P12_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$SIGNING_P12_PASSWORD" \
+            -T /usr/bin/codesign -T /usr/bin/security -A
+          # 少了这一条，codesign 会在无人值守的 runner 上卡在 GUI 密码框，
+          # 报 errSecInternalComponent / "User interaction is not allowed"。
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$SIGNING_P12_PASSWORD" "$KEYCHAIN"
+          security unlock-keychain -p "$SIGNING_P12_PASSWORD" "$KEYCHAIN"
+          # 原有钥匙串要追回去，别把登录钥匙串从搜索列表里挤掉。
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$P12"
+          # 名字里的空格走 GITHUB_ENV，不拼进 run 字符串。
+          echo "MACOS_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "MACOS_SIGNING_IDENTITY=IdentityVMapAssistant Self-Signed Code Signing" >> "$GITHUB_ENV"
       - name: Build application
         run: python scripts/build_macos.py
         env:
@@ -30,6 +62,10 @@ jobs:
           python -c "import ScreenCaptureKit as S; import Quartz; c=S.SCStreamConfiguration.alloc().init(); c.setIgnoreShadowsSingleWindow_(True); assert hasattr(S.SCScreenshotManager, 'captureImageWithFilter_configuration_completionHandler_'); assert hasattr(S.SCContentFilter, 'initWithDesktopIndependentWindow_'); assert hasattr(S.SCContentFilter, 'pointPixelScale'); assert hasattr(Quartz, 'CGPreflightScreenCaptureAccess'); print('Native capture APIs available')"
       - name: Launch packaged application
         run: python scripts/check_macos_startup.py
+      # 私钥只活在这次 job 里：无论上面成败都把临时钥匙串删掉。
+      - name: Delete signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
       - uses: actions/upload-artifact@v4
         with:
           name: IdentityVMapAssistant-macOS-${{ matrix.arch }}

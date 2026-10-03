@@ -60,18 +60,30 @@ body += f"""
 
 当前版本：**{manifest['versionName']}**（Android 8+，arm64）。下载 `{NAME}`，已有安装可在应用内检查更新，覆盖安装保留设置。
 
-- **录屏设置移至 App 内**：声音可选择无声或内部声音，悬浮窗只保留开始／停止录制。Android 10+ 内部声音需要系统录音授权，不采集麦克风；游戏禁止第三方采集时可能仍无声。
+- **录屏设置新增画质与帧率**：画质分流畅／标准／高清，对应最长边 720／1280／1920 像素与约 2／4／8 Mbps；帧率可选 24／30／60。默认仍是原来的 1280／4 Mbps／24 帧，没改过设置的设备录出来的文件与上一版一样。设备编码器不支持所选档位时会自动降档并提示。
+- **录屏默认手机声音**：录屏设置里的声音改为默认「内部声音」。以前显式点过「无声」的不受影响。需要系统录音授权（Android 10+），不采集麦克风；没授权时不提前弹窗，会在第一次录完之后提示去开启。默认值变化意味着从没设置过这一项的老用户，下次录制会开始带上游戏声音，也可能带上其他应用播放的媒体声。
+- **更新改为后台下载**：点检查更新后下载在后台进行，可以离开本页面甚至切到别的应用，下完自动弹出系统安装界面。中途被系统强杀不会自动续传，下次打开会尽量接着下。
+- **开图判定放宽**：原先要求两个界面控件同时高分，实测关闭按钮被挡住、或截图压缩后略掉几分时，会把确实开着的地图判成「没有地图」而不叠图。现在改成一个控件强、另一个佐证；右上角关闭图标被悬浮窗遮住时，还会用楼层按钮组独立确认。
+- **沿用上次地图时更严**：本次会话已经确认过身份的地图，稀疏视野只用来重新对齐位姿，不能再用来换地图；线索不足时保留上次结果而不是改判。
 - 录制时悬浮花纹持续平滑淡入淡出，可与匹配旋转叠加，停止录制后恢复。
 - **辅助设置 → 轻触反馈**：控制按钮、开关及关闭操作的微震动；自动匹配结果不震动，并遵循系统触感设置。
-- Android 10+ 视频保存到相册 `Movies/CrypticNotes`；Android 8/9 保存至应用外部 Movies 目录。最长边 1280、最高 24 帧，转屏会结束当前录制。实际性能和兼容性仍待更多真机测试。
+- Android 10+ 视频保存到相册 `Movies/CrypticNotes`；Android 8/9 保存至应用外部 Movies 目录。转屏会结束当前录制。
 - 支持系统提供的单应用共享选项，不再强制整屏共享。单应用共享通常不包含插件悬浮窗；录制叠图演示请选择整个屏幕。暂不支持分屏或自由窗口的坐标适配。
 - 启动后台检查更新，有新版时更新栏显示红点，不自动下载。
 - 改进楼层标签判定、缓存地图对齐和手机匹配筛选。探索少但特征明确的地图仍可匹配，证据不足时不强行叠图。
 
-系统自带录屏仍可能与识图冲突。内置录屏共用原屏幕采集，默认不录制、默认无声。内部声音及音画同步仍需真机验证；内部声音可能包括其他应用的媒体播放声音。识图时临时隐藏叠图的过程可能出现在视频里。画质为最长边 1280、最高 24 帧、4 Mbps，不跟随系统录屏设置。
+系统自带录屏仍可能与识图冲突。内置录屏共用原屏幕采集，默认不录制。内部声音及音画同步仍需真机验证；内部声音可能包括其他应用的媒体播放声音。识图时临时隐藏叠图的过程可能出现在视频里。
+
+画质与帧率档位、后台下载与自动安装界面这几项**尚未在真机上验证过**。特别是「下完自动弹出安装界面」：Android 10 起从后台启动界面可能被系统静默拦下，本应用靠悬浮窗权限争取豁免，但不保证生效；被拦下时会退化成一条「更新已下载，点按完成安装」的通知，下次打开应用也会自动补装一次。安装包校验通过后才会交给系统安装器。
 """
 # Android publishing only replaces Android attachments. Keep the existing
 # release notes intact so Windows notes and manually edited text are preserved.
+#
+# The body above used to be built and then dropped on the floor -- nothing ever
+# sent it -- so the Android section on the Release drifted two versions behind
+# the APK it described. Publish it: everything before the Android heading is
+# carried over untouched, and only the Android section is regenerated.
+api('/releases/'+str(entry['id']), {'body':body}, 'PATCH')
 published=api('/releases/'+str(entry['id']))
 assert {NAME,'android-update.json'} <= {a['name'] for a in published['assets']}
 assert {a['name'] for a in entry['assets'] if a['name'] not in (NAME,'android-update.json')} <= {a['name'] for a in published['assets']}

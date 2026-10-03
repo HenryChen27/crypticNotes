@@ -6,6 +6,23 @@ from mapmatching.src.live import ToggleState
 
 
 class SyncTests(unittest.TestCase):
+    def test_hung_worker_is_released_and_user_is_notified(self):
+        from mapmatching.ui import Companion,W,win32gui
+        subject=self.subject(False)
+        subject.keys.edges=lambda:set()
+        subject.connection=Mock()
+        subject.connection.poll.return_value=False
+        subject.worker_deadline=10
+        subject.busy=True
+        subject.ready=True
+        subject.stop_worker=Mock()
+        subject.notify=Mock()
+        subject.close_map=Mock()
+        with patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42),patch('mapmatching.ui.time.monotonic',return_value=11):
+            Companion.tick(subject)
+        subject.stop_worker.assert_called_once()
+        subject.notify.assert_called_once()
+
     def test_retry_collapses_settings_before_capture(self):
         from mapmatching.ui import Companion,C,native
         subject=SimpleNamespace(panel=Mock(),toggle_panel=Mock(),cached_candidate=object(),
@@ -49,6 +66,7 @@ class SyncTests(unittest.TestCase):
         state=ToggleState(); token=state.open()
         candidate=Candidate('hard/test','hard',None,10,Pose(1,0,0),.9,.1,1)
         subject=Mock()
+        subject.worker_deadline=None
         subject.state=state
         subject.keys.edges.return_value=set()
         subject.enabled.isChecked.return_value=False

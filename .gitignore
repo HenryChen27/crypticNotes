@@ -22,3 +22,25 @@ maps/index.json
 maps/evidence/
 maps/disabled.json
 failure-records/
+
+# 录屏素材与一图流总览大图，都不是源，共 4.2 GB。留在磁盘上，只是不跟踪：
+# `video/` 里的 mp4 没有任何代码引用（`scripts/export_doll_videos.py` 输出到
+# `out/doll-short-video`）；`maps/_overview/` 的 `audit.py` 明说不该被录入，
+# `scripts/build_windows.py` 也特意把它排除在发布包外。
+video/
+maps/_overview/
+# macOS 叠图排查时随手存的截屏，没有任何代码引用，和上面同理。
+mac_debug/
+
+# 自签名代码签名材料：私钥绝不进版本库。
+# 生成物落在 out/ 下（已被忽略），这几条防的是有人把 .p12 拷到别处后误提交。
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.der
+*.mobileprovision
+
+# macOS 打包产物：`dist/` 一直有忽略，`dist-macos/` 之前漏了。
+dist-macos/

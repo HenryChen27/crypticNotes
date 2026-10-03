@@ -23,9 +23,30 @@ def pressed_virtual_keys(vk):
         Quartz.kCGEventSourceStateCombinedSessionState,code))
 
 
+def request_permission():
+    """Ask once for Input Monitoring.
+
+    Polling key state is a *passive* read: it never raises the system prompt,
+    and without the prompt macOS never records the app in 系统设置 → 隐私与安全性
+    → 输入监控 at all -- the app cannot be found in that list, and every poll
+    silently returns False so the hotkeys just do nothing.  Only an explicit
+    request both shows the prompt and creates the list entry.
+
+    Older pyobjc builds predate the ListenEvent helpers; a missing symbol must
+    not take the watcher down, so the shortcut keys simply keep not working.
+    """
+    try:
+        if not Quartz.CGPreflightListenEventAccess():
+            Quartz.CGRequestListenEventAccess()
+    except AttributeError:
+        pass
+
+
 class KeyboardWatcher:
     def __init__(self,keys): self.keys=keys
-    def register(self,_window): return True
+    def register(self,_window):
+        request_permission()
+        return True
     def release(self): pass
 
 

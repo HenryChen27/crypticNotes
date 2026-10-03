@@ -1348,6 +1348,7 @@ class Companion(W.QWidget):
             self.connection = parent
             self.process = mp.Process(target=worker,args=(child,str(ROOT),*self.context()),daemon=True)
             self.process.start()
+            self.worker_deadline = time.monotonic() + 60
             child.close()
             self.ready = False
         # not busy：一次只有一个请求在途。并发发两条会让先回的那条被后回的顶掉，
@@ -1359,6 +1360,7 @@ class Companion(W.QWidget):
             self.connection.send(self.pending)
             self.pending = None
             self.busy = True
+            self.worker_deadline = time.monotonic() + 30
 
     def stop_worker(self):
         if self.process is not None:
@@ -1372,6 +1374,7 @@ class Companion(W.QWidget):
         self.pending = None
         # 进程没了，就绪状态当然也归零；留着 True 会让下一条请求发给还不存在的 worker。
         self.ready = False
+        self.worker_deadline = None
 
     def close_map(self,silent=False):
         trace("closed",token=self.state.generation)
@@ -1509,9 +1512,17 @@ class Companion(W.QWidget):
                 self.follow()
         if self.connection is not None:
             try:
+                deadline = getattr(self,'worker_deadline',None)
+                if deadline is not None and time.monotonic() >= deadline and not self.connection.poll():
+                    trace('worker_timeout',busy=self.busy,ready=self.ready)
+                    self.close_map(silent=True)
+                    self.stop_worker()
+                    self.notify('识别任务超时，已释放；请按 G 或点击重新识别')
+                    return
                 if self.connection.poll():
                     kind,payload = self.connection.recv()
                     if kind == 'ready':
+                        self.worker_deadline = None
                         self.ready = True
                         if not self.state.opened:
                             self.status.setText('就绪')
@@ -1522,6 +1533,7 @@ class Companion(W.QWidget):
                         self.notify('匹配失败：'+explain_failure(payload))
                     else:
                         self.busy = False
+                        self.worker_deadline = None
                         token,layer,message,candidate,elapsed,details = payload
                         trace("worker_result",token=token,accepted=self.state.accepts(token),reason=details.get("reason"),layer=layer is not None)
                         if self.state.accepts(token):
