@@ -199,6 +199,16 @@ def main():
     if not app.is_dir():
         raise SystemExit(f'App bundle not generated: {app}')
 
+    version_file=ROOT/'macos-version.json'
+    if version_file.exists():
+        import json, plistlib
+        version=json.loads(version_file.read_text(encoding='utf-8'))
+        plist=app/'Contents/Info.plist'
+        metadata=plistlib.loads(plist.read_bytes())
+        metadata['CFBundleShortVersionString']=version['version']
+        metadata['CFBundleVersion']=str(version['build'])
+        plist.write_bytes(plistlib.dumps(metadata))
+
     if skip:
         print('!'*72)
         print('!! 未签名构建：用户每次更新都要重新授权屏幕录制和输入监控 !!')

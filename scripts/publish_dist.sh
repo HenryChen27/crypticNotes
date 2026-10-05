@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+printf "%s\n" "This legacy dist-branch publisher is retired. Use scripts/release-menu.cmd or scripts/release_manager.py." >&2
+exit 2
 # 把 dist/IdentityVMapAssistant 的当前内容发布到 crypticNotes 仓库的 dist 分支，
 # 让协作者用 git 增量更新，不必每次重下 223 MB 的 zip。
 #

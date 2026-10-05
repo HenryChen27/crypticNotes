@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+printf "%s\n" "This legacy dist-branch publisher is retired. Use scripts/release-menu.cmd or scripts/release_manager.py." >&2
+exit 2
 # 一条命令走完发版：打包 → 整理分享仓库 → 推源码 → 推分发分支 → 建 Release。
 #
 # 用法：

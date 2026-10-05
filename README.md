@@ -173,52 +173,11 @@ macOS 版没有站内更新：点击「检查更新」会按当前芯片（Apple
 
 不建议直接用系统 Python 裸跑 UI，除非你已经在当前环境安装好了 `mapmatching/requirements-ui.txt` 里的依赖。
 
-## 自己打包
+## 打包与发布
 
-```powershell
-.venv\Scripts\python.exe -m pip install -r requirements-build.txt
-.venv\Scripts\python.exe scripts\build_windows.py
-```
+双击 `scripts/release-menu.cmd` 选择 Windows、Android、Mac 或全部，可只打包或打包后发布。自动提升版本号、校验签名与包体，通过 GitHub Release 分发，不再使用 `dist` 分支。
 
-成品在 `dist/IdentityVMapAssistant/`。发布时要压缩整个文件夹，不能只拿 EXE。
-
-### 发布新版本
-
-一条命令走完：打包 → 整理源码 → 推源码 → 推分发包 → 建 Release。
-
-```bash
-scripts/release.sh                     # 全流程。真正推送前会停下来问你一次
-scripts/release.sh --local             # 只在本机做完（打包 + 提交），一个字节都不推
-scripts/release.sh --no-build          # 跳过 PyInstaller，复用现有 dist/
-scripts/release.sh --no-release        # 推完就停，不建 GitHub Release
-scripts/release.sh -m "提交信息"        # 两个仓库共用的提交信息
-scripts/release.sh --note "本次更新…"   # Release 正文里「本次更新」一节的内容
-```
-
-`--note` 建议每次都写。不给它时那一节由「上个 Release 以来的提交标题」自动生成，但分享仓库的提交标题基本都是 `release: 更新源码与地图库`（真正的工作在开发仓库里，每次发版压成一条），所以自动生成的结果通常很单薄。
-
-推送之前它会打印这次要发的东西（源码提交、分发文件数、Release 的 tag），确认了才动手。主仓库 `c:\jysj` 故意不配远端，本脚本也不碰它：源码走 `release/crypticNotes` 这个独立 clone，分发包走 `out/dist_repo`。
-
-步骤之间有顺序依赖，这也是 `release.sh` 存在的理由——zip 由打包脚本从 `dist/` 压出来，而协作者双击的 `更新.cmd` 是分发脚本才拷进 `dist/` 的，谁先谁后都会漏东西（上一版 zip 就这么少了更新入口，578 个文件里一个都没有）。
-
-只想单独做其中一步时，各个脚本仍可单独跑：
-
-```bash
-scripts/publish_dist.sh --local        # 只组装并提交分发分支，不推送
-scripts/publish_dist.sh                # 组装并推送分发分支
-powershell -File scripts/publish_release.ps1 -DryRun    # 只看 Release 正文长什么样，不联网
-```
-
-**打包会清空 `dist/`，更新入口每次都由脚本重新拷进去，别去手改成品目录里的副本。** 分发仓库用独立的 `GIT_DIR`（`out/dist_repo/.git`）配 `core.worktree` 指向 `dist/IdentityVMapAssistant`——因为打包会删掉整个 `dist/`，`.git` 放在里面会被一起删掉。
-
-Release 的正文来自 `scripts/release-notes.md`：第一行是标题，其余是正文，里面的 `{{TOTAL}}`/`{{HARD}}`/`{{SOLO}}`/`{{DUO}}` 由 `maps/floors.json` 现场数出来，`{{CHANGELOG}}` 是上一个 Release 以来的提交摘要，`{{SHA256}}` 取自 `release/SHA256SUMS.txt`。改文案只改这个 md，不要再把数字写死在别处（正文里那句「内置 62 张地图」就是这么过期成 67 的）。
-
-几个坑已经踩过，改动时留意：
-
-- `更新.cmd` 必须是**纯 ASCII**。cmd.exe 按字节偏移定位批处理文件的下一行，文件里混入 GBK 中文会让偏移算错、从某一行中间开始执行（表现为「命令语法不正确」）。所有中文都在 `update-client.ps1` 里。
-- `update-client.ps1` 必须是 **UTF-8 with BOM** 且 CRLF，否则 PowerShell 读成乱码。
-- 这两条不是靠自觉：拷贝和校验都在 `scripts/dist_extras.py` 里，打包（`finalize_release.py`）和分发（`publish_dist.sh`）调的是同一个函数，编码不对就拒绝发布。
-- `scripts/publish_release.ps1` 本身也是**纯 ASCII**：PowerShell 5.1 只在有 BOM 时才按 UTF-8 读 `.ps1`，而 BOM 下次编辑很容易丢，所以中文一律不进这个文件（标题和正文都在 `release-notes.md` 里）。
+[完整发布指南](docs/releasing.md)
 
 ## 当前验证状态
 
@@ -247,7 +206,6 @@ examples/            本地测试截图
 
 `maps/index.json`、`maps/evidence/`、`maps/disabled.json` 是缓存或本机状态，可以重建，不进仓库。`maps/` 里的原图和 `floors.json` 是需要备份的源数据。
 
-发布包不走本仓库，走 `crypticNotes` 的 `dist` 分支，由 `scripts/release.sh` 串起 `build_windows.py` → `prepare_share.py` → `publish_dist.sh` → `publish_release.ps1`。协作者侧的入口是 `scripts/更新.cmd`（纯 ASCII 引导）和 `scripts/update-client.ps1`（UTF-8 BOM，承载逻辑与中文提示），两者都由 `scripts/dist_extras.py` 注入发布目录并校验编码，所以 zip 和 `dist` 分支里都会有。
 
 ## 地图来源与致谢
 
