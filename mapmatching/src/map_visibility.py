@@ -38,12 +38,14 @@ def inspect_map_ui(pixels):
     # control, rather than allowing either control alone to open the gate.
     visible = min(scores.values()) >= .75 and max(scores.values()) >= .85
     floor_tabs = None
-    if not visible and scores['overview'] >= .90:
+    if not visible and max(scores.values()) >= .90:
         # The companion or another window can cover the top-right close icon.
+        # Either map-only control plus recognized floor tabs can corroborate
+        # the panel: the overview control can also be clipped/covered.
         # A recognized floor-button group with a selected floor independently
         # confirms that the map is open; map geometry itself is not used here.
         from .floor_tabs import inspect_floor_tabs
         floor_tabs = inspect_floor_tabs(pixels)
         visible = floor_tabs.get('floor') is not None
     return dict(visible=visible,scores=scores,floor_tabs=floor_tabs,
-                method='corroborated_map_controls_v2')
+                method='corroborated_map_controls_v3')

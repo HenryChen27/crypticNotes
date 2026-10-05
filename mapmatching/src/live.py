@@ -220,6 +220,56 @@ class MultiplayerFallback:
         return self.primary.register_known(pixels, map_id)
 
 
+class SharedTerrainMatcher:
+    """Use an explicitly paired route atlas as independent identity evidence.
+
+    Poses always come from the selected route's own image, never from the
+    supporting atlas (which can have completely different pixel coordinates).
+    """
+    def __init__(self, primary, alternate_factory):
+        self.primary = primary
+        self.alternate_factory = alternate_factory
+        self.alternate = None
+        self.floor_hint = None
+
+    @property
+    def references(self):
+        return self.primary.references
+
+    def register_known(self, pixels, map_id):
+        self.primary.floor_hint = self.floor_hint
+        return self.primary.register_known(pixels, map_id)
+
+    def match(self, pixels):
+        self.primary.floor_hint = self.floor_hint
+        initial = self.primary._match_view(pixels)
+        if presentation_candidate(initial)[0] is not None:
+            return initial
+        if not any(r.terrain_id for r in self.primary.references):
+            return self.primary.match(pixels)
+        if self.alternate is None:
+            self.alternate = self.alternate_factory()
+        self.alternate.floor_hint = self.floor_hint
+        support = self.alternate.match(pixels)
+        accepted = presentation_candidate(support)[0]
+        if accepted is not None:
+            ref = next(r for r in self.alternate.references if r.map_id == accepted.map_id)
+            paired = [r for r in self.primary.references
+                      if ref.terrain_id and r.terrain_id == ref.terrain_id]
+            if len(paired) == 1:
+                aligned = self.primary.register_known(pixels, paired[0].map_id)
+                route = cached_alignment_candidate(aligned)[0]
+                if (route is not None and route.floor == accepted.floor
+                        and route.explained >= .65 and route.contradiction <= .25
+                        and route.retrieval_score >= 4):
+                    aligned.candidates = [route]
+                    aligned.diagnostics['terrain_support'] = dict(
+                        map_id=accepted.map_id, terrain_id=ref.terrain_id,
+                        selected_route=route.map_id, candidates=support.to_dict()['candidates'])
+                    return aligned
+        return self.primary.match(pixels)
+
+
 def worker(connection, root, difficulty, mode):
     """Persistent, event-driven process. Parent can terminate active work."""
     from pathlib import Path
@@ -238,6 +288,10 @@ def worker(connection, root, difficulty, mode):
             from .reference import build
             build(index)
         matcher = MapMatcher(index, difficulty=difficulty, mode=mode)
+        if difficulty == 'nightmare':
+            other_mode = 'duo' if mode == 'solo' else 'solo'
+            matcher = SharedTerrainMatcher(matcher,
+                lambda: MapMatcher(index, difficulty='nightmare', mode=other_mode))
         if difficulty == 'nightmare' and mode == 'duo':
             matcher = MultiplayerFallback(
                 matcher, lambda: MapMatcher(index, difficulty='nightmare', mode='solo'))

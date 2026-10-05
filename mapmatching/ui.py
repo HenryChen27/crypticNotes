@@ -157,7 +157,7 @@ HOTKEYS = {**{chr(k):k for k in range(65,91)},
            **{f'F{k}':111+k for k in range(1,13)},
            # Common non-character keys (Windows virtual-key codes).
            # Escape remains reserved by the hotkey dialog for cancel.
-           'TAB': 0x09, 'SPACE': 0x20, 'ENTER': 0x0D,
+           'ESC':0x1B, 'TAB': 0x09, 'SPACE': 0x20, 'ENTER': 0x0D,
            'BACKSPACE': 0x08, 'INSERT': 0x2D, 'DELETE': 0x2E,
            'RETURN': 0x0D,
            'HOME': 0x24, 'END': 0x23, 'PAGEUP': 0x21, 'PAGEDOWN': 0x22,
@@ -280,6 +280,7 @@ TOAST_BRIEF = {
 
 
 HOTKEY_LABELS = {
+    'ESC':'Esc',
     'BACKSPACE':'退格键','TAB':'Tab','SPACE':'空格','ENTER':'回车','RETURN':'回车',
     'INSERT':'Insert','DELETE':'Delete','HOME':'Home','END':'End',
     'PAGEUP':'PageUp','PAGEDOWN':'PageDown',
@@ -377,10 +378,11 @@ def hotkey_from_event(event):
 
 
 class HotkeyDialog(W.QDialog):
-    def __init__(self,current,parent,default='G'):
+    def __init__(self,current,parent,default='G',allow_escape=False):
         super().__init__(parent,C.Qt.Dialog | C.Qt.FramelessWindowHint)
         self.selected=current
         self.default=default
+        self.allow_escape=allow_escape
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         self.setFixedWidth(320)
         outer=W.QVBoxLayout(self)
@@ -405,6 +407,8 @@ class HotkeyDialog(W.QDialog):
         self.hint.setObjectName('muted')
         self.hint.setWordWrap(True)
         layout.addWidget(self.hint)
+        if allow_escape:
+            self.hint.setText('按一下关闭地图时使用的键，Esc、回车、退格、大写锁定、\n鼠标右键、中键和侧键均可。点“保存”确认。\n此设置只收起插件叠图，请与游戏关闭地图的按键保持一致。')
         row=W.QHBoxLayout()
         for label,action in [('恢复默认',self.reset),('取消',self.reject),('保存',self.accept)]:
             button=ChalkButton(label)
@@ -430,7 +434,10 @@ class HotkeyDialog(W.QDialog):
 
     def keyPressEvent(self,event):
         if event.key()==C.Qt.Key_Escape:
-            self.reject()
+            if self.allow_escape:
+                self.pick('ESC')
+            else:
+                self.reject()
             return
         name=hotkey_from_event(event)
         if name:
@@ -632,6 +639,10 @@ class Companion(W.QWidget):
         self.hotkey, self.hide_hotkey = resolve_hotkeys(self.settings)
         self.keys.toggle_key = HOTKEYS[self.hotkey]
         self.keys.hide_key = HOTKEYS[self.hide_hotkey]
+        self.close_hotkey = self.settings.get('close_hotkey','ESC')
+        if self.close_hotkey not in HOTKEYS or HOTKEYS[self.close_hotkey] == HOTKEYS[self.hotkey]:
+            self.close_hotkey = 'ESC'
+        self.keys.close_key = HOTKEYS[self.close_hotkey]
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(3,3,3,3)
         layout.setSpacing(8)
@@ -750,13 +761,21 @@ class Companion(W.QWidget):
         preferences.addWidget(self.delay_label)
         preferences.addWidget(self.delay)
         hotkeys=W.QHBoxLayout()
-        self.hotkey_label=W.QLabel(f'启用快捷键({hotkey_text(self.hotkey)}/esc)')
+        self.hotkey_label=W.QLabel(f'启用快捷键({hotkey_text(self.hotkey)})')
         hotkeys.addWidget(self.hotkey_label)
         pencil=EditButton()
         pencil.clicked.connect(self.edit_hotkey)
         hotkeys.addWidget(pencil)
         hotkeys.addWidget(self.enabled,1)
         preferences.addLayout(hotkeys)
+        closekeys=W.QHBoxLayout()
+        self.close_hotkey_label=W.QLabel(f'关闭地图快捷键({hotkey_text(self.close_hotkey)})')
+        closekeys.addWidget(self.close_hotkey_label)
+        close_pencil=EditButton()
+        close_pencil.clicked.connect(self.edit_close_hotkey)
+        closekeys.addWidget(close_pencil)
+        closekeys.addStretch()
+        preferences.addLayout(closekeys)
         hidekeys=W.QHBoxLayout()
         self.hide_hotkey_label=W.QLabel(f'隐藏叠图({hotkey_text(self.hide_hotkey)})')
         hidekeys.addWidget(self.hide_hotkey_label)
@@ -974,7 +993,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1034,14 +1053,30 @@ class Companion(W.QWidget):
         self.close_map()
         dialog=HotkeyDialog(self.hotkey,self)
         if dialog.exec()==W.QDialog.Accepted:
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.close_hotkey]:
+                self.notify('开启与关闭地图快捷键不能相同')
+                return
             if dialog.selected == self.hide_hotkey:
                 self.notify('快捷键冲突：不能与隐藏叠图快捷键相同')
                 return
             self.hotkey=dialog.selected
             self.keys.toggle_key=HOTKEYS[self.hotkey]
-            self.hotkey_label.setText(f'启用快捷键({hotkey_text(self.hotkey)}/esc)')
+            self.hotkey_label.setText(f'启用快捷键({hotkey_text(self.hotkey)})')
             self.save()
             self.notify(f'快捷键已改为 {hotkey_text(self.hotkey)}')
+
+    def edit_close_hotkey(self):
+        self.close_map()
+        dialog=HotkeyDialog(self.close_hotkey,self,default='ESC',allow_escape=True)
+        if dialog.exec()==W.QDialog.Accepted:
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.hotkey]:
+                self.notify('开启与关闭地图快捷键不能相同')
+                return
+            self.close_hotkey=dialog.selected
+            self.keys.close_key=HOTKEYS[self.close_hotkey]
+            self.close_hotkey_label.setText(f'关闭地图快捷键({hotkey_text(self.close_hotkey)})')
+            self.save()
+            self.notify(f'关闭地图键已改为 {hotkey_text(self.close_hotkey)}')
 
     def edit_hide_hotkey(self):
         dialog=HotkeyDialog(self.hide_hotkey,self,default='BACKSPACE')
@@ -1306,7 +1341,9 @@ class Companion(W.QWidget):
                 return
             self.rect_at_capture = self.capture_rect()
             capture_started = time.perf_counter()
-            if sys.platform == 'darwin' and self.demo_window is not None:
+            if self.demo_window is not None:
+                # Preview scaling/DPI must not change the recognition input.
+                # Screen-space companion masks also do not apply to this image.
                 from .src.reference import read_image
                 pixels = read_image(self.demo)
             else:
@@ -1316,7 +1353,7 @@ class Companion(W.QWidget):
                       shape=list(pixels.shape),local=self.demo_window is not None)
             self.capture_exclusion = None
             is_visible = getattr(self, 'isVisible', None)
-            if sys.platform != 'darwin' and callable(is_visible) and is_visible():
+            if self.demo_window is None and sys.platform != 'darwin' and callable(is_visible) and is_visible():
                 self.capture_exclusion = native.client_rect(int(self.winId()))
                 native.mask_screen_rect(pixels,self.rect_at_capture,
                                         self.capture_exclusion)
@@ -1384,13 +1421,18 @@ class Companion(W.QWidget):
         self.ready = False
         self.worker_deadline = None
 
-    def close_map(self,silent=False):
+    def close_map(self,silent=False,background=False):
         trace("closed",token=self.state.generation)
+        if background and self.state.opened:
+            self.background_token = self.state.generation
+        elif not background:
+            self.background_token = None
         self.opening = False
         self.state.close()
         self.overlay.hide()
         self.toast.hide()
-        self.pending = None
+        if not background:
+            self.pending = None
         # close_map 是所有拆卸路径的唯一收口（切难度/离开截图/重新识别/Esc/前台变化/
         # 窗口漂移），跟随状态在这里清就自动覆盖了「交互中途切上下文」等情况。
         self.follow_active = False
@@ -1398,7 +1440,7 @@ class Companion(W.QWidget):
         self._capturing = False
         # 状态结束 = 计数归零。下次按 G 是新会话，不该背着上一次的失败次数。
         self.no_map_streak = 0
-        if self.busy or (sys.platform != 'darwin' and self.process is not None and not getattr(self,'ready',False)):
+        if not background and (self.busy or (sys.platform != 'darwin' and self.process is not None and not getattr(self,'ready',False))):
             self.stop_worker()
         if not silent:
             self.notify('已隐藏')
@@ -1476,7 +1518,53 @@ class Companion(W.QWidget):
             return
         self.realign('close_confirmation')
 
+    def visibility_watch(self):
+        import queue
+        import threading
+        if not hasattr(self,'visibility_results'):
+            self.visibility_results = queue.SimpleQueue()
+            self.visibility_running = False
+            self.visibility_next = 0.
+            self.visibility_misses = 0
+            self.visibility_token = None
+        try:
+            token,visible = self.visibility_results.get_nowait()
+            self.visibility_running = False
+            if self.state.accepts(token):
+                if self.visibility_token != token:
+                    self.visibility_misses = 0
+                    self.visibility_token = token
+                self.visibility_misses = self.visibility_misses+1 if visible is False else 0
+                if self.visibility_misses >= 2:
+                    self.close_map(silent=True,background=True)
+                    trace('map_closed_by_visibility',token=token)
+        except queue.Empty:
+            pass
+        now=time.monotonic()
+        if (self.visibility_running or now < self.visibility_next or not self.state.opened
+                or self.demo_window is not None or getattr(self,'opening',False)
+                or W.QApplication.activeModalWidget() is not None):
+            return
+        self.visibility_next=now+.8
+        self.visibility_running=True
+        token=self.state.generation
+        rect=self.capture_rect()
+        results=self.visibility_results
+        def inspect():
+            visible=None
+            try:
+                from .src.map_visibility import inspect_map_ui
+                visible=inspect_map_ui(native.capture(rect))['visible']
+            except Exception:
+                pass
+            results.put((token,visible))
+        threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
+
     def tick(self):
+        # A missed Esc edge must not leave a full-screen overlay behind. Keep
+        # capture/template work off the UI thread so it cannot lose more keys.
+        if sys.platform == 'win32' and hasattr(self,'visibility_watch'):
+            self.visibility_watch()
         edges = self.keys.edges()
         if edges:
             trace('shortcut_edge',keys=sorted(edges),enabled=self.enabled.isChecked(),
@@ -1491,15 +1579,18 @@ class Companion(W.QWidget):
             if (self.state.opened
                     and self.target == int(self.winId())):
                 self.target = foreground
-        if self.enabled.isChecked():
-            if 0x1B in edges:
-                self.close_map()
-            elif self.keys.hide_key in edges:
+        if getattr(self.keys,'close_key',0x1B) in edges:
+            self.close_map(background=True)
+        elif self.enabled.isChecked():
+            if self.keys.hide_key in edges:
                 if self.state.opened:
-                    self.close_map()
+                    self.close_map(background=True)
                 elif self.is_game(foreground) or self.demo_window is not None:
                     self.open_map('hide_hotkey_restore')
             elif self.keys.toggle_key in edges and self.is_game(foreground):
+                if self.state.opened and getattr(self,'busy',False):
+                    self.close_map(background=True)
+                    return
                 # A game can close its map through multiple inputs. Never invert
                 # a guessed boolean: inspect the screen after this key instead.
                 # Static local screenshots still need a genuine overlay toggle.
@@ -1512,7 +1603,7 @@ class Companion(W.QWidget):
             # 刚点过面板时前台是我们的窗口，但那不代表用户离开了地图。
             own = foreground == int(self.winId())
             if self.foreground_lost() or (not own and foreground != self.target):
-                self.close_map()
+                self.close_map(background=True)
             elif self.rect_at_capture and self.overlay.isVisible() and self.capture_rect() != self.rect_at_capture:
                 self.close_map()
                 self.notify('窗口位置或大小已变化，请重新匹配')
@@ -1544,6 +1635,11 @@ class Companion(W.QWidget):
                         self.worker_deadline = None
                         token,layer,message,candidate,elapsed,details = payload
                         trace("worker_result",token=token,accepted=self.state.accepts(token),reason=details.get("reason"),layer=layer is not None)
+                        if (not self.state.opened and token == getattr(self,'background_token',None)):
+                            self.background_token = None
+                            if candidate is not None and layer is not None and not no_map_evidence(details):
+                                self.cached_candidate = candidate
+                                trace('background_map_remembered',token=token,map_id=candidate.map_id)
                         if self.state.accepts(token):
                             # 两重保护都必要：交互结束的那个 tick 里 follow() 先跑，
                             # 那时结果还没轮询到（busy 仍为 True）所以会推迟，

@@ -33,9 +33,15 @@ function Copy-WithRetry([string]$Source, [string]$Destination) {
     }
 }
 
+function Merge-MapLibrary([string]$Payload, [string]$OldMaps, [string]$NewMaps) {
+    $mergeExe = Resolve-Child $Payload 'IdentityVMapAssistant.exe'
+    $mergeArgs = '--merge-map-update "' + $OldMaps + '" "' + $NewMaps + '"'
+    $mergeProcess = Start-Process -FilePath $mergeExe -ArgumentList $mergeArgs -WindowStyle Hidden -Wait -PassThru
+    if ($mergeProcess.ExitCode -ne 0) { throw '地图库合并失败，已保留原地图库，请检查用户地图是否重名或损坏' }
+}
+
 function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup) {
-    # The published map library is authoritative. Back up the installed library, then
-    # replace it as one unit so removed/renamed maps do not survive an update.
+    # Merge user maps into the staged library before replacing any live files.
     # Settings/records live in LOCALAPPDATA and are not touched here.
     $changed = [Collections.Generic.List[object]]::new()
     $payloadMaps = Resolve-Child $Payload 'maps'
@@ -46,12 +52,13 @@ function Install-Payload([string]$Payload, [string]$Destination, [string]$Backup
     try {
         if (Test-Path -LiteralPath $payloadMaps -PathType Container) {
             if (Test-Path -LiteralPath $targetMaps -PathType Leaf) { throw '目标 maps 被同名文件占用' }
+            Merge-MapLibrary $Payload $targetMaps $payloadMaps
             if ($hadMaps) {
                 [void][IO.Directory]::CreateDirectory((Split-Path -Parent $savedMaps))
                 Move-Item -LiteralPath $targetMaps -Destination $savedMaps
             }
-            Copy-Item -LiteralPath $payloadMaps -Destination $targetMaps -Recurse
             $mapsInstalled = $true
+            Copy-Item -LiteralPath $payloadMaps -Destination $targetMaps -Recurse
         }
         foreach ($file in Get-ChildItem -LiteralPath $Payload -File -Recurse) {
             $relative = $file.FullName.Substring($Payload.TrimEnd('\').Length + 1)

@@ -7,6 +7,11 @@ if __name__ == '__main__':
     from pathlib import Path
     import traceback
     multiprocessing.freeze_support()
+    if '--merge-map-update' in sys.argv:
+        from mapmatching.src.map_update import merge
+        offset = sys.argv.index('--merge-map-update')
+        merge(Path(sys.argv[offset+1]), Path(sys.argv[offset+2]))
+        raise SystemExit(0)
     if '--admin' in sys.argv and sys.platform == 'win32':
         sys.argv.remove('--admin')
         if not ctypes.windll.shell32.IsUserAnAdmin():

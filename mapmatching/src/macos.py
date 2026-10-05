@@ -186,6 +186,16 @@ def keep_floating(window, level=None):
         trace('overlay_panel_missing',window=int(window))
         return False
     try:
+        from PySide6 import QtCore as C, QtWidgets as W
+        widget = next((w for w in W.QApplication.topLevelWidgets()
+                       if int(w.winId()) == int(window)), None)
+        if widget is not None and widget.windowFlags() & C.Qt.WindowTransparentForInput:
+            # Reassert the native input policy after Qt recreates/shows a panel.
+            panel.setIgnoresMouseEvents_(True)
+            panel.setStyleMask_(int(panel.styleMask()) |
+                                _appkit('NSWindowStyleMaskNonactivatingPanel', 1 << 7))
+            if hasattr(panel, 'setBecomesKeyOnlyIfNeeded_'):
+                panel.setBecomesKeyOnlyIfNeeded_(True)
         panel.setHidesOnDeactivate_(False)
         panel.setCanHide_(False)
         panel.setLevel_(_appkit('NSScreenSaverWindowLevel', 1000) if level is None else level)
@@ -276,15 +286,23 @@ class Keys:
     """Poll global key state without installing or swallowing an event tap."""
     def __init__(self):
         self.down=set(); self.toggle_key=0x47; self.hide_key=0x08
+        self.pending_edges=set()
+        self.close_key=0x1B
         self.raw_keyboard=False; self.raw_mouse=False
 
-    def raw_edge(self, _key, _released):
-        pass
+    def raw_edge(self, key, released):
+        if key not in (self.toggle_key,self.hide_key,self.close_key):return
+        if released:
+            self.down.discard(key)
+        elif key not in self.down:
+            self.down.add(key)
+            self.pending_edges.add(key)
 
     def edges(self):
         from mapmatching.macos_input import pressed_virtual_keys
-        watched=(self.toggle_key,self.hide_key,0x1B)
+        watched=(self.toggle_key,self.hide_key,self.close_key)
         pressed={key for key in watched if pressed_virtual_keys(key)}
-        rising=pressed-self.down
+        rising=(pressed-self.down)|self.pending_edges
+        self.pending_edges.clear()
         self.down=pressed
         return rising

@@ -7,6 +7,18 @@ from mapmatching.src.live import match_with_cache
 
 
 class MapVisibilityTests(unittest.TestCase):
+    def test_close_and_floor_tabs_can_confirm_when_overview_is_obscured(self):
+        screen=np.full((600,960,3),30,np.uint8)
+        t=templates()['close']
+        screen[60:60+t.shape[0],890:890+t.shape[1]]=t[:,:,None]
+        self.assertFalse(inspect_map_ui(screen)['visible'])
+        with patch('mapmatching.src.floor_tabs.inspect_floor_tabs',return_value={'floor':1}):
+            self.assertTrue(inspect_map_ui(screen)['visible'])
+        # Floor tabs alone must not unlock ordinary game scenery.
+        screen[:]=30
+        with patch('mapmatching.src.floor_tabs.inspect_floor_tabs',return_value={'floor':1}):
+            self.assertFalse(inspect_map_ui(screen)['visible'])
+
     def test_real_desktop_maps_with_degraded_or_obscured_close_control(self):
         from pathlib import Path
         from mapmatching.src.reference import read_image

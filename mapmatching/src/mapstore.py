@@ -253,7 +253,8 @@ def load_references(maps, *, difficulty=None, mode=None) -> list:
                                 a['radii'], record['factor'], None)
             result.append(Reference(entry['map_id'], entry['difficulty'], entry['mode'],
                                     entry['source'], evidence, a['distance'],
-                                    entry.get('regions', []), entry.get('exclude_regions', [])))
+                                    entry.get('regions', []), entry.get('exclude_regions', []),
+                                    entry.get('terrain_id')))
     return result
 
 

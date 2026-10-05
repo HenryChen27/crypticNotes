@@ -32,6 +32,7 @@ class Reference:
     distance: np.ndarray
     regions: list[dict] = field(default_factory=list)
     exclusions: list[list[int]] = field(default_factory=list)
+    terrain_id: str | None = None
 
 
 def build(maps: Path, remove_annotations: bool = True) -> None:

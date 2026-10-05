@@ -18,6 +18,9 @@ def finalize():
     for directory in (ROOT/'.ui-deps',ROOT/'.build-deps'):
         if directory.exists():sys.path.insert(0,str(directory))
     product=ROOT/'dist/IdentityVMapAssistant'
+    sys.path.insert(0, str(ROOT))
+    from mapmatching.src.map_update import stamp
+    stamp(product/'maps')
     # **先清点再复制**：这些顶层文件都不在版本库里（`dist/` 和 `release/` 都 gitignore，
     # 它们是每次现场生成的产品文件），丢了就只能靠 `release/` 里那份老提交找回来。
     # 不先查一遍的话，PyInstaller 已经跑完 90 秒，最后死在一句

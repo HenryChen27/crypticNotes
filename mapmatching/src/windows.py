@@ -94,6 +94,7 @@ class Keys:
     def __init__(self):
         self.down = set()
         self.pending_edges = set()
+        self.close_key = 0x1B
         self.toggle_key = 0x47
         self.hide_key = 0x08  # Backspace
         # 两类设备各自是否注册上了 Raw Input。**必须分开记**：只用一个
@@ -104,7 +105,7 @@ class Keys:
         self.raw_mouse = False
 
     def raw_edge(self,key,released):
-        if key not in (self.toggle_key,self.hide_key,0x1B):return
+        if key not in (self.toggle_key,self.hide_key,self.close_key):return
         if released:
             self.down.discard(key)
         elif key not in self.down:
@@ -115,7 +116,7 @@ class Keys:
         return self.raw_mouse if key in MOUSE_VKS else self.raw_keyboard
 
     def edges(self):
-        watched = (self.toggle_key,self.hide_key,0x1B)
+        watched = (self.toggle_key,self.hide_key,self.close_key)
         pressed = {key for key in watched if user32.GetAsyncKeyState(key) & 0x8000}
         rising = (pressed - self.down) | self.pending_edges
         self.pending_edges.clear()

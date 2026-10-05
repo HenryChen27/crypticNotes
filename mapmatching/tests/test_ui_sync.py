@@ -80,7 +80,7 @@ class SyncTests(unittest.TestCase):
         subject.follow_active=subject.follow_dirty=False
         subject.cached_candidate=None
         subject.started=time.perf_counter()
-        subject.close_map=Mock(side_effect=state.close)
+        subject.close_map=Mock(side_effect=lambda **kwargs:state.close())
         visible={'diagnostics':{'map_ui':{'visible':True},'anchors':400},'candidates':[]}
         self.assertFalse(no_map_evidence(visible))
         with patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42):
@@ -99,7 +99,7 @@ class SyncTests(unittest.TestCase):
             enabled=SimpleNamespace(isChecked=lambda:True),demo_window=object() if local else None,
             connection=None,is_game=lambda _:True,target=42,winId=lambda:43)
         subject.open_map=Mock(side_effect=state.close)
-        subject.close_map=Mock(side_effect=state.close)
+        subject.close_map=Mock(side_effect=lambda **kwargs:state.close())
         return subject
 
     def test_g_resamples_game_even_when_old_state_is_open(self):
