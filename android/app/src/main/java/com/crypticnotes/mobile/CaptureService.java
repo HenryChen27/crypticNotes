@@ -85,6 +85,7 @@ public class CaptureService extends Service {
                     recordingReady=true;
                     updateRecordingButton();
                     setStatus(S_IDLE,recorder.hasAudio()?"正在录制操作（内部声音）":"正在录制操作（无声）");
+                    if(quickSettings!=null) closeQuickSettings();
                 } catch(Exception e) { stopRecording(); }
             }
             public void finished(String location,String error) {

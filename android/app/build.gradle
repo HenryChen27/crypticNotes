@@ -6,8 +6,8 @@ android {
         applicationId 'com.crypticnotes.mobile'
         minSdk 26
         targetSdk 35
-        versionCode 20
-        versionName '0.6.12-preview'
+        versionCode 21
+        versionName '0.6.13-preview'
         ndk { abiFilters 'arm64-v8a' }
     }
     sourceSets { main { assets.srcDir '../generated/assets' } }

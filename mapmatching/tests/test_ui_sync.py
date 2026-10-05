@@ -119,6 +119,16 @@ class SyncTests(unittest.TestCase):
         subject.close_map.assert_called_once()
         subject.open_map.assert_not_called()
 
+    def test_g_resamples_even_with_unfinished_previous_match_on_both_platforms(self):
+        from mapmatching.ui import Companion,W,win32gui
+        for platform in ('win32','darwin'):
+            subject=self.subject(True)
+            subject.busy=True
+            with patch('mapmatching.ui.sys.platform',platform),patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42):
+                Companion.tick(subject)
+            subject.open_map.assert_called_once()
+            subject.close_map.assert_not_called()
+
     def test_escape_clears_even_already_closed_state(self):
         from mapmatching.ui import Companion,W,win32gui
         subject=self.subject(False); subject.keys.edges=lambda:{27}

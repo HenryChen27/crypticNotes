@@ -1588,9 +1588,6 @@ class Companion(W.QWidget):
                 elif self.is_game(foreground) or self.demo_window is not None:
                     self.open_map('hide_hotkey_restore')
             elif self.keys.toggle_key in edges and self.is_game(foreground):
-                if self.state.opened and getattr(self,'busy',False):
-                    self.close_map(background=True)
-                    return
                 # A game can close its map through multiple inputs. Never invert
                 # a guessed boolean: inspect the screen after this key instead.
                 # Static local screenshots still need a genuine overlay toggle.
