@@ -20,6 +20,74 @@ ROOT = Path(__file__).resolve().parents[1]
 REPO = 'HenryChen27/crypticNotes'
 CERT = 'b7b3d8249c3d02aeae26f3bac11e966bd0addb073639933037b1a282c2699fb2'
 
+PACKAGES = {
+    'android': ['IdentityVMapAssistant-Android-arm64.apk'],
+    'windows': ['IdentityVMapAssistant-Windows-x64.zip'],
+    'mac': ['IdentityVMapAssistant-macOS-arm64.zip', 'IdentityVMapAssistant-macOS-x64.zip'],
+}
+
+def input_fingerprint(platform, root=None):
+    """Hash release inputs, not timestamps, build output or automatic versions."""
+    root = root or ROOT
+    patterns = ['maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
+                'mapmatching/src/**', 'mapmatching/config.py', 'mapmatching/paths.py',
+                'mapmatching/__init__.py']
+    if platform == 'android':
+        patterns += ['android/app/src/**', 'android/*.gradle', 'android/app/*.gradle',
+                     'android/gradle.properties', 'scripts/prepare_android.py',
+                     'mapmatching/assets/map-ui/**', 'mapmatching/assets/fonts/HYDiWRGJ.ttf']
+    else:
+        patterns += ['mapmatching/**', 'requirements*.txt', 'scripts/dist_extras.py',
+                     'scripts/run.cmd', 'scripts/create_shortcut.ps1', 'maps/disabled.json',
+                     'maps/_unindexed/**', 'docs/images/**', 'README.md', '*.cmd', 'maps/README.md']
+        patterns += (['scripts/build_windows.py', 'scripts/finalize_release.py',
+                      'scripts/update-client.ps1', 'scripts/更新.cmd'] if platform == 'windows' else
+                     ['scripts/build_macos.py', 'release/crypticNotes/.github/workflows/macos.yml'])
+    files = sorted({p for pattern in patterns for p in root.glob(pattern) if p.is_file()
+                    and not any(part in ('__pycache__', '.pytest_cache', 'tests') for part in p.parts)
+                    and p.suffix not in ('.pyc', '.pyo', '.log')})
+    hashes = {}
+    for path in files:
+        name = path.relative_to(root).as_posix()
+        data = path.read_bytes()
+        if path.suffix in ('.py', '.gradle', '.txt', '.json', '.yml', '.cmd', '.ps1', '.properties'):
+            data = data.replace(b'\r\n', b'\n')
+        if name == 'android/app/build.gradle':
+            data = re.sub(rb'versionCode\s+\d+', b'versionCode AUTO', data)
+            data = re.sub(rb"versionName\s+'[^']+'", b"versionName 'AUTO'", data)
+        hashes[name] = hashlib.sha256(data).hexdigest()
+    return {'schema': 1, 'sha256': hashlib.sha256(json.dumps(hashes, sort_keys=True).encode()).hexdigest()}
+
+def unchanged(current, baseline, assets):
+    return (baseline.get('input') == current and bool(baseline.get('packages'))
+            and all(assets.get(n) == sha for n, sha in baseline['packages'].items()))
+
+def interactive(args):
+    while True:
+        print('\n1 选择平台打包   2 选择平台打包并发布   3 上传已有包 / 重试发布   0 退出')
+        action = input('请输入编号：').strip()
+        if action == '0': return False
+        if action == '3':
+            jobs = sorted((ROOT/'release/jobs').glob('*/release-job.json'), reverse=True)
+            jobs = [p for p in jobs if json.loads(p.read_text(encoding='utf-8')).get('ready')]
+            for i, p in enumerate(jobs, 1): print(i, p.parent.name)
+            choice = input('选择批次编号（直接回车返回）：').strip()
+            if choice.isdigit() and 1 <= int(choice) <= len(jobs):
+                args.resume = jobs[int(choice)-1]; return True
+            continue
+        if action not in ('1', '2'): continue
+        print('1 Windows   2 Android   3 Mac（两个架构）   4 全部')
+        selected = input('选择平台，可用空格分隔：').split()
+        lookup = {'1':'windows', '2':'android', '3':'mac', '4':'all'}
+        if not selected or any(n not in lookup for n in selected):
+            print('编号无效，请重新选择。'); continue
+        args.platforms = [lookup[n] for n in selected]
+        args.publish = action == '2'
+        if args.publish:
+            notes = input('更新公告文件路径（可留空）：').strip().strip('"')
+            if notes: args.notes = Path(notes)
+        return True
+
 def run(args, cwd=ROOT, env=None, capture=False):
     print('>', ' '.join(map(str,args)), flush=True)
     return subprocess.run(list(map(str,args)), cwd=cwd, env=env, check=True,
@@ -181,31 +249,53 @@ def main():
     parser.add_argument('--notes',type=Path,help='UTF-8 release announcement; prepended without deleting other platform notes')
     parser.add_argument('--resume',type=Path,help='Retry publication from a completed release-job.json; no rebuild or version bump')
     args=parser.parse_args()
+    if not args.platforms and not args.resume:
+        if not interactive(args): return
     if args.resume:
         state=json.loads(args.resume.read_text(encoding='utf-8'))
         if not state.get('ready'):raise RuntimeError('Job is not fully built; start a new build')
         publish(GitHub(),state,args.resume.resolve().parent);return
-    if not args.platforms:
-        print('1 Windows  2 Android  3 Mac (both architectures)  4 All')
-        selected=input('Choose numbers separated by spaces: ').split()
-        lookup={'1':'windows','2':'android','3':'mac','4':'all'}
-        args.platforms=[lookup[n] for n in selected]
-        args.publish=input('Publish after building? [y/N]: ').lower()=='y'
     platforms=set(args.platforms)
     if 'all' in platforms:platforms={'windows','android','mac'}
     if not platforms:raise RuntimeError('No platform selected')
     github=GitHub() if args.publish or 'mac' in platforms else None
+    release = github.api('/releases/latest') if github else None
+    inputs = {p: input_fingerprint(p) for p in platforms}
+    for platform in sorted(platforms.copy()):
+        baseline = {}
+        assets = {}
+        if args.publish:
+            baseline = github.manifest(release, platform+'-inputs.json')
+            assets = {a['name']: a.get('digest', '').removeprefix('sha256:') for a in release['assets']}
+        else:
+            for job in sorted((ROOT/'release/jobs').glob('*/release-job.json'), reverse=True):
+                previous = json.loads(job.read_text(encoding='utf-8'))
+                if not previous.get('ready'): continue
+                sidecar = job.parent/(platform+'-inputs.json')
+                if not sidecar.exists(): continue
+                candidate = json.loads(sidecar.read_text(encoding='utf-8'))
+                if candidate.get('input') != inputs[platform]: continue
+                baseline = candidate
+                assets = {n: digest(job.parent/n) for n in candidate.get('packages', {}) if (job.parent/n).is_file()}
+                break
+        if unchanged(inputs[platform], baseline, assets):
+            print(platform, '内容没有变化，跳过升版本、打包和发布。')
+            platforms.remove(platform)
+        elif not baseline:
+            print(platform, '没有可验证的历史内容记录；本次构建成功后建立记录，之后自动跳过未改动的平台。')
+    if not platforms:
+        print('所选平台均无变化，没有执行后续操作。'); return
     stamp=dt.datetime.now().strftime('%Y%m%d-%H%M%S')
     directory=ROOT/'release/jobs'/stamp;directory.mkdir(parents=True)
     state={'id':stamp,'platforms':sorted(platforms),'ready':False,'files':{},
         'notes':args.notes.read_text(encoding='utf-8') if args.notes else f'### {stamp} 更新\n平台：'+', '.join(sorted(platforms))}
-    if github:state['release_id']=github.api('/releases/latest')['id']
+    if github:state['release_id']=release['id']
     if 'android' in platforms:
         old=github.manifest(github.api('/releases/latest'),'android-update.json') if github else {}
         p=ROOT/'android/app/build.gradle'
         shutil.copy2(p,directory/'build.gradle.before')
-        text,code,version=bump_android(p.read_text(encoding='utf-8'),old.get('versionCode',0),old.get('versionName','0.0.0'))
-        p.write_text(text,encoding='utf-8');print('Android:',version,code)
+        text,code,android_version=bump_android(p.read_text(encoding='utf-8'),old.get('versionCode',0),old.get('versionName','0.0.0'))
+        p.write_text(text,encoding='utf-8');print('Android:',android_version,code)
     if 'mac' in platforms:
         p=ROOT/'macos-version.json'
         previous=json.loads(p.read_text()) if p.exists() else {'version':'1.0.0','build':0}
@@ -235,11 +325,22 @@ def main():
             'verify','--print-certs',apk],env=env,capture=True)
         if CERT not in cert:raise RuntimeError('Android signing certificate changed; refuse incompatible update')
         n='IdentityVMapAssistant-Android-arm64.apk';shutil.copy2(apk,directory/n)
-        manifest=dict(packageName='com.crypticnotes.mobile',versionCode=code,versionName=version,
+        manifest=dict(packageName='com.crypticnotes.mobile',versionCode=code,versionName=android_version,
             asset=n,size=apk.stat().st_size,sha256=digest(apk))
         (directory/'android-update.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
         wanted.update([n,'android-update.json'])
     if 'mac' in platforms:wanted.update(mac_build(github,branch,sha,directory))
+    for platform in platforms:
+        if input_fingerprint(platform) != inputs[platform]:
+            raise RuntimeError('构建期间输入文件发生变化，停止发布：'+platform)
+        sidecar = platform+'-inputs.json'
+        (directory/sidecar).write_text(json.dumps({
+            'input': inputs[platform],
+        'packages': {n: digest(directory/n) for n in (
+            PACKAGES[platform] + (['android-update.json'] if platform == 'android' else
+            ['windows-update.json', 'update-client.ps1'] if platform == 'windows' else []))},
+        }, indent=2), encoding='utf-8')
+        wanted.add(sidecar)
     state.update(ready=True,files={n:digest(directory/n) for n in sorted(wanted)})
     job=directory/'release-job.json';job.write_text(json.dumps(state,ensure_ascii=False,indent=2),encoding='utf-8')
     print('Verified build artifacts:',directory,flush=True)
