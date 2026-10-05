@@ -529,7 +529,7 @@ public class CaptureService extends Service {
                 badgeStartY = badgeY(dragPrefs);
                 badgeDragged = false;
                 badgeLongPressed = false;
-                badgeLongPress = () -> { badgeLongPressed = true; TouchFeedback.click(badge); stopRecognition(); };
+                badgeLongPress = () -> { badgeLongPressed = true; TouchFeedback.click(badge); handleBadgeHold(); };
                 main.postDelayed(badgeLongPress, BADGE_HOLD_MS);
                 return true;
             case MotionEvent.ACTION_MOVE:
@@ -949,8 +949,21 @@ public class CaptureService extends Service {
         if (!spin.isStarted()) spin.start();
     }
 
+    private void handleBadgeHold() {
+        if(stoppingRecording) {
+            Toast.makeText(this,"录屏正在保存，请稍候",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(recorder!=null) {
+            stopRecording();
+            Toast.makeText(this,"正在保存录屏；保存后再次长按可关闭识别",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        stopRecognition();
+    }
+
     /**
-     * Long press: end the session, button included.
+     * End the session after recording has finished, button included.
      *
      * This stops the service rather than only hiding the view. A hidden button
      * over a service that still captures the screen would be the worst of both
