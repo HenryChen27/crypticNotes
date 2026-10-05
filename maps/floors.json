@@ -51,7 +51,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "f8197931039c46cb4ca9984817c89cdf52a918078186104acacbc4c7fcd9a2c2"
+      "pixel_sha256": "f8197931039c46cb4ca9984817c89cdf52a918078186104acacbc4c7fcd9a2c2",
+      "terrain_id": "nightmare/北-B门"
     },
     {
       "map_id": "nightmare/solo/北 - Z1门",
@@ -102,7 +103,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "48f3beb8b2bdcb5d2ed7b93e02e9b3320ce2d4a975274dc58540d124058e5076"
+      "pixel_sha256": "48f3beb8b2bdcb5d2ed7b93e02e9b3320ce2d4a975274dc58540d124058e5076",
+      "terrain_id": "nightmare/北-Z1门"
     },
     {
       "map_id": "nightmare/solo/北 - 仙人掌门",
@@ -153,7 +155,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "6827fd2e716581b01681118fb0b4f5d9e85b2aecb486c06e856cb16b889f03ea"
+      "pixel_sha256": "6827fd2e716581b01681118fb0b4f5d9e85b2aecb486c06e856cb16b889f03ea",
+      "terrain_id": "nightmare/北-仙人掌"
     },
     {
       "map_id": "nightmare/solo/北 - 回门",
@@ -204,7 +207,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "37608f2c387106e596ffb8df172aec553a5258ed166b81ecbf7c97b8445c8321"
+      "pixel_sha256": "37608f2c387106e596ffb8df172aec553a5258ed166b81ecbf7c97b8445c8321",
+      "terrain_id": "nightmare/北-回门"
     },
     {
       "map_id": "nightmare/solo/北 - 骑士门",
@@ -255,7 +259,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "e94b329236a6bce261c65215d1bd0c3bc22e23e560ef0519d32ff25d318c5f3c"
+      "pixel_sha256": "e94b329236a6bce261c65215d1bd0c3bc22e23e560ef0519d32ff25d318c5f3c",
+      "terrain_id": "nightmare/北-骑士门"
     },
     {
       "map_id": "nightmare/solo/南 - 3红门路线图",
@@ -306,7 +311,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "0a389ad83445272df45f13ecfde415445ac22550e133a730f8f47ccfb03b6bb1"
+      "pixel_sha256": "0a389ad83445272df45f13ecfde415445ac22550e133a730f8f47ccfb03b6bb1",
+      "terrain_id": "nightmare/南-3红门"
     },
     {
       "map_id": "nightmare/solo/南 - H门",
@@ -357,7 +363,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "7f9b369ff5e57496c163bd0e904dec1ba708170a42d63a0b26de6d662979b4b0"
+      "pixel_sha256": "7f9b369ff5e57496c163bd0e904dec1ba708170a42d63a0b26de6d662979b4b0",
+      "terrain_id": "nightmare/南-H门"
     },
     {
       "map_id": "nightmare/solo/右 - C门路线图",
@@ -408,7 +415,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "4f0c1cd650418367ffe44413ce05bd52134d92d3d209e320b4e8a08e6a4d558a"
+      "pixel_sha256": "4f0c1cd650418367ffe44413ce05bd52134d92d3d209e320b4e8a08e6a4d558a",
+      "terrain_id": "nightmare/右-C门"
     },
     {
       "map_id": "nightmare/solo/右 - 一闪电 门",
@@ -459,7 +467,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "440fed9dc728fd604dd7418f37c7a4bb8e974ebf381d563e3f3aba5e70d3c1af"
+      "pixel_sha256": "440fed9dc728fd604dd7418f37c7a4bb8e974ebf381d563e3f3aba5e70d3c1af",
+      "terrain_id": "nightmare/右-闪电门"
     },
     {
       "map_id": "nightmare/solo/右 - 仙人掌门路线图",
@@ -510,7 +519,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "e36f8094d7a6d0aaf3021f7656554a37fac97aeff9a8bf0d992066bdaff40314"
+      "pixel_sha256": "e36f8094d7a6d0aaf3021f7656554a37fac97aeff9a8bf0d992066bdaff40314",
+      "terrain_id": "nightmare/右-仙人掌门"
     },
     {
       "map_id": "nightmare/solo/右 - 断C门 路线图",
@@ -561,7 +571,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "152f00f1fd0f8bb3e70664851325cb152d3238552e2315bb275fd52d8087c8d5"
+      "pixel_sha256": "152f00f1fd0f8bb3e70664851325cb152d3238552e2315bb275fd52d8087c8d5",
+      "terrain_id": "nightmare/右-断C门"
     },
     {
       "map_id": "nightmare/solo/右 - 短T门",
@@ -612,7 +623,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "f4528b6495bf095ccc34a8a33de6acbc65fad666f23ebc5bc62e8f91f4680380"
+      "pixel_sha256": "f4528b6495bf095ccc34a8a33de6acbc65fad666f23ebc5bc62e8f91f4680380",
+      "terrain_id": "nightmare/右-短T"
     },
     {
       "map_id": "nightmare/solo/右 - 长Z门路线图",
@@ -663,7 +675,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "3a9680f5ceeb16d41bfb0672e6550452f07300842be5c709cc9172ea7b7ed486"
+      "pixel_sha256": "3a9680f5ceeb16d41bfb0672e6550452f07300842be5c709cc9172ea7b7ed486",
+      "terrain_id": "nightmare/右-长Z门"
     },
     {
       "map_id": "nightmare/duo/北-B门",
@@ -714,7 +727,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "4b358674b545f9532358707aae21247a46239eb11528059e8526acd7fb7339d3"
+      "pixel_sha256": "4b358674b545f9532358707aae21247a46239eb11528059e8526acd7fb7339d3",
+      "terrain_id": "nightmare/北-B门"
     },
     {
       "map_id": "nightmare/duo/北-Z1门 ",
@@ -765,7 +779,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "ec4ad7fb254f3d9ec90efe56ffc0cf0d03a52f9093d223f7e08267842bc706a5"
+      "pixel_sha256": "ec4ad7fb254f3d9ec90efe56ffc0cf0d03a52f9093d223f7e08267842bc706a5",
+      "terrain_id": "nightmare/北-Z1门"
     },
     {
       "map_id": "nightmare/duo/北-仙人掌",
@@ -816,7 +831,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "0954a8956aa60df513fa5689fe8c537dd67a30fb04d898c759b3042c018c72df"
+      "pixel_sha256": "0954a8956aa60df513fa5689fe8c537dd67a30fb04d898c759b3042c018c72df",
+      "terrain_id": "nightmare/北-仙人掌"
     },
     {
       "map_id": "nightmare/duo/北-回门",
@@ -867,7 +883,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "1fe2bd2a48257d470ba3ab395f89ed6bbd187a18d05043755e229f92f7de8e9a"
+      "pixel_sha256": "1fe2bd2a48257d470ba3ab395f89ed6bbd187a18d05043755e229f92f7de8e9a",
+      "terrain_id": "nightmare/北-回门"
     },
     {
       "map_id": "nightmare/duo/北-骑士门",
@@ -918,7 +935,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "c3002f3a6303fe646eec4ff77fd0d901dd4f0b1af4b180746289cc934a381421"
+      "pixel_sha256": "c3002f3a6303fe646eec4ff77fd0d901dd4f0b1af4b180746289cc934a381421",
+      "terrain_id": "nightmare/北-骑士门"
     },
     {
       "map_id": "nightmare/duo/南-3红门",
@@ -969,7 +987,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "b521f56bba8a2e891a1de3122d49643e862ee4780ce2c9563dacb2419e6aefc3"
+      "pixel_sha256": "b521f56bba8a2e891a1de3122d49643e862ee4780ce2c9563dacb2419e6aefc3",
+      "terrain_id": "nightmare/南-3红门"
     },
     {
       "map_id": "nightmare/duo/南-H门",
@@ -1020,7 +1039,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "755f3ba62e356e07b9108b3206f08c889c7540b68e1f83830a99326fd9d98855"
+      "pixel_sha256": "755f3ba62e356e07b9108b3206f08c889c7540b68e1f83830a99326fd9d98855",
+      "terrain_id": "nightmare/南-H门"
     },
     {
       "map_id": "nightmare/duo/右-C门",
@@ -1071,7 +1091,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "2ba250bb9300b8d88aab4b27bdf4974a368e5d7bf715caf0e2c11a79502a5931"
+      "pixel_sha256": "2ba250bb9300b8d88aab4b27bdf4974a368e5d7bf715caf0e2c11a79502a5931",
+      "terrain_id": "nightmare/右-C门"
     },
     {
       "map_id": "nightmare/duo/右-仙人掌门",
@@ -1122,7 +1143,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "e23752003a2861731a0d1cd4a0c1e84d1da6882291170e6e2246aab8b3bde004"
+      "pixel_sha256": "e23752003a2861731a0d1cd4a0c1e84d1da6882291170e6e2246aab8b3bde004",
+      "terrain_id": "nightmare/右-仙人掌门"
     },
     {
       "map_id": "nightmare/duo/右-断C门",
@@ -1173,7 +1195,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "1dcb48386b12b198e42394a9083954146f5ceebe51f705a1588a71bb76dffe0a"
+      "pixel_sha256": "1dcb48386b12b198e42394a9083954146f5ceebe51f705a1588a71bb76dffe0a",
+      "terrain_id": "nightmare/右-断C门"
     },
     {
       "map_id": "nightmare/duo/右-短T",
@@ -1224,7 +1247,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "662ac7d63cc34704c8c07083be22cc9168d9e819fc81adfd674de0fb368aa7bb"
+      "pixel_sha256": "662ac7d63cc34704c8c07083be22cc9168d9e819fc81adfd674de0fb368aa7bb",
+      "terrain_id": "nightmare/右-短T"
     },
     {
       "map_id": "nightmare/duo/右-长Z门",
@@ -1275,7 +1299,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "69a7387250fb8a61fec06435a4b60aff857120f35fb87d04ff3c8df66b449dc0"
+      "pixel_sha256": "69a7387250fb8a61fec06435a4b60aff857120f35fb87d04ff3c8df66b449dc0",
+      "terrain_id": "nightmare/右-长Z门"
     },
     {
       "map_id": "nightmare/duo/右-闪电门",
@@ -1326,7 +1351,8 @@
         ]
       ],
       "review": "Reference-only visual floor-order and legend review; live Nightmare screenshots not yet validated",
-      "pixel_sha256": "802f74e2790c19a817af96914496c431af94933be428d25cf5555a304496c008"
+      "pixel_sha256": "802f74e2790c19a817af96914496c431af94933be428d25cf5555a304496c008",
+      "terrain_id": "nightmare/右-闪电门"
     },
     {
       "map_id": "hard/北-1沙发门（新增）",
@@ -2902,7 +2928,8 @@
         ]
       ],
       "review": "迁移自 user_maps/111c3fd8541c46ebad2d094ebcea10fe",
-      "pixel_sha256": "d9094a1220d367d70eec0de0b591c15cdd18f4054e5344c84f051fcb4cb7738e"
+      "pixel_sha256": "d9094a1220d367d70eec0de0b591c15cdd18f4054e5344c84f051fcb4cb7738e",
+      "terrain_id": "nightmare/左 - 竖L门"
     },
     {
       "map_id": "nightmare/solo/南 - 悬空桌门（09.10更新）",
@@ -2966,7 +2993,8 @@
         ]
       ],
       "review": "迁移自 user_maps/4b428fabf2af4141896d23bf0a1f6bda",
-      "pixel_sha256": "dd5e83e658c47ba5d67fb5ddcdf6556351c6c17289ef40a656090e9ed2fcaa8c"
+      "pixel_sha256": "dd5e83e658c47ba5d67fb5ddcdf6556351c6c17289ef40a656090e9ed2fcaa8c",
+      "terrain_id": "nightmare/南 - 悬空桌门"
     },
     {
       "map_id": "nightmare/solo/左 - 竖1图书走廊门（09.10更新）",
@@ -3030,7 +3058,8 @@
         ]
       ],
       "review": "迁移自 user_maps/5e3a1c8ccbca462b938dd59f85a2c158",
-      "pixel_sha256": "ee3c21ec77fc67f6e34a1ee516dd050572b01a5b9054ba19c26a9bea5765e36e"
+      "pixel_sha256": "ee3c21ec77fc67f6e34a1ee516dd050572b01a5b9054ba19c26a9bea5765e36e",
+      "terrain_id": "nightmare/左 - 竖1图书走廊门"
     },
     {
       "map_id": "nightmare/solo/左 - 倒T门(09.10更新）",
@@ -3094,7 +3123,8 @@
         ]
       ],
       "review": "迁移自 user_maps/5e8b2bd65b8541d083b543ddd8b978f6",
-      "pixel_sha256": "bf24390463d004425020596d4f2fbdad5b547568b34cc11dc6425b6f6545fed3"
+      "pixel_sha256": "bf24390463d004425020596d4f2fbdad5b547568b34cc11dc6425b6f6545fed3",
+      "terrain_id": "nightmare/左 - 倒T门"
     },
     {
       "map_id": "nightmare/solo/左 - 竖1图书门（09.10更新）",
@@ -3158,7 +3188,8 @@
         ]
       ],
       "review": "迁移自 user_maps/822d4a6a7e124f578ee265d697d0885e",
-      "pixel_sha256": "76907916c29dde9d723f76d96859a2281bfb0bb0572cd99f00554adaadc708a5"
+      "pixel_sha256": "76907916c29dde9d723f76d96859a2281bfb0bb0572cd99f00554adaadc708a5",
+      "terrain_id": "nightmare/左 - 竖1图书门"
     },
     {
       "map_id": "nightmare/solo/左 - 11图（09.17更新）",
@@ -3414,7 +3445,8 @@
           1661
         ]
       ],
-      "review": ""
+      "review": "",
+      "terrain_id": "nightmare/南 - 悬空桌门"
     },
     {
       "map_id": "nightmare/duo/左 - 倒T门",
@@ -3478,7 +3510,8 @@
           2126
         ]
       ],
-      "review": ""
+      "review": "",
+      "terrain_id": "nightmare/左 - 倒T门"
     },
     {
       "map_id": "nightmare/duo/左 - 竖1图书门",
@@ -3542,7 +3575,8 @@
           1587
         ]
       ],
-      "review": ""
+      "review": "",
+      "terrain_id": "nightmare/左 - 竖1图书门"
     },
     {
       "map_id": "nightmare/duo/左 - 竖1图书走廊门",
@@ -3606,7 +3640,8 @@
           1523
         ]
       ],
-      "review": ""
+      "review": "",
+      "terrain_id": "nightmare/左 - 竖1图书走廊门"
     },
     {
       "map_id": "nightmare/duo/左 - 竖L门",
@@ -3670,7 +3705,8 @@
           1566
         ]
       ],
-      "review": ""
+      "review": "",
+      "terrain_id": "nightmare/左 - 竖L门"
     },
     {
       "map_id": "nightmare/solo/南 - n门（09.24更新）",
@@ -3870,38 +3906,38 @@
       "difficulty": "nightmare",
       "mode": "solo",
       "source": "maps/nightmare/solo/北 - 骑士1门（09.30更新）.jpg",
-      "sha256": "fc8edf1015912af6f7f3f80caf838a1cb152ef4737520cda38b02eb70fc95175",
-      "pixel_sha256": "1ddfe6e6e601366f3ab9b610a1d623f653d7686de1acc962d1e8d959b28d7bb9",
+      "sha256": "d999bef1f85b463274a133062dee034dcd93209627a3aa7c618630b6379bdc0e",
+      "pixel_sha256": "88183403a868f39d96f0ce3916c2e1a7500792ffab6cb426ac6607888bc1f6d9",
       "size": [
         1000,
-        2900
+        3596
       ],
       "regions": [
         {
           "floor": 1,
           "bbox": [
             34,
-            1188,
+            1473,
             920,
-            2009
+            2491
           ]
         },
         {
           "floor": 2,
           "bbox": [
             25,
-            451,
+            559,
             941,
-            1196
+            1483
           ]
         },
         {
           "floor": -1,
           "bbox": [
             34,
-            2029,
+            2516,
             808,
-            2621
+            3250
           ]
         }
       ],
@@ -3909,21 +3945,21 @@
       "include_regions": [
         [
           34,
-          1188,
+          1473,
           920,
-          2009
+          2491
         ],
         [
           25,
-          451,
+          559,
           941,
-          1196
+          1483
         ],
         [
           34,
-          2029,
+          2516,
           808,
-          2621
+          3250
         ]
       ],
       "review": ""

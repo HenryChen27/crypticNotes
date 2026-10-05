@@ -496,9 +496,9 @@
     {
       "map_id": "nightmare/solo/北 - 骑士1门（09.30更新）",
       "array": "2cf4ee94999b7d0a.npz",
-      "factor": 0.3448275862068966,
-      "sha256": "fc8edf1015912af6f7f3f80caf838a1cb152ef4737520cda38b02eb70fc95175",
-      "entry_sha": "b5e35e614f0a48ae4b9db2cfc58ffa78c5b899c05fc8eefa6ca14f9f4da84747"
+      "factor": 0.27808676307007785,
+      "sha256": "d999bef1f85b463274a133062dee034dcd93209627a3aa7c618630b6379bdc0e",
+      "entry_sha": "9b4b37a3928ae568e657330a1488161fa24119562a262383654b3d2eaefea328"
     },
     {
       "map_id": "nightmare/solo/左 - z门（09.30更新）",
