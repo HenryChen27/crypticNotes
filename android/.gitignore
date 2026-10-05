@@ -1,0 +1,5 @@
+.gradle/
+local.properties
+generated/
+app/build/
+*.jks

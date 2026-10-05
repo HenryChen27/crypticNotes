@@ -2,7 +2,9 @@
 from pathlib import Path
 import json
 import shutil
+import sys
 ROOT=Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 target=ROOT/'android/generated'
 python=target/'python/mapmatching'
 python.mkdir(parents=True,exist_ok=True)
@@ -27,4 +29,6 @@ for entry in entries:
     destination.parent.mkdir(parents=True,exist_ok=True)
     shutil.copy2(source,destination)
 shutil.copytree(ROOT/'maps/evidence',maps/'evidence',dirs_exist_ok=True)
+from mapmatching.src.map_update import stamp
+stamp(maps)
 print('Staged',len(entries),'maps and unchanged matching modules')
