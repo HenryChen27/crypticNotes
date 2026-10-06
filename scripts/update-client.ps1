@@ -112,17 +112,64 @@ if (-not $Detached) {
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
+
+# A bare MessageBox can land behind the game or editor exactly like the main
+# window did, so give it an invisible topmost owner: an owned dialog inherits
+# TopMost from its owner and is guaranteed to be the one the user sees.
+function New-NoticeOwner {
+    $owner = [Windows.Forms.Form]::new()
+    $owner.FormBorderStyle = 'None'
+    $owner.ShowInTaskbar = $false
+    $owner.StartPosition = 'CenterScreen'
+    $owner.Size = [Drawing.Size]::new(1,1)
+    $owner.Opacity = 0
+    $owner.TopMost = $true
+    $owner.Show()
+    return $owner
+}
+
+function Show-Notice([string]$Text) {
+    $owner = New-NoticeOwner
+    try { [void][Windows.Forms.MessageBox]::Show($owner,$Text,'加页手记 · 更新','OK','Information') }
+    finally { $owner.Dispose() }
+}
+
+# Being up to date is not a reason to refuse. Players delete files by accident,
+# and a half-removed install looks exactly like a broken plugin, while
+# re-installing the whole package is the only repair path this app has. So ask
+# instead of refusing -- but default to 否 (Button2), so a stray Enter cannot
+# start a 240MB download on its own.
+function Confirm-Redownload {
+    $owner = New-NoticeOwner
+    try {
+        $message = "当前已经是最新版本。`n`n仍然重新下载并覆盖安装一次吗？`n`n如果插件文件被误删、或运行不正常，选「是」可以完整修复（会重新下载整个安装包）。"
+        $answer = [Windows.Forms.MessageBox]::Show($owner,$message,'加页手记 · 更新','YesNo','Question','Button2')
+        return $answer -eq [Windows.Forms.DialogResult]::Yes
+    } finally { $owner.Dispose() }
+}
+
 $mutexKey = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($InstallRoot.ToLowerInvariant())).Replace('\','_').Replace('/','_')
 $mutex = [Threading.Mutex]::new($false, ('Local\CrypticNotesUpdate-' + $mutexKey))
 $locked = $false
 try { $locked = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $locked = $true }
-if (-not $locked) { exit }
+# Never exit silently here. The window holding this mutex is usually still open
+# somewhere behind the game (it stays until the user clicks 关闭), so a silent
+# exit made the update button look dead: no window, no message, nothing in the
+# log. Say what is actually wrong instead.
+if (-not $locked) {
+    Show-Notice "更新器已经在运行。`n`n请先找到标题为「加页手记 · 更新」的窗口并关闭它，然后再点一次更新。"
+    exit
+}
 $form = [Windows.Forms.Form]::new()
 $form.Text = '加页手记 · 更新'
 $form.ClientSize = [Drawing.Size]::new(440,190)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
 $form.MaximizeBox = $false
+# The plugin overlays a fullscreen game and the user may have an editor in front
+# of that. Without TopMost this window opened behind both, so a perfectly
+# successful update looked like the button had done nothing.
+$form.TopMost = $true
 $form.BackColor = [Drawing.Color]::FromArgb(37,55,69)
 $form.ForeColor = [Drawing.Color]::FromArgb(224,235,242)
 $form.Font = [Drawing.Font]::new('Microsoft YaHei UI',10)
@@ -139,6 +186,7 @@ $button.FlatStyle = 'Flat'
 $button.Add_Click({ $form.Close() })
 $form.Controls.AddRange(@($label,$bar,$button))
 $form.Show()
+[void]$form.Activate()
 $work = Join-Path ([IO.Path]::GetTempPath()) ('crypticnotes-package-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($work)
 $client = [Net.WebClient]::new()
@@ -260,7 +308,9 @@ try {
             $sameBuild = $local.build -eq $remote.build
         }
     }
-    if ($sameBuild -or ($installed -and $installed.sha256 -eq $expected)) {
+    # 已经是最新版本也照样问一句：自建地图用户误删过文件时，重装一遍是唯一的修复途径。
+    $redownload = $sameBuild -or ($installed -and $installed.sha256 -eq $expected)
+    if ($redownload -and -not (Confirm-Redownload)) {
         $label.Text = '已经是最新版本'
     } else {
         # The zip and the extracted tree both live in %TEMP%; a full disk used to
@@ -305,7 +355,8 @@ try {
         }
         Install-Payload $payload $InstallRoot (Join-Path $work 'backup')
         @{sha256=$expected} | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding UTF8
-        $label.Text = '更新完成，设置已保留，地图库已同步到最新版。'
+        $label.Text = if ($redownload) { '已重新下载并完整覆盖安装，插件文件已恢复为发布版。' }
+                      else { '更新完成，设置已保留，地图库已同步到最新版。' }
         Start-Process -FilePath $appPath -WorkingDirectory $InstallRoot -WindowStyle Hidden
         Log "success sha256=$expected"
     }
