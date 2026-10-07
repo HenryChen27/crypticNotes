@@ -94,6 +94,8 @@ class Keys:
     def __init__(self):
         self.down = set()
         self.pending_edges = set()
+        self.raw_down = set()
+        self.poll_seen = set()
         self.close_key = 0x1B
         self.toggle_key = 0x47
         self.hide_key = 0x08  # Backspace
@@ -107,10 +109,14 @@ class Keys:
     def raw_edge(self,key,released):
         if key not in (self.toggle_key,self.hide_key,self.close_key):return
         if released:
+            self.raw_down.discard(key)
+            self.poll_seen.discard(key)
             self.down.discard(key)
-        elif key not in self.down:
-            self.down.add(key)
-            self.pending_edges.add(key)
+        else:
+            self.raw_down.add(key)
+            if key not in self.down:
+                self.down.add(key)
+                self.pending_edges.add(key)
 
     def _raw_owns(self,key):
         return self.raw_mouse if key in MOUSE_VKS else self.raw_keyboard
@@ -123,9 +129,14 @@ class Keys:
         for key in watched:
             if key in pressed:
                 self.down.add(key)
-            elif not self._raw_owns(key):
-                # 没有 Raw Input 负责这个键时，轮询是唯一的信息源，它说松开了就是
-                # 松开了。Raw Input 在管的时候不能这么清：提权游戏下 UIPI 会让轮询
-                # 恒返回 0，清空等于把 Raw Input 的信号一起抹掉。
+                self.poll_seen.add(key)
+            elif (not self._raw_owns(key) or key not in self.raw_down
+                  or key in self.poll_seen):
+                # 注册成功不等于每次都能收到 Raw Input。只收到轮询按下时，
+                # 必须允许轮询释放；否则第一次之后会永久锁住。收到过轮询
+                # 按下的本轮也可用它补漏 release。始终盲读的 Raw Input
+                # 按住态仍保留，避免把键盘自动重复当成新的按下。
                 self.down.discard(key)
+                self.raw_down.discard(key)
+                self.poll_seen.discard(key)
         return rising

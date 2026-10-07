@@ -7,6 +7,30 @@ from mapmatching.src.windows import Keys
 
 
 class OpeningCaptureTests(unittest.TestCase):
+    def test_registered_but_missing_raw_events_does_not_latch_key(self):
+        keys=Keys();keys.raw_keyboard=True
+        held=set()
+        with patch('mapmatching.src.windows.user32.GetAsyncKeyState',
+                   side_effect=lambda key:0x8000 if key in held else 0):
+            for _ in range(3):
+                held.add(71)
+                self.assertEqual(keys.edges(),{71})
+                self.assertEqual(keys.edges(),set())
+                held.clear()
+                self.assertEqual(keys.edges(),set())
+
+    def test_poll_can_recover_missing_raw_release_when_it_saw_press(self):
+        keys=Keys();keys.raw_keyboard=True
+        held={71}
+        with patch('mapmatching.src.windows.user32.GetAsyncKeyState',
+                   side_effect=lambda key:0x8000 if key in held else 0):
+            keys.raw_edge(71,False)
+            self.assertEqual(keys.edges(),{71})
+            held.clear() # Raw release was lost.
+            self.assertEqual(keys.edges(),set())
+            keys.raw_edge(71,False)
+            self.assertEqual(keys.edges(),{71})
+
     def test_short_press_survives_release_before_poll_and_repeat(self):
         keys=Keys();keys.raw_keyboard=True
         with patch('mapmatching.src.windows.user32.GetAsyncKeyState',return_value=0):
