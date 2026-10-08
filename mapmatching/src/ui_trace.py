@@ -15,5 +15,5 @@ def trace(event,**fields):
         with path.open('a',encoding='utf8') as f:
             f.write(json.dumps(dict(time=datetime.now(timezone.utc).isoformat(),
                 version='2026.09.24-display-guard',event=event,**fields),ensure_ascii=False)+'\n')
-    except OSError:
+    except (OSError, TypeError, ValueError):
         pass

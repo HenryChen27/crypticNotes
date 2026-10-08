@@ -1561,6 +1561,8 @@ class Companion(W.QWidget):
         threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
 
     def tick(self):
+        if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'maintain'):
+            self.keyboard.maintain(int(self.winId()))
         # A missed Esc edge must not leave a full-screen overlay behind. Keep
         # capture/template work off the UI thread so it cannot lose more keys.
         if sys.platform == 'win32' and hasattr(self,'visibility_watch'):
@@ -1572,6 +1574,14 @@ class Companion(W.QWidget):
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
         foreground = win32gui.GetForegroundWindow()
+        if (sys.platform == 'win32' and hasattr(self,'keyboard')
+                and foreground != getattr(self,'_input_foreground',None)):
+            self._input_foreground = foreground
+            trace('input_context',foreground=foreground,local=self.demo_window is not None,
+                  toggle=self.keys.toggle_key,enabled=self.enabled.isChecked(),
+                  raw_keyboard=getattr(self.keys,'raw_keyboard',False),
+                  raw_received=getattr(getattr(self,'keyboard',None),'received',None),
+                  input_error=getattr(getattr(self,'keyboard',None),'last_error',None))
         if callable(getattr(self,'is_game',None)) and self.is_game(foreground):
             self.last_external_target = foreground
             # A manual retry may start while the OS is still handing focus back
