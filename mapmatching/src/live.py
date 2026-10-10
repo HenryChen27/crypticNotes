@@ -200,9 +200,13 @@ class MultiplayerFallback:
         if presentation_candidate(result)[0] is not None:
             return result
         if self.solo is None:
-            self.solo = self.solo_factory()
+            self.solo = (self.primary.alternate if isinstance(self.primary, SharedTerrainMatcher)
+                         and self.primary.alternate is not None else self.solo_factory())
         self.solo.floor_hint = self.floor_hint
-        solo_result = self.solo.match(pixels)
+        # Shared terrain support has already searched this exact frame in the
+        # solo atlas. Reuse only this request's result, never a previous frame.
+        support = self.primary.last_support if isinstance(self.primary, SharedTerrainMatcher) else None
+        solo_result = support if support is not None else self.solo.match(pixels)
         if presentation_candidate(solo_result)[0] is not None:
             solo_result.diagnostics['multiplayer_solo_fallback'] = True
             return solo_result
@@ -230,6 +234,7 @@ class SharedTerrainMatcher:
         self.primary = primary
         self.alternate_factory = alternate_factory
         self.alternate = None
+        self.last_support = None
         self.floor_hint = None
 
     @property
@@ -241,6 +246,7 @@ class SharedTerrainMatcher:
         return self.primary.register_known(pixels, map_id)
 
     def match(self, pixels):
+        self.last_support = None
         self.primary.floor_hint = self.floor_hint
         initial = self.primary._match_view(pixels)
         if presentation_candidate(initial)[0] is not None:
@@ -251,6 +257,7 @@ class SharedTerrainMatcher:
             self.alternate = self.alternate_factory()
         self.alternate.floor_hint = self.floor_hint
         support = self.alternate.match(pixels)
+        self.last_support = support
         accepted = presentation_candidate(support)[0]
         if accepted is not None:
             ref = next(r for r in self.alternate.references if r.map_id == accepted.map_id)

@@ -1574,6 +1574,8 @@ class Companion(W.QWidget):
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
         foreground = win32gui.GetForegroundWindow()
+        if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'report'):
+            self.keyboard.report(foreground)
         if (sys.platform == 'win32' and hasattr(self,'keyboard')
                 and foreground != getattr(self,'_input_foreground',None)):
             self._input_foreground = foreground

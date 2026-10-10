@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
-from mapmatching.src.live import SharedTerrainMatcher, presentation_candidate
+from mapmatching.src.live import SharedTerrainMatcher, MultiplayerFallback, presentation_candidate
 from mapmatching.src.matcher import MatchResult
 from mapmatching.src.types import Candidate, Pose
 
@@ -11,6 +11,26 @@ def candidate(mode, floor=1, score=.8):
 
 
 class SharedTerrainTests(unittest.TestCase):
+    def test_duo_fallback_reuses_current_support_without_searching_twice(self):
+        primary=Mock(references=[SimpleNamespace(terrain_id='pair')])
+        alternate=Mock(references=[])
+        rejected=MatchResult()
+        primary._match_view.return_value=rejected
+        primary.match.return_value=rejected
+        alternate.match.return_value=MatchResult()
+        shared=SharedTerrainMatcher(primary,lambda:alternate)
+        factory=Mock()
+        matcher=MultiplayerFallback(shared,factory)
+        for frame in (object(),object()):
+            before=alternate.match.call_count
+            self.assertIs(matcher.match(frame),rejected)
+            self.assertEqual(alternate.match.call_count,before+1)
+            alternate.match.assert_called_with(frame)
+        factory.assert_not_called()
+        primary._match_view.return_value=MatchResult(candidates=[candidate('duo')])
+        matcher.match(object())
+        self.assertIsNone(shared.last_support)
+
     def setUp(self):
         self.primary=Mock(references=[SimpleNamespace(map_id='nightmare/solo/test',terrain_id='terrain')])
         self.other=Mock(references=[SimpleNamespace(map_id='nightmare/duo/test',terrain_id='terrain')])
