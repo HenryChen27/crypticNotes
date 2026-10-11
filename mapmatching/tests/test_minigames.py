@@ -8,7 +8,7 @@ import zipfile
 import sys
 from pathlib import Path
 from unittest.mock import patch
-from mapmatching.minigames import GameStore, package_info, platform_key
+from mapmatching.minigames import GameStore, LauncherStore, package_info, platform_key
 
 
 class GamePackageTests(unittest.TestCase):
@@ -41,6 +41,55 @@ class GamePackageTests(unittest.TestCase):
         self.store.delete()
         self.assertFalse(self.store.installed())
         self.assertEqual(profile.read_text(), '{"music":0.3}')
+
+    def native_bundle(self, launcher=False, game_id='jellyfish'):
+        archive = self.root/('runtime.zip' if launcher else game_id+'.zip')
+        metadata = {'id':'game-launcher' if launcher else game_id,'version':'2.0.0'}
+        with zipfile.ZipFile(archive,'w') as z:
+            if launcher:
+                metadata['platform'] = platform_key()
+                host = LauncherStore(self.root)
+                z.writestr(host.entry().relative_to(host.folder).as_posix(), b'native host')
+            else:
+                metadata['runtime'] = 'system-webview'
+                z.writestr('game/index.html',b'game')
+            z.writestr('package.json',json.dumps(metadata))
+        info = {'version':'2.0.0','size':archive.stat().st_size,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
+                'url':'https://github.com/HenryChen27/Jellyfish/releases/download/desktop-v2.0.0/'+archive.name}
+        return archive,info
+
+    def test_shared_launcher_survives_game_delete_and_is_reused(self):
+        runtime, runtime_info = self.native_bundle(launcher=True)
+        game, game_info = self.native_bundle()
+        launcher = LauncherStore(self.root)
+        launcher.install(runtime,runtime_info['sha256'])
+        self.store.install(game,game_info['sha256'])
+        self.assertEqual(self.store.entry(),launcher.entry())
+        self.assertTrue(self.store.native())
+        other = GameStore(self.root,'second-game')
+        second, second_info = self.native_bundle(game_id='second-game')
+        other.install(second,second_info['sha256'])
+        self.assertEqual(other.entry(),launcher.entry())
+        self.store.delete()
+        self.assertTrue(launcher.installed())
+        self.assertTrue(other.installed())
+        catalog = {'schema':2,'id':'jellyfish','game':game_info,'launchers':{platform_key():runtime_info}}
+        with patch('mapmatching.minigames.read_catalog',return_value=catalog), \
+             patch.object(LauncherStore,'download_package') as download_runtime, \
+             patch('mapmatching.minigames.urllib.request.urlopen',return_value=io.BytesIO(game.read_bytes())):
+            self.store.download(lambda *args:None)
+            download_runtime.assert_not_called()
+        self.assertTrue(self.store.installed())
+
+    def test_native_game_requires_launcher_and_failed_upgrade_keeps_legacy(self):
+        legacy, checksum = self.bundle()
+        self.store.install(legacy,checksum)
+        before = self.store.entry().read_bytes()
+        game, info = self.native_bundle()
+        with self.assertRaises(ValueError):
+            self.store.install(game,info['sha256'])
+        self.assertEqual(self.store.entry().read_bytes(),before)
+        self.assertFalse(self.store.native())
 
     def test_bad_checksum_or_wrong_platform_does_not_replace_installed_game(self):
         archive, checksum = self.bundle()

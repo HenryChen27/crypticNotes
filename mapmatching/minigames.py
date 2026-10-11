@@ -26,20 +26,22 @@ def platform_key():
     raise ValueError('小游戏暂不支持此系统')
 
 
-def read_catalog(url=CATALOG_URL):
+def read_catalog(url=CATALOG_URL, game_id=GAME_ID):
     request = urllib.request.Request(url, headers={'User-Agent': 'IdentityVMapAssistant-games'})
     with urllib.request.urlopen(request, timeout=30) as response:
         raw = response.read(128 * 1024 + 1)
     if len(raw) > 128 * 1024:
         raise ValueError('小游戏下载清单过大')
     catalog = json.loads(raw)
-    if catalog.get('schema') != 1 or catalog.get('id') != GAME_ID:
+    if catalog.get('schema') not in (1, 2) or catalog.get('id') != game_id:
         raise ValueError('小游戏下载清单格式不正确')
     return catalog
 
 
 def package_info(catalog, key=None):
     info = catalog.get('packages', {}).get(key or platform_key())
+    if catalog.get('schema') == 2:
+        info = catalog.get('launchers', {}).get(key) if key else catalog.get('game')
     if not info:
         raise ValueError('该系统的小游戏包尚未上架')
     url = info.get('url', '')
@@ -54,28 +56,44 @@ def package_info(catalog, key=None):
 
 
 class GameStore:
-    def __init__(self, data_root):
+    def __init__(self, data_root, game_id=GAME_ID, catalog_url=CATALOG_URL):
+        if not game_id or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in game_id) or game_id == 'runtime':
+            raise ValueError('小游戏名称不正确')
+        self.game_id = game_id
+        self.catalog_url = catalog_url
         self.root = Path(data_root) / 'minigames'
         self.root.mkdir(parents=True, exist_ok=True)
 
     @property
     def folder(self):
-        return self.root / GAME_ID
+        return self.root / self.game_id
 
     def installed(self):
         try:
             metadata = json.loads((self.folder / 'package.json').read_text(encoding='utf-8'))
-            return metadata.get('id') == GAME_ID and self.entry().is_file() and (self.folder/'game/index.html').is_file()
+            return metadata.get('id') == self.game_id and self.entry().is_file() and (self.folder/'game/index.html').is_file()
         except (OSError, ValueError):
             return False
 
     def entry(self):
+        try:
+            metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+            if metadata.get('runtime') == 'system-webview':
+                return LauncherStore(self.root.parent).entry()
+        except (OSError, ValueError):
+            pass
         if sys.platform == 'darwin':
             return self.folder / 'Jellyfish.app/Contents/MacOS/Jellyfish'
         return self.folder / 'Jellyfish/Jellyfish.exe'
 
     def size(self):
         return sum(p.stat().st_size for p in self.folder.rglob('*') if p.is_file()) if self.folder.exists() else 0
+
+    def native(self):
+        try:
+            return json.loads((self.folder/'package.json').read_text(encoding='utf-8')).get('runtime') == 'system-webview'
+        except (OSError, ValueError):
+            return False
 
     def install(self, archive, checksum, expected_size=None):
         archive = Path(archive)
@@ -86,7 +104,7 @@ class GameStore:
         if actual != checksum:
             raise ValueError('小游戏包校验失败，请重新下载')
         staging = Path(tempfile.mkdtemp(prefix='.install-', dir=self.root)).resolve()
-        backup = self.root / '.previous-jellyfish'
+        backup = self.root / ('.previous-' + self.folder.name)
         try:
             with zipfile.ZipFile(archive) as bundle:
                 total = 0
@@ -107,11 +125,12 @@ class GameStore:
                     if stat.S_ISLNK(mode):
                         # Signed macOS bundles need their framework symlinks.
                         # Create these last, and only inside this game's app.
-                        if sys.platform != 'darwin' or path.parts[0] != 'Jellyfish.app' or item.file_size > 4096:
+                        app_name = getattr(self, 'app_name', 'Jellyfish.app')
+                        if sys.platform != 'darwin' or path.parts[0] != app_name or item.file_size > 4096:
                             raise ValueError('小游戏包包含无效链接')
                         relative = bundle.read(item).decode('utf-8')
                         link_target = (target.parent / relative).resolve()
-                        if Path(relative).is_absolute() or not link_target.is_relative_to(staging/'Jellyfish.app'):
+                        if Path(relative).is_absolute() or not link_target.is_relative_to(staging/app_name):
                             raise ValueError('小游戏包包含越界链接')
                         links.append((target, relative))
                         continue
@@ -124,18 +143,16 @@ class GameStore:
                         if sys.platform == 'darwin' and mode:
                             target.chmod(mode & 0o777)
                 for target, relative in links:
-                    if not (target.parent/relative).resolve().is_relative_to(staging/'Jellyfish.app'):
+                    app_name = getattr(self, 'app_name', 'Jellyfish.app')
+                    if not (target.parent/relative).resolve().is_relative_to(staging/app_name):
                         raise ValueError('小游戏包包含越界链接')
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.symlink_to(relative)
                 for target, _ in links:
-                    if not target.resolve().is_relative_to(staging/'Jellyfish.app'):
+                    if not target.resolve().is_relative_to(staging/app_name):
                         raise ValueError('小游戏包包含越界链接')
             metadata = json.loads((staging/'package.json').read_text(encoding='utf-8'))
-            relative_entry = self.entry().relative_to(self.folder)
-            if (metadata.get('id') != GAME_ID or metadata.get('platform') != platform_key()
-                    or not (staging/relative_entry).is_file() or not (staging/'game/index.html').is_file()):
-                raise ValueError('小游戏包结构或系统不正确')
+            self.validate_package(staging, metadata)
             if backup.exists():
                 shutil.rmtree(backup)
             if self.folder.exists():
@@ -152,10 +169,34 @@ class GameStore:
             if staging.exists():
                 shutil.rmtree(staging)
 
+    def validate_package(self, staging, metadata):
+        if metadata.get('id') != self.game_id or not (staging/'game/index.html').is_file():
+            raise ValueError('小游戏包结构不正确')
+        if metadata.get('runtime') == 'system-webview':
+            if not LauncherStore(self.root.parent).installed():
+                raise ValueError('公共小游戏启动器尚未安装')
+            return
+        relative_entry = (Path('Jellyfish.app/Contents/MacOS/Jellyfish') if sys.platform == 'darwin'
+                          else Path('Jellyfish/Jellyfish.exe'))
+        if metadata.get('platform') != platform_key() or not (staging/relative_entry).is_file():
+            raise ValueError('小游戏包结构或系统不正确')
+
     def download(self, progress, cancelled=lambda: False):
         progress(0, '正在查询小游戏包…')
-        info = package_info(read_catalog())
-        temporary = self.root / '.jellyfish-download.zip'
+        catalog = read_catalog(self.catalog_url, self.game_id)
+        if catalog.get('schema') == 2:
+            launcher = LauncherStore(self.root.parent)
+            launcher_info = package_info(catalog, platform_key())
+            if not launcher.installed() or launcher.version() != launcher_info.get('version'):
+                launcher.download_package(launcher_info,
+                    lambda value, text: progress(value // 10, '正在安装公共小游戏启动器…'), cancelled)
+            self.download_package(package_info(catalog),
+                lambda value, text: progress(10 + value * 90 // 100, text), cancelled)
+        else:
+            self.download_package(package_info(catalog), progress, cancelled)
+
+    def download_package(self, info, progress, cancelled=lambda: False):
+        temporary = self.root / ('.' + self.folder.name + '-download.zip')
         try:
             request = urllib.request.Request(info['url'], headers={'User-Agent': 'IdentityVMapAssistant-games'})
             with urllib.request.urlopen(request, timeout=45) as response, temporary.open('wb') as output:
@@ -182,3 +223,33 @@ class GameStore:
             raise ValueError('小游戏目录路径不正确')
         if target.exists():
             shutil.rmtree(target)
+
+
+class LauncherStore(GameStore):
+    app_name = 'GameLauncher.app'
+
+    @property
+    def folder(self):
+        return self.root / 'runtime'
+
+    def entry(self):
+        return self.folder / ('GameLauncher.app/Contents/MacOS/GameLauncher' if sys.platform == 'darwin'
+                              else 'GameLauncher.exe')
+
+    def installed(self):
+        try:
+            metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+            return metadata.get('id') == 'game-launcher' and metadata.get('platform') == platform_key() and self.entry().is_file()
+        except (OSError, ValueError):
+            return False
+
+    def version(self):
+        try:
+            return json.loads((self.folder/'package.json').read_text(encoding='utf-8')).get('version')
+        except (OSError, ValueError):
+            return None
+
+    def validate_package(self, staging, metadata):
+        relative = self.entry().relative_to(self.folder)
+        if metadata.get('id') != 'game-launcher' or metadata.get('platform') != platform_key() or not (staging/relative).is_file():
+            raise ValueError('公共小游戏启动器结构或系统不正确')

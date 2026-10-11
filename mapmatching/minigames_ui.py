@@ -61,6 +61,10 @@ class GameControls(W.QWidget):
         for button in (self.download, self.launch, self.remove):
             row.addWidget(button)
         layout.addLayout(row)
+        self.install_engine = ChalkButton('安装系统游戏运行组件')
+        self.install_engine.hide()
+        self.install_engine.clicked.connect(self.install_system_engine)
+        layout.addWidget(self.install_engine)
         self.download.clicked.connect(self.download_game)
         self.launch.clicked.connect(self.launch_game)
         self.remove.clicked.connect(self.delete_game)
@@ -86,8 +90,9 @@ class GameControls(W.QWidget):
     def refresh(self):
         busy = self.task is not None
         installed = self.store.installed()
-        self.download.setEnabled(not installed)
-        self.download.setText('取消下载' if busy else '已下载' if installed else '下载')
+        legacy = installed and not self.store.native()
+        self.download.setEnabled((not installed or legacy) and not self.running())
+        self.download.setText('取消下载' if busy else '升级轻量版' if legacy else '已下载' if installed else '下载')
         self.launch.setEnabled(installed and not busy and not self.running())
         self.launch.setText('运行中' if self.running() else '启动')
         self.remove.setEnabled(installed and not busy and not self.running())
@@ -100,7 +105,7 @@ class GameControls(W.QWidget):
             self.download.setEnabled(False)
             self.status.setText('正在取消下载…')
             return
-        if self.store.installed():
+        if self.store.installed() and self.store.native():
             return
         self.download_error = ''
         self.task = DownloadTask(self.store, self)
@@ -142,7 +147,7 @@ class GameControls(W.QWidget):
         self.ready_file = profile/'ready'
         self.ready_file.unlink(missing_ok=True)
         self.process.setWorkingDirectory(str(self.store.folder))
-        self.process.start(str(self.store.entry()), ['--game-root', str(self.store.folder/'game'), '--profile', str(profile)])
+        self.process.start(str(self.store.entry()), ['--game-root', str(self.store.folder/'game'), '--profile', str(profile), '--title', '合成大水母'])
         self.start_timer.start(45000)
         self.ready_timer.start()
         self.status.setText('正在启动小游戏…')
@@ -175,11 +180,41 @@ class GameControls(W.QWidget):
         self.start_timer.stop()
         self.ready_timer.stop()
         self.refresh()
-        if code:
+        if code == 42 and sys.platform == 'win32':
+            self.install_engine.show()
+            self.status.setText('此电脑缺少 WebView2，安装一次后所有小游戏共用')
+        elif code:
             directory = DATA_ROOT/'out/minigames'
             directory.mkdir(parents=True, exist_ok=True)
             (directory/'jellyfish.log').write_bytes(bytes(self.output))
             self.status.setText('小游戏已退出，错误日志已保存到 out/minigames')
+
+    def install_system_engine(self):
+        if self.task:
+            return
+        from .system_webview import EngineInstallTask
+        self.download_error = ''
+        self.task = EngineInstallTask(self)
+        self.task.progress.connect(self.download_progress)
+        self.task.result.connect(self.download_result)
+        self.task.finished.connect(self.engine_installed)
+        self.install_engine.setEnabled(False)
+        self.download.setEnabled(False)
+        self.launch.setEnabled(False)
+        self.status.setText('正在安装微软 WebView2…')
+        self.task.start()
+
+    def engine_installed(self):
+        task, self.task = self.task, None
+        task.deleteLater()
+        self.install_engine.setEnabled(True)
+        self.refresh()
+        error = getattr(self, 'download_error', '')
+        if error:
+            self.status.setText(error)
+        else:
+            self.install_engine.hide()
+            self.status.setText('系统运行组件已安装，可以启动小游戏')
 
     def delete_game(self):
         if self.task or self.running():
