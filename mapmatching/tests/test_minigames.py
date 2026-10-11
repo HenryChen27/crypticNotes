@@ -72,6 +72,8 @@ class GamePackageTests(unittest.TestCase):
         self.assertEqual(other.entry(),launcher.entry())
         self.store.delete()
         self.assertTrue(launcher.installed())
+        self.assertTrue(launcher.satisfies('1.0.0'))
+        self.assertFalse(launcher.satisfies('3.0.0'))
         self.assertTrue(other.installed())
         catalog = {'schema':2,'id':'jellyfish','game':game_info,'launchers':{platform_key():runtime_info}}
         with patch('mapmatching.minigames.read_catalog',return_value=catalog), \

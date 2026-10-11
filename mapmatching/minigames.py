@@ -187,7 +187,7 @@ class GameStore:
         if catalog.get('schema') == 2:
             launcher = LauncherStore(self.root.parent)
             launcher_info = package_info(catalog, platform_key())
-            if not launcher.installed() or launcher.version() != launcher_info.get('version'):
+            if not launcher.installed() or not launcher.satisfies(launcher_info.get('version')):
                 launcher.download_package(launcher_info,
                     lambda value, text: progress(value // 10, '正在安装公共小游戏启动器…'), cancelled)
             self.download_package(package_info(catalog),
@@ -248,6 +248,14 @@ class LauncherStore(GameStore):
             return json.loads((self.folder/'package.json').read_text(encoding='utf-8')).get('version')
         except (OSError, ValueError):
             return None
+
+    def satisfies(self, required):
+        try:
+            installed = tuple(int(n) for n in self.version().split('.'))
+            minimum = tuple(int(n) for n in required.split('.'))
+            return len(installed) == len(minimum) == 3 and installed >= minimum
+        except (AttributeError, ValueError):
+            return False
 
     def validate_package(self, staging, metadata):
         relative = self.entry().relative_to(self.folder)
