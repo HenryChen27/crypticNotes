@@ -70,6 +70,7 @@ jobs:
           path: |
             out/minigames-native/GameLauncher-macos-${{ matrix.arch }}.zip
             out/minigames-native/Jellyfish-game.zip
-            out/minigames-native/desktop-games.json
+            out/minigames-native/native-desktop-games.json
+            out/minigames-native/game-resource-hashes.json
             out/minigames-native/startup-smoke.*
           if-no-files-found: error
