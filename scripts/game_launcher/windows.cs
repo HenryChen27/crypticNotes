@@ -99,7 +99,8 @@ class GameWindow : Form {
                     await Task.Delay(2500);
                     if(testScript!=null){
                         string tested=await web.ExecuteScriptAsync(File.ReadAllText(testScript));
-                        File.WriteAllText(report,tested);if(!IsDisposed)Close();return;
+                        File.WriteAllText(report,tested);
+                        if(!tested.Contains("\"waitForExit\":true")&&!IsDisposed)Close();return;
                     }
                     string result=await web.ExecuteScriptAsync("({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,storage:(()=>{try{localStorage.setItem('__nativeSmoke','yes');return localStorage.getItem('__nativeSmoke')==='yes'}catch(e){return false}})(),images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WebView2'})");
                     File.WriteAllText(report,result);Close();

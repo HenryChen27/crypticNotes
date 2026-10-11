@@ -21,7 +21,7 @@ public class MiniGamesActivity extends Activity {
         download=new Theme.ChalkButton(this,"下载游戏",true);body.addView(download);
         play=new Theme.ChalkButton(this,"启动游戏");body.addView(play);
         delete=new Theme.ChalkButton(this,"删除游戏包");body.addView(delete);
-        Theme.ChalkButton back=new Theme.ChalkButton(this,"返回");body.addView(back);back.setOnClickListener(v->finish());setContentView(body);
+        Theme.ChalkButton back=new Theme.ChalkButton(this,"返回");body.addView(back);back.setOnClickListener(v->finish());ScrollView scroll=new ScrollView(this);scroll.addView(body);setContentView(scroll);
         download.setOnClickListener(v->{if(busy||MiniGameOverlayService.running)return;busy=true;refresh();new Thread(()->{
             String error=null;try{store.download(text->runOnUiThread(()->status.setText(text)));}catch(Exception e){error=e.getMessage();}
             final String result=error;runOnUiThread(()->{busy=false;if(isFinishing()||isDestroyed())return;refresh();status.setText(result==null?"游戏已是最新版，可启动":result);});

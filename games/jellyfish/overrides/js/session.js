@@ -101,6 +101,9 @@
     beforeClose(){if(api){api.pause();remember();}return storage();},
     install(adapter){
       api=adapter;saved=read(SAVE,null);if(!valid(saved))saved=null;
+      const chalk=getComputedStyle(document.querySelector('.settings'));
+      for(const key of ['--chalk-panel','--chalk-button','--chalk-button-hover'])
+        document.documentElement.style.setProperty(key,chalk.getPropertyValue(key));
       if(window.__JELLYFISH_TEST)window.JellyfishTest=api;
       if(window.__JELLYFISH_TEST)window.JellyfishTest=api;
       records=read(RANK,[]);if(!Array.isArray(records))records=[];
