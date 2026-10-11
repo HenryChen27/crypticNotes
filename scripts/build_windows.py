@@ -30,7 +30,8 @@ def main():
           '--specpath',str(ROOT/'build')]
     for p in extras:
         args+=['--paths',p]
-    for module in ('torch','tensorflow','matplotlib','pandas','IPython','pytest','notebook','tkinter'):
+    for module in ('torch','tensorflow','matplotlib','pandas','IPython','pytest','notebook','tkinter',
+                   'PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtWebEngineQuick'):
         args+=['--exclude-module',module]
     # 整个 `maps/` 一起打包，**连 index.json 和 evidence/ 也带上**：它们是派生物，
     # 但重建一次要 1~3 分钟，让用户第一次启动就干等是不可接受的（旧版也是把

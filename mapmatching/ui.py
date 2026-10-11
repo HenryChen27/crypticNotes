@@ -904,7 +904,7 @@ class Companion(W.QWidget):
         title.setObjectName('title')
         box.addWidget(title)
         self.setting_sections = [FoldSection(name, i == 0) for i, name in
-                                 enumerate(('游戏设置', '使用偏好', '地图库', '问题排查'))]
+                                 enumerate(('游戏设置', '使用偏好', '地图库', '小游戏', '问题排查'))]
         groups = W.QWidget()
         group_layout = W.QVBoxLayout(groups)
         group_layout.setContentsMargins(0, 0, 0, 0)
@@ -923,7 +923,10 @@ class Companion(W.QWidget):
         self.settings_scroll.setStyleSheet('QScrollArea, QScrollArea > QWidget > QWidget {background:transparent;}')
         self.settings_scroll.setWidget(groups)
         box.addWidget(self.settings_scroll)
-        game, preferences, library, debug = [s.body for s in self.setting_sections]
+        game, preferences, library, minigames, debug = [s.body for s in self.setting_sections]
+        from .minigames_ui import GameControls
+        self.minigames = GameControls(self)
+        minigames.addWidget(self.minigames)
         self.difficulty = ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(1 if self.settings.get('difficulty') == 'nightmare' else 0)
         difficulty_row=W.QHBoxLayout()
@@ -1473,6 +1476,9 @@ class Companion(W.QWidget):
 
     def is_game(self,hwnd):
         if not hwnd or not win32gui.IsWindow(hwnd) or win32gui.IsIconic(hwnd):
+            return False
+        minigames = getattr(self, 'minigames', None)
+        if minigames is not None and minigames.owns_window(hwnd):
             return False
         if self.demo_window is not None:
             return hwnd == int(self.demo_window.winId())
