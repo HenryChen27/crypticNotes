@@ -73,10 +73,11 @@ def capture(rect):
         win32gui.DeleteObject(bitmap.GetHandle())
 
 
-def place_overlay(hwnd, rect):
+def place_overlay(hwnd, rect, *, interactive=False):
     x,y,w,h = rect
     style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
-    win32gui.SetWindowLong(hwnd,win32con.GWL_EXSTYLE,style | win32con.WS_EX_TRANSPARENT | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW)
+    style = style & ~win32con.WS_EX_TRANSPARENT if interactive else style | win32con.WS_EX_TRANSPARENT
+    win32gui.SetWindowLong(hwnd,win32con.GWL_EXSTYLE,style | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW)
     win32gui.SetWindowPos(hwnd,win32con.HWND_TOPMOST,x,y,w,h,win32con.SWP_NOACTIVATE)
 
 

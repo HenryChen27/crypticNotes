@@ -29,9 +29,10 @@ class MacInputTests(unittest.TestCase):
     def test_native_click_through_applies_only_to_passive_windows(self):
         with patch.dict(sys.modules,Quartz=Mock(),AppKit=SimpleNamespace(NSWorkspace=Mock(),NSScreen=Mock())):
             mac=self.load('mapmatching.src.test_mac',Path('mapmatching/src/macos.py'))
-            for flags,expected in ((C.Qt.WindowTransparentForInput,1),(C.Qt.Dialog,0)):
+            for flags,expected in ((C.Qt.WindowTransparentForInput,True),(C.Qt.Dialog,False),
+                                   (C.Qt.WindowDoesNotAcceptFocus,False)):
                 panel=Mock();panel.styleMask.return_value=0;panel.level.return_value=1000;panel.collectionBehavior.return_value=0
                 widget=Mock();widget.winId.return_value=7;widget.windowFlags.return_value=flags
                 with patch.object(mac,'_panel_for',return_value=panel),patch.object(W.QApplication,'topLevelWidgets',return_value=[widget]):
                     self.assertTrue(mac.keep_floating(7))
-                self.assertEqual(panel.setIgnoresMouseEvents_.call_count,expected)
+                panel.setIgnoresMouseEvents_.assert_called_once_with(expected)

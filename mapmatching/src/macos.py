@@ -115,7 +115,7 @@ def capture(rect):
     return frame
 
 
-def place_overlay(_window, rect):
+def place_overlay(_window, rect, *, interactive=False):
     from PySide6 import QtCore as C
     from PySide6 import QtWidgets as W
     # winId() is an NSView pointer on macOS, but it is still stable enough to
@@ -189,9 +189,10 @@ def keep_floating(window, level=None):
         from PySide6 import QtCore as C, QtWidgets as W
         widget = next((w for w in W.QApplication.topLevelWidgets()
                        if int(w.winId()) == int(window)), None)
-        if widget is not None and widget.windowFlags() & C.Qt.WindowTransparentForInput:
+        if widget is not None:
+            panel.setIgnoresMouseEvents_(bool(widget.windowFlags() & C.Qt.WindowTransparentForInput))
+        if widget is not None and widget.windowFlags() & (C.Qt.WindowTransparentForInput | C.Qt.WindowDoesNotAcceptFocus):
             # Reassert the native input policy after Qt recreates/shows a panel.
-            panel.setIgnoresMouseEvents_(True)
             panel.setStyleMask_(int(panel.styleMask()) |
                                 _appkit('NSWindowStyleMaskNonactivatingPanel', 1 << 7))
             if hasattr(panel, 'setBecomesKeyOnlyIfNeeded_'):

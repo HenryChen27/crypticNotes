@@ -1,4 +1,4 @@
-"""Mac-only capture routing and worker warm-up regressions."""
+"""Original-image capture on desktop platforms and Mac worker warm-up."""
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -9,6 +9,11 @@ from mapmatching.src.live import ToggleState
 
 class MacCaptureTests(unittest.TestCase):
     def test_local_image_uses_original_without_screen_capture_or_mask(self):
+        for platform in ('darwin','win32'):
+            with self.subTest(platform=platform):
+                self.check_local_image(platform)
+
+    def check_local_image(self,platform):
         from mapmatching.ui import Companion,native
         state=ToggleState();token=state.open()
         pixels=np.zeros((90,160,3),dtype=np.uint8)
@@ -17,7 +22,7 @@ class MacCaptureTests(unittest.TestCase):
             isVisible=lambda:True,cached_candidate=None,opening=True,
             record_failures=Mock(),records_directory=lambda:Path('out'),status=Mock(),
             start_worker=Mock(),close_map=Mock(),notify=Mock())
-        with patch('mapmatching.ui.sys.platform','darwin'),patch('mapmatching.src.reference.read_image',return_value=pixels) as read,patch.object(native,'capture') as capture,patch.object(native,'mask_screen_rect') as mask:
+        with patch('mapmatching.ui.sys.platform',platform),patch('mapmatching.src.reference.read_image',return_value=pixels) as read,patch.object(native,'capture') as capture,patch.object(native,'mask_screen_rect') as mask:
             Companion.capture_after_hide(subject,token)
         read.assert_called_once_with(subject.demo)
         capture.assert_not_called();mask.assert_not_called()

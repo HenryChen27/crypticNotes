@@ -12,13 +12,24 @@ if __name__ == '__main__':
         offset = sys.argv.index('--merge-map-update')
         merge(Path(sys.argv[offset+1]), Path(sys.argv[offset+2]))
         raise SystemExit(0)
-    if '--admin' in sys.argv and sys.platform == 'win32':
+    explicit_admin = '--admin' in sys.argv
+    normal_user = '--no-admin' in sys.argv
+    if explicit_admin:
         sys.argv.remove('--admin')
+    if normal_user:
+        sys.argv.remove('--no-admin')
+    # Only packaged interactive launches request elevation automatically.
+    # freeze_support and update merging have already exited above; build
+    # self-tests and source development must remain noninteractive.
+    auto_admin = (getattr(sys, 'frozen', False) and not normal_user
+                  and '--self-test' not in sys.argv)
+    if (explicit_admin or auto_admin) and sys.platform == 'win32':
         if not ctypes.windll.shell32.IsUserAnAdmin():
             shell=ctypes.windll.shell32.ShellExecuteW
             shell.argtypes=[ctypes.c_void_p,ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_wchar_p,ctypes.c_int]
             shell.restype=ctypes.c_void_p
-            root=Path(__file__).resolve().parents[1]
+            root=(Path(sys.executable).resolve().parent if getattr(sys,'frozen',False)
+                  else Path(__file__).resolve().parents[1])
             args=sys.argv[1:] if getattr(sys,'frozen',False) else ['-m','mapmatching.launch',*sys.argv[1:]]
             result=shell(None,'runas',sys.executable,subprocess.list2cmdline(args),str(root),0)
             if not result or result<=32:

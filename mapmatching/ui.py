@@ -65,12 +65,6 @@ def font_stack(mode='game'):
                 font_id = G.QFontDatabase.addApplicationFont(str(path))
                 FONT_CACHE.extend(G.QFontDatabase.applicationFontFamilies(font_id))
         FONT_CACHE.append(FONT_FALLBACK)
-        app = W.QApplication.instance()
-        if app is not None:
-            font = G.QFont()
-            font.setFamilies(FONT_CACHE)
-            font.setPixelSize(16)
-            app.setFont(font)
     if mode == 'system':
         return [FONT_FALLBACK]
     if mode.startswith('family:'):
@@ -466,19 +460,79 @@ class Overlay(W.QWidget):
             self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
         self.picture = None
         self.opacity = .30
+        self.manual=False
+        self.manual_offset=C.QPointF()
+        self.manual_scale=1.
+        self.manual_press=None
 
-    def display(self, layer, rect, opacity):
+    def display(self, layer, rect, opacity, manual=False):
+        if self.manual != bool(manual):
+            self.manual=bool(manual)
+            self.setWindowFlag(C.Qt.WindowTransparentForInput,not self.manual)
+        self.manual_offset=C.QPointF();self.manual_scale=1.
+        self.manual_press=None
+        self.clearMask()
         h,w = layer.shape[:2]
         self.picture = G.QImage(layer.data,w,h,layer.strides[0],G.QImage.Format_ARGB32).copy()
         self.opacity = opacity
         show_floating(self)
-        native.place_overlay(int(self.winId()),rect)
+        native.place_overlay(int(self.winId()),rect,interactive=True) if self.manual else native.place_overlay(int(self.winId()),rect)
+        if self.manual:
+            import numpy as np
+            ys,xs=np.where(layer[:,:,3]>0)
+            self.manual_bounds=C.QRectF(float(xs.min()),float(ys.min()),
+                float(xs.max()-xs.min()+1),float(ys.max()-ys.min()+1)) if len(xs) else C.QRectF()
+            self.update_manual_mask()
+        self.setCursor(C.Qt.SizeAllCursor if self.manual else C.Qt.ArrowCursor)
         self.update()
+
+    def update_manual_mask(self):
+        bounds=self.manual_bounds
+        sx=self.width()/self.picture.width();sy=self.height()/self.picture.height()
+        rect=C.QRectF(self.manual_offset.x()+bounds.x()*sx*self.manual_scale,
+                     self.manual_offset.y()+bounds.y()*sy*self.manual_scale,
+                     bounds.width()*sx*self.manual_scale,bounds.height()*sy*self.manual_scale)
+        self.setMask(G.QRegion(rect.toAlignedRect()))
+
+    def mousePressEvent(self,event):
+        if self.manual and event.button()==C.Qt.LeftButton:
+            self.manual_press=event.globalPosition()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+
+    def mouseMoveEvent(self,event):
+        if self.manual and self.manual_press is not None:
+            self.manual_offset+=event.globalPosition()-self.manual_press
+            self.manual_press=event.globalPosition()
+            self.update_manual_mask();self.update()
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self,event):
+        self.manual_press=None
+        if self.manual:
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def wheelEvent(self,event):
+        if not self.manual:
+            return super().wheelEvent(event)
+        previous=self.manual_scale
+        self.manual_scale=max(.1,min(10.,previous*1.08**(event.angleDelta().y()/120)))
+        point=event.position()
+        self.manual_offset=point-(point-self.manual_offset)*(self.manual_scale/previous)
+        self.update_manual_mask();self.update();event.accept()
 
     def paintEvent(self,event):
         if self.picture is not None:
             p = G.QPainter(self)
             p.setOpacity(self.opacity)
+            if self.manual:
+                p.translate(self.manual_offset)
+                p.scale(self.manual_scale,self.manual_scale)
             p.drawImage(self.rect(),self.picture)
 
 
@@ -532,6 +586,106 @@ class Segmented(W.QWidget):
         self.currentIndexChanged.emit(index)
 
 
+class ManualChoiceButton(ChalkButton):
+    def __init__(self, accept):
+        super().__init__('')
+        self.accept=accept
+        self.setFixedSize(70,32)
+        self.setMinimumHeight(32)
+        self.setToolTip('同意' if accept else '忽略')
+
+    def paintEvent(self,event):
+        from .theme import chalk_texture
+        p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
+        p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),'deep',.8,'rounded'))
+        p.setPen(G.QPen(G.QColor('#83c4a1' if self.accept else '#df858c'),2.5,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
+        x,y=self.width()/2,self.height()/2
+        if self.accept:
+            p.drawLine(C.QPointF(x-8,y),C.QPointF(x-2,y+6));p.drawLine(C.QPointF(x-2,y+6),C.QPointF(x+9,y-7))
+        else:
+            p.drawLine(C.QPointF(x-6,y-6),C.QPointF(x+6,y+6));p.drawLine(C.QPointF(x+6,y-6),C.QPointF(x-6,y+6))
+
+
+class ManualAlignmentPopup(W.QWidget):
+    expired=C.Signal()
+    accepted=C.Signal()
+    ignored=C.Signal()
+
+    def __init__(self,parent=None):
+        super().__init__(parent,C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint)
+        self.setAttribute(C.Qt.WA_ShowWithoutActivating)
+        self.setAttribute(C.Qt.WA_TranslucentBackground)
+        if sys.platform == 'darwin':
+            self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
+        self.setFixedSize(200,106)
+        row=W.QVBoxLayout(self);row.setContentsMargins(18,30,18,12);row.setSpacing(10)
+        label=W.QLabel('是否需要直接叠图？');label.setAlignment(C.Qt.AlignCenter)
+        label.setStyleSheet('color:#dbe5ec;background:transparent;font-size:15px;')
+        row.addWidget(label)
+        buttons=W.QHBoxLayout();buttons.setSpacing(10)
+        accept=ManualChoiceButton(True);ignore=ManualChoiceButton(False)
+        accept.clicked.connect(self.accepted);ignore.clicked.connect(self.ignored)
+        buttons.addWidget(accept);buttons.addWidget(ignore);row.addLayout(buttons)
+        self.clock=C.QElapsedTimer();self.clock.start()
+        self.timer=C.QTimer(self);self.timer.setInterval(30)
+        self.timer.timeout.connect(self.advance);self.timer.start()
+
+    def advance(self):
+        if self.clock.elapsed() >= 3000:
+            self.timer.stop();self.expired.emit();self.close()
+        else:
+            self.update()
+
+    def closeEvent(self,event):
+        self.timer.stop()
+        super().closeEvent(event)
+
+    def paintEvent(self,event):
+        from .theme import chalk_texture
+        p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
+        p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),'deep',1.1,'rounded'))
+        p.setPen(C.Qt.NoPen);p.setBrush(G.QColor('#a9c0cf'))
+        span=max(0,360*(1-self.clock.elapsed()/3000))
+        p.drawPie(C.QRectF(15,12,12,12),90*16,int(span*16))
+
+
+class ExitDropZone(W.QWidget):
+    """Only visible while dragging; never captures game input."""
+    def __init__(self):
+        super().__init__(None, C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint
+                         | C.Qt.WindowTransparentForInput | C.Qt.WindowDoesNotAcceptFocus)
+        self.setAttribute(C.Qt.WA_ShowWithoutActivating)
+        self.setAttribute(C.Qt.WA_TranslucentBackground)
+        if sys.platform == 'darwin':
+            self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
+        self.progress=0.
+        self.resize(156,92)
+
+    def paintEvent(self,event):
+        p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
+        rect=C.QRectF(self.rect()).adjusted(3,3,-3,-3)
+        p.setPen(C.Qt.NoPen);p.setBrush(G.QColor(180,55,67,65));p.drawRect(rect)
+        if self.progress:
+            fill=C.QRectF(0,0,rect.width()*self.progress,rect.height()*self.progress)
+            fill.moveCenter(rect.center())
+            p.setBrush(G.QColor(215,69,81,115));p.drawRect(fill)
+        p.setPen(G.QPen(G.QColor(235,110,122,180),1.5,C.Qt.DashLine));p.setBrush(C.Qt.NoBrush);p.drawRect(rect)
+        # Vector trash can: independent of fonts and emoji support.
+        p.setPen(G.QPen(G.QColor('#f1bec5'),2,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
+        x,y=rect.center().x(),rect.center().y()
+        p.drawLine(C.QPointF(x-12,y-10),C.QPointF(x+12,y-10))
+        p.drawRect(C.QRectF(x-5,y-15,10,5))
+        path=G.QPainterPath();path.moveTo(x-9,y-7);path.lineTo(x-7,y+14);path.lineTo(x+7,y+14);path.lineTo(x+9,y-7)
+        p.drawPath(path)
+        for dx in (-3,3): p.drawLine(C.QPointF(x+dx,y-4),C.QPointF(x+dx,y+9))
+
+    def locate(self, point):
+        screen = W.QApplication.screenAt(point) or W.QApplication.primaryScreen()
+        rect = screen.availableGeometry()
+        self.move(rect.right()-self.width()-18, rect.top()+18)
+        show_floating(self)
+
+
 class DraggableGear(GearButton):
     """可拖拽的齿轮：按住拖动就搬动整个助手窗口，没拖动则照常弹出面板。
 
@@ -547,13 +701,87 @@ class DraggableGear(GearButton):
         self.pet=PetAnimation(self)
         self.origin=None
         self.press_global=None
+        self.drag_start_pos=None
         self.moved=False
+        self.matching=False
+        self.match_clock=C.QElapsedTimer()
+        self.match_timer=C.QTimer(self)
+        self.match_timer.setInterval(33)
+        self.match_timer.timeout.connect(self.update)
+        self.click_timer=C.QTimer(self)
+        self.click_timer.setSingleShot(True)
+        self.click_timer.timeout.connect(lambda: self.window.toggle_panel())
+        self.clicked.connect(lambda: self.click_timer.start(W.QApplication.doubleClickInterval()))
+        self.double_release=False
+        self.exit_zone=ExitDropZone()
+        self.exit_clock=C.QElapsedTimer()
+        self.exit_timer=C.QTimer(self)
+        self.exit_timer.setInterval(40)
+        self.exit_timer.timeout.connect(self.check_exit_zone)
+
+    def check_exit_zone(self):
+        if not self.moved:
+            self.exit_timer.stop()
+            self.exit_zone.hide()
+            self.exit_clock.invalidate()
+            return
+        point=G.QCursor.pos()
+        self.exit_zone.locate(point)
+        if self.exit_zone.geometry().contains(point):
+            if not self.exit_clock.isValid():
+                self.exit_clock.start()
+            remaining=max(0,500-self.exit_clock.elapsed())
+            self.exit_zone.progress=1-remaining/500
+            self.exit_zone.update()
+            if remaining == 0:
+                self.exit_timer.stop()
+                # Shutdown saves the window position; retain the position before
+                # this exit gesture rather than the trash zone's coordinates.
+                if self.drag_start_pos is not None:
+                    self.window.move(self.drag_start_pos)
+                self.origin=None
+                W.QApplication.instance().quit()
+        else:
+            self.exit_clock.invalidate()
+            self.exit_zone.progress=0.
+            self.exit_zone.update()
+
+    def mouseDoubleClickEvent(self,event):
+        if event.button()==C.Qt.LeftButton:
+            self.click_timer.stop()
+            self.double_release=True
+            self.window.retry()
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def set_matching(self, active):
+        active=bool(active)
+        if self.matching == active:
+            return
+        self.matching=active
+        if active:
+            self.match_clock.start()
+            self.match_timer.start()
+            self.pet.play('matching')
+        else:
+            self.match_timer.stop()
+            if self.pet.mood == 'matching':
+                self.pet.play('idle')
+        self.update()
 
     def paintEvent(self,event):
         if self.pet.enabled:
             self.pet.paint()
         else:
+            self.gear_rotation=(self.match_clock.elapsed() % 1800)/5. if self.matching else 0.
             super().paintEvent(event)
+        if self.matching and self.pet.enabled:
+            p=G.QPainter(self)
+            p.setRenderHint(G.QPainter.Antialiasing)
+            p.setPen(G.QPen(G.QColor('#c8e7fa'),3))
+            p.drawArc(C.QRectF(35,113,42,12),-int(self.match_clock.elapsed()/5)*16,240*16)
+            p.end()
 
     def enterEvent(self,event):
         self.pet.play('curious')
@@ -564,6 +792,7 @@ class DraggableGear(GearButton):
             self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
+            self.drag_start_pos=C.QPoint(self.window.pos())
             self.origin=self.press_global-self.window.frameGeometry().topLeft()
             self.moved=False
         super().mousePressEvent(event)
@@ -577,6 +806,8 @@ class DraggableGear(GearButton):
             if (point-self.press_global).manhattanLength() < W.QApplication.startDragDistance():
                 return
             self.moved=True
+            self.click_timer.stop()
+            self.exit_timer.start()
             self.setDown(False)     # 拖拽中不再显示按下态
         self.window.move(point-self.origin)
 
@@ -584,6 +815,13 @@ class DraggableGear(GearButton):
         dragging=self.moved
         self.origin=self.press_global=None
         self.moved=False
+        self.exit_timer.stop()
+        self.exit_zone.hide()
+        self.exit_clock.invalidate()
+        if self.double_release:
+            self.double_release=False
+            self.setDown(False)
+            return
         if dragging:
             self.setDown(False)     # 不自己清的话按钮会永远停在按下态
             self.window.clamp_to_screen()
@@ -612,6 +850,9 @@ class Companion(W.QWidget):
         self.rect_at_capture = None
         self.pending = None
         self.cached_candidate = None
+        self.confirmed_candidate = None
+        self.manual_offer = None
+        self.force_floor = None
         self.demo = demo
         self.demo_window = None
         self.started = 0
@@ -651,7 +892,6 @@ class Companion(W.QWidget):
         self.gear.setObjectName('gear')
         self.gear.pet.enable(self.settings.get("pet_enabled",True))
         self.gear.setToolTip('加页手记 · 设置')
-        self.gear.clicked.connect(self.toggle_panel)
         layout.addWidget(self.gear,0,C.Qt.AlignRight)
         self.panel = MistPanel()
         self.panel.setObjectName('panel')
@@ -1096,6 +1336,7 @@ class Companion(W.QWidget):
         self.overlay.update()
 
     def context_changed(self):
+        self.confirmed_candidate = None
         self.cached_candidate = None
         self.close_map()
         self.stop_worker()
@@ -1180,6 +1421,7 @@ class Companion(W.QWidget):
         # 那时 exec() 返回 Rejected，但库确实变了。
         if dialog.changed:
             self.cached_candidate=None
+            self.confirmed_candidate=None
             self.notify(f'地图库已更新，可匹配 {dialog.active} 张\n下次匹配生效')
         C.QTimer.singleShot(0,self.start_worker)
 
@@ -1213,6 +1455,7 @@ class Companion(W.QWidget):
         return True
 
     def leave_demo(self):
+        self.confirmed_candidate = None
         self.cached_candidate = None
         self.close_map()
         window = self.demo_window
@@ -1234,7 +1477,9 @@ class Companion(W.QWidget):
         if self.demo_window is not None:
             return hwnd == int(self.demo_window.winId())
         # No game title filter or manual binding. G observes the current screen.
-        return hwnd not in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()))
+        popup=getattr(self,'manual_popup',None)
+        return hwnd not in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()),
+                            int(popup.winId()) if popup is not None else 0)
 
     def apply_font(self, mode):
         valid_family = isinstance(mode,str) and mode.startswith('family:') and mode[7:] in G.QFontDatabase.families()
@@ -1258,11 +1503,12 @@ class Companion(W.QWidget):
         """前台既不是游戏、也不是我们自己 —— 只有真的切走了才算丢。
 
         面板刚被点过（改不透明度/难度）时前台是我们的窗口，但那不代表用户离开了地图；
-        截图时布偶保持可见，并在识别图中屏蔽自身区域。少了这条例外，
+        截图前短暂隐藏布偶，取得干净画面后恢复。少了前台窗口这条例外，
         一次跟随重算就会误判「切走了」并 close_map，症状正是「调整之后就不认了」。
         """
         foreground = win32gui.GetForegroundWindow()
-        return foreground != int(self.winId()) and not self.is_game(foreground)
+        popup=getattr(self,'manual_popup',None)
+        return foreground not in (int(self.winId()),int(popup.winId()) if popup is not None else 0) and not self.is_game(foreground)
 
     def check_update(self):
         import subprocess
@@ -1283,40 +1529,75 @@ class Companion(W.QWidget):
             return
         try:
             self.save()
+            self.update_button.setText('正在打开更新窗口…')
+            self.update_button.setEnabled(False)
+            self.status.setText('正在启动更新器，请稍候…')
+            self.notify('正在打开更新窗口…')
+            import tempfile
+            import uuid
+            ready_file=Path(tempfile.gettempdir())/('crypticnotes-updater-'+uuid.uuid4().hex+'.ready')
+            timer=C.QTimer(self)
+            started=time.monotonic()
+            def update_ready():
+                ready=ready_file.is_file()
+                if not ready and time.monotonic()-started<30:
+                    return
+                timer.stop()
+                timer.deleteLater()
+                ready_file.unlink(missing_ok=True)
+                self.update_button.setEnabled(True)
+                self.update_button.setText('检查更新')
+                self.status.setText('更新窗口已打开' if ready else '更新器启动较慢，请查看是否已有更新窗口')
+            timer.timeout.connect(update_ready)
+            timer.start(200)
             subprocess.Popen([
                 'powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
-                '-File', str(ROOT/'scripts/update-client.ps1')],
+                '-File', str(ROOT/'scripts/update-client.ps1'),'-ReadyFile',str(ready_file)],
                 creationflags=subprocess.CREATE_NO_WINDOW, cwd=str(ROOT))
         except OSError as exc:
+            if 'timer' in locals():
+                timer.stop(); timer.deleteLater()
+            self.update_button.setEnabled(True)
+            self.update_button.setText('检查更新')
             self.notify(f'无法启动更新：{exc}')
 
-    def retry(self):
+    def retry(self, force_floor=None):
         if self.panel.isVisible():
             self.toggle_panel()
         self.cached_candidate = None
         if self.demo:
             self.demo_window.raise_()
             self.demo_window.activateWindow()
-            self.open_map('manual_retry')
+            if force_floor is None:
+                self.open_map('manual_retry')
+            else:
+                self.open_map('manual_retry',force_floor=force_floor)
         else:
             target = getattr(self,'last_external_target',None)
             if target:
                 native.activate_target(target)
-            C.QTimer.singleShot(300,lambda: self.open_map("manual_retry"))
+            C.QTimer.singleShot(300,lambda: self.open_map("manual_retry",**(
+                {'force_floor':force_floor} if force_floor is not None else {})))
 
-    def open_map(self, reason="map_hotkey"):
+    def open_map(self, reason="map_hotkey", force_floor=None):
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
+        self.force_floor=force_floor
         token = self.state.open()
         self.opening = True
+        self.visibility_obstructed = False
         self.open_probe_count = 0
         self.started = time.perf_counter()
         self.target = int(self.demo_window.winId()) if self.demo_window is not None else win32gui.GetForegroundWindow()
         self.status.setText('等待地图展开…')
+        self.gear.set_matching(True)
         C.QTimer.singleShot(self.delay.currentData(),lambda: self.take_capture(token))
 
     def take_capture(self,token):
+        if getattr(self,'_visibility_hidden',False):
+            C.QTimer.singleShot(80,lambda:self.take_capture(token) if self.state.accepts(token) else None)
+            return
         self._capturing = True
         if not self.state.accepts(token):
             self._capturing = False
@@ -1327,8 +1608,12 @@ class Companion(W.QWidget):
             return
         self.overlay.hide()
         self.toast.hide()
-        # Keep the companion visible; mask it in the recognition frame instead.
-        # Only the map overlay/toast need time to leave the desktop compositor.
+        # UI feedback is relevant only while this session remains visible.
+        # Hide once across opening probes: masking destroys the map UI beneath.
+        if self.demo_window is None and sys.platform == 'win32' and self.isVisible():
+            self._capture_exclusion = native.client_rect(int(self.winId()))
+            self._capture_hidden = True
+            self.hide()
         C.QTimer.singleShot(60,lambda: self.capture_after_hide(token))
 
     def capture_after_hide(self,token):
@@ -1351,12 +1636,8 @@ class Companion(W.QWidget):
             if sys.platform == 'darwin':
                 trace('mac_frame_ready',elapsed_ms=(time.perf_counter()-capture_started)*1000,
                       shape=list(pixels.shape),local=self.demo_window is not None)
-            self.capture_exclusion = None
-            is_visible = getattr(self, 'isVisible', None)
-            if self.demo_window is None and sys.platform != 'darwin' and callable(is_visible) and is_visible():
-                self.capture_exclusion = native.client_rect(int(self.winId()))
-                native.mask_screen_rect(pixels,self.rect_at_capture,
-                                        self.capture_exclusion)
+            self.capture_exclusion = (getattr(self,'_capture_exclusion',None)
+                                      if self.demo_window is None and sys.platform == 'win32' else None)
             if getattr(self,'opening',False) and self.demo_window is None:
                 from .src.map_visibility import inspect_map_ui
                 visibility=inspect_map_ui(pixels)
@@ -1368,17 +1649,27 @@ class Companion(W.QWidget):
             self.opening = False
             trace("captured",token=token,trigger=getattr(self,"capture_trigger","unknown"))
             self.pending = (token,pixels,self.cached_candidate, dict(
+                confirmed_candidate=getattr(self,'confirmed_candidate',None),
+                force_floor=getattr(self,'force_floor',None),
                 record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),
                 trigger=getattr(self,"capture_trigger","unknown"),
                 source='local_screenshot' if self.demo_window is not None else 'screen',
                 capture_rect=self.rect_at_capture))
             self.status.setText('正在对齐上次地图…' if self.cached_candidate else '正在识别地图并配准…')
             self.start_worker()
+            self.force_floor = None
         except Exception as error:
             self.close_map(silent=True)
             self.notify('截屏失败：'+str(error))
         finally:
             self._capturing = False
+            if not getattr(self,'opening',False):
+                self.restore_capture_companion()
+
+    def restore_capture_companion(self):
+        if getattr(self,'_capture_hidden',False):
+            self._capture_hidden=False
+            show_floating(self)
 
     def capture_rect(self):
         if self.demo_window is not None:
@@ -1399,6 +1690,8 @@ class Companion(W.QWidget):
         # not busy：一次只有一个请求在途。并发发两条会让先回的那条被后回的顶掉，
         # 状态就没法一一对应了。
         if self.ready and self.pending is not None and not self.busy:
+            if self.state.opened:
+                self.gear.set_matching(True)
             self.request_pixels = self.pending[1]
             self.request_exclusion = getattr(self,'capture_exclusion',None)
             trace("worker_request",token=self.pending[0])
@@ -1420,14 +1713,57 @@ class Companion(W.QWidget):
         # 进程没了，就绪状态当然也归零；留着 True 会让下一条请求发给还不存在的 worker。
         self.ready = False
         self.worker_deadline = None
+        if hasattr(self,'gear'):
+            self.gear.set_matching(False)
+
+    def dismiss_manual_offer(self):
+        self.manual_offer = None
+        popup=getattr(self,'manual_popup',None)
+        if popup is not None:
+            popup.close()
+            popup.deleteLater()
+            self.manual_popup=None
+
+    def offer_manual_alignment(self, offer, token):
+        self.dismiss_manual_offer()
+        self.manual_offer=(token,offer)
+        trace('manual_alignment_offered',token=token,**offer)
+        popup=ManualAlignmentPopup(self)
+        popup.accepted.connect(self.accept_manual_alignment)
+        popup.ignored.connect(self.dismiss_manual_offer)
+        popup.expired.connect(self.dismiss_manual_offer)
+        self.manual_popup=popup
+        popup.adjustSize()
+        rect=self.screen().availableGeometry()
+        popup.move(max(rect.left(),min(self.x()-popup.width(),rect.right()-popup.width())),
+                   max(rect.top(),min(self.y(),rect.bottom()-popup.height())))
+        show_floating(popup)
+
+    def accept_manual_alignment(self):
+        offer=getattr(self,'manual_offer',None)
+        if offer is None or not self.state.accepts(offer[0]):
+            self.dismiss_manual_offer()
+            return
+        floor=offer[1]['floor']
+        trace('manual_alignment_confirmed',token=offer[0],**offer[1])
+        self.dismiss_manual_offer()
+        self.retry(force_floor=floor)
 
     def close_map(self,silent=False,background=False):
+        self.force_floor=None
+        dismiss=getattr(self,'dismiss_manual_offer',None)
+        if dismiss is not None:
+            dismiss()
+        self.restore_capture_companion()
+        self.gear.set_matching(False)
         trace("closed",token=self.state.generation)
         if background and self.state.opened:
             self.background_token = self.state.generation
         elif not background:
             self.background_token = None
         self.opening = False
+        self.visibility_clean_next=False
+        self.visibility_obstructed=False
         self.state.close()
         self.overlay.hide()
         self.toast.hide()
@@ -1438,6 +1774,9 @@ class Companion(W.QWidget):
         self.follow_active = False
         self.follow_dirty = False
         self._capturing = False
+        if getattr(self,'_visibility_hidden',False):
+            self._visibility_hidden=False
+            show_floating(self)
         # 状态结束 = 计数归零。下次按 G 是新会话，不该背着上一次的失败次数。
         self.no_map_streak = 0
         if not background and (self.busy or (sys.platform != 'darwin' and self.process is not None and not getattr(self,'ready',False))):
@@ -1457,8 +1796,12 @@ class Companion(W.QWidget):
             # Quartz does not expose WindowFromPoint.  The companion occupies a
             # small, known Qt rectangle, so this fallback distinguishes clicks
             # on its controls without classifying the full-screen overlay as UI.
-            return sys.platform == 'darwin' and self.frameGeometry().contains(G.QCursor.pos())
-        return hwnd in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()))
+            popup=getattr(self,'manual_popup',None)
+            return sys.platform == 'darwin' and (self.frameGeometry().contains(G.QCursor.pos())
+                or (popup is not None and popup.frameGeometry().contains(G.QCursor.pos())))
+        popup=getattr(self,'manual_popup',None)
+        return hwnd in (int(self.winId()),int(self.overlay.winId()),int(self.toast.winId()),
+                        int(popup.winId()) if popup is not None else 0)
 
     def mouse_busy(self):
         """鼠标正在操作中，且跟随功能开着。
@@ -1506,6 +1849,9 @@ class Companion(W.QWidget):
         self.follow_dirty = False
         if not self.state.opened:
             return
+        dismiss=getattr(self,'dismiss_manual_offer',None)
+        if dismiss is not None:
+            dismiss()
         self.started = time.perf_counter()
         self.capture_trigger = reason
         self.take_capture(self.state.open())
@@ -1530,19 +1876,32 @@ class Companion(W.QWidget):
         try:
             token,visible = self.visibility_results.get_nowait()
             self.visibility_running = False
+            clean=getattr(self,'_visibility_hidden',False)
+            if clean:
+                self._visibility_hidden=False
+                show_floating(self)
             if self.state.accepts(token):
+                if clean and visible is True:
+                    self.visibility_obstructed=True
                 if self.visibility_token != token:
                     self.visibility_misses = 0
                     self.visibility_token = token
                 self.visibility_misses = self.visibility_misses+1 if visible is False else 0
                 if self.visibility_misses >= 2:
-                    self.close_map(silent=True,background=True)
-                    trace('map_closed_by_visibility',token=token)
+                    if not clean and callable(getattr(self,'isVisible',None)) and self.isVisible():
+                        # Two obstructed frames are not proof of a closed map.
+                        # Only then take one clean confirmation, avoiding periodic blinking.
+                        self.visibility_clean_next=True
+                        self.visibility_next=0.
+                    else:
+                        self.close_map(silent=True,background=True)
+                        trace('map_closed_by_visibility',token=token)
         except queue.Empty:
             pass
         now=time.monotonic()
         if (self.visibility_running or now < self.visibility_next or not self.state.opened
                 or self.demo_window is not None or getattr(self,'opening',False)
+                or getattr(self,'_capture_hidden',False) or getattr(self,'_capturing',False)
                 or W.QApplication.activeModalWidget() is not None):
             return
         self.visibility_next=now+.8
@@ -1550,15 +1909,30 @@ class Companion(W.QWidget):
         token=self.state.generation
         rect=self.capture_rect()
         results=self.visibility_results
+        obstructed=getattr(self,'visibility_obstructed',False)
         def inspect():
             visible=None
             try:
                 from .src.map_visibility import inspect_map_ui
-                visible=inspect_map_ui(native.capture(rect))['visible']
+                evidence=inspect_map_ui(native.capture(rect))
+                visible=evidence['visible']
+                # A clean confirmation already proved this map is open. A
+                # strongly visible remaining map control corroborates occlusion
+                # on later frames, so don't keep blinking to rediscover it.
+                if visible is False and obstructed and max(evidence['scores'].values())>=.90:
+                    visible=None
             except Exception:
                 pass
             results.put((token,visible))
-        threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
+        def launch():
+            threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
+        if getattr(self,'visibility_clean_next',False):
+            self.visibility_clean_next=False
+            self._visibility_hidden=True
+            self.hide()
+            C.QTimer.singleShot(60,launch)
+        else:
+            launch()
 
     def tick(self):
         if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'maintain'):
@@ -1610,7 +1984,8 @@ class Companion(W.QWidget):
         if self.state.opened:
             # 「前台换成了别的窗口」只有在那个窗口不是我们自己的时候才算丢：
             # 刚点过面板时前台是我们的窗口，但那不代表用户离开了地图。
-            own = foreground == int(self.winId())
+            popup=getattr(self,'manual_popup',None)
+            own = foreground in (int(self.winId()),int(popup.winId()) if popup is not None else 0)
             if self.foreground_lost() or (not own and foreground != self.target):
                 self.close_map(background=True)
             elif self.rect_at_capture and self.overlay.isVisible() and self.capture_rect() != self.rect_at_capture:
@@ -1641,13 +2016,33 @@ class Companion(W.QWidget):
                         self.notify('匹配失败：'+explain_failure(payload))
                     else:
                         self.busy = False
+                        self.gear.set_matching(False)
                         self.worker_deadline = None
                         token,layer,message,candidate,elapsed,details = payload
-                        trace("worker_result",token=token,accepted=self.state.accepts(token),reason=details.get("reason"),layer=layer is not None)
+                        diagnostics=details.get('diagnostics') or {}
+                        trace("worker_result",token=token,accepted=self.state.accepts(token),
+                              reason=details.get("reason"),layer=layer is not None,
+                              pipeline=diagnostics.get('pipeline'),
+                              manual_alignment=bool(diagnostics.get('manual_alignment')),
+                              manual_centered=bool(diagnostics.get('manual_centered')),
+                              manual_offer=diagnostics.get('manual_offer'),
+                              floor_tabs=diagnostics.get('floor_tabs'),
+                              map_ui=diagnostics.get('map_ui'),
+                              cached_map_id=getattr(getattr(self,'cached_candidate',None),'map_id',None),
+                              selected_map_id=getattr(candidate,'map_id',None),
+                              selected_floor=getattr(candidate,'floor',None),
+                              candidates=(details.get('candidates') or [])[:3])
                         if (not self.state.opened and token == getattr(self,'background_token',None)):
                             self.background_token = None
-                            if candidate is not None and layer is not None and not no_map_evidence(details):
+                            if (candidate is not None and layer is not None and not no_map_evidence(details)
+                                    and not details.get('diagnostics',{}).get('manual_alignment')):
                                 self.cached_candidate = candidate
+                                from .src.manual_alignment import reliable_memory
+                                if reliable_memory(candidate,details):
+                                    self.confirmed_candidate=candidate
+                                elif (getattr(self,'confirmed_candidate',None) is not None
+                                      and self.confirmed_candidate.map_id != candidate.map_id):
+                                    self.confirmed_candidate=None
                                 trace('background_map_remembered',token=token,map_id=candidate.map_id)
                         if self.state.accepts(token):
                             # 两重保护都必要：交互结束的那个 tick 里 follow() 先跑，
@@ -1664,9 +2059,12 @@ class Companion(W.QWidget):
                                     current_rect=self.capture_rect()
                                     current_pixels=native.capture(current_rect)
                                     exclusion=getattr(self,'request_exclusion',None)
+                                    ignored=None
                                     if exclusion is not None:
-                                        native.mask_screen_rect(current_pixels,current_rect,exclusion)
-                                    same,check=unchanged_map(getattr(self,'request_pixels',None),current_pixels)
+                                        ex,ey,ew,eh=exclusion
+                                        ignored=(ex-current_rect[0],ey-current_rect[1],ew,eh)
+                                    same,check=unchanged_map(getattr(self,'request_pixels',None),current_pixels,
+                                                             ignored_rect=ignored)
                                 except Exception as error:
                                     same,check=False,dict(reason='verification_failed',error=str(error))
                                 trace('result_frame_check',token=token,same=same,**check)
@@ -1685,14 +2083,30 @@ class Companion(W.QWidget):
                             elif layer is not None and not no_map_evidence(details):
                                 # 只有真正显示出来的这一帧才配更新记忆身份：被顶掉的
                                 # 旧帧若也写进去，会把 cached 门的下限逐帧往下拉 0.05。
-                                self.cached_candidate = candidate
+                                from .src.manual_alignment import reliable_memory
+                                if not details.get('diagnostics',{}).get('manual_alignment'):
+                                    self.cached_candidate = candidate
+                                if reliable_memory(candidate,details):
+                                    self.confirmed_candidate=candidate
+                                elif (not details.get('diagnostics',{}).get('manual_alignment')
+                                      and getattr(self,'confirmed_candidate',None) is not None
+                                      and self.confirmed_candidate.map_id != candidate.map_id):
+                                    self.confirmed_candidate=None
+                                self.dismiss_manual_offer()
                                 # 看到地图了，之前攒的「没有地图」次数作废。
                                 self.no_map_streak = 0
-                                self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
+                                if details.get('diagnostics',{}).get('manual_alignment'):
+                                    self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
+                                else:
+                                    self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
                                 trace('overlay_displayed',token=token,map_id=candidate.map_id,floor=candidate.floor)
                                 floor_label='地下室' if candidate.floor==-1 else f'{candidate.floor}F'
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')
+                            elif details.get('diagnostics',{}).get('manual_offer'):
+                                self.overlay.hide()
+                                self.no_map_streak=0
+                                self.offer_manual_alignment(details['diagnostics']['manual_offer'],token)
                             elif details.get('reason') == 'map_ui_not_confirmed':
                                 self.close_map(silent=True)
                                 self.notify(message)
@@ -1732,6 +2146,9 @@ class Companion(W.QWidget):
                 self.notify('匹配进程中断，请重试')
 
     def shutdown(self):
+        self.dismiss_manual_offer()
+        self.gear.exit_timer.stop()
+        self.gear.exit_zone.close()
         self.keyboard.release()
         self.mouse.release()        # 先摘监听，再拆窗口
         self.leave_demo()

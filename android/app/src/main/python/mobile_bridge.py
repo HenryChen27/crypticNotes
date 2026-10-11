@@ -6,21 +6,26 @@ import numpy as np
 from mobile_matching import MobileMatcher as MapMatcher, selected_floor
 from mapmatching.src.live import match_with_cache, raw_layer, MultiplayerFallback
 from mapmatching.src.reference import read_image
+from mapmatching.src.manual_alignment import reliable_memory, automatic_cross_floor_reliable
+from mapmatching.src.live import centered_floor_layer
+from dataclasses import replace
 from mobile_gate import inspect_map_ui
 
 _matcher = None
 _cached = None
+_confirmed = None
 _pending_candidate = None
 _root = None
 _names = {}
 _originals = {}
 
 def initialize(root, difficulty, mode):
-    global _matcher, _cached, _root, _names, _pending_candidate
+    global _matcher, _cached, _confirmed, _root, _names, _pending_candidate
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
     _root = Path(root)
     _cached = None
+    _confirmed = None
     _pending_candidate = None
     _originals.clear()
     _matcher = MapMatcher(_root/'maps',difficulty=difficulty,mode=mode if difficulty=='nightmare' else None)
@@ -57,17 +62,19 @@ def inspect(data, excluded=None):
     return json.dumps(inspect_map_ui(pixels, excluded))
 
 def commit_match(token):
-    global _cached, _pending_candidate
+    global _cached, _confirmed, _pending_candidate
     if _pending_candidate is not None and _pending_candidate[0] == token:
         _cached = _pending_candidate[1]
+        if reliable_memory(_cached,{}):
+            _confirmed=_cached
         _pending_candidate = None
 
 
-def match(data, output, gated=False, remember=True, token=None):
+def match(data, output, gated=False, remember=True, token=None, force_floor=0):
     """Register the open map. `gated=True` when the caller already ran the
     map-panel gate on this exact frame, which saves a second decode and a
     second gate pass (~40-80ms) on the hot re-registration path."""
-    global _cached, _pending_candidate
+    global _cached, _confirmed, _pending_candidate
     pixels=decode(data)
     if not gated:
         visibility=inspect_map_ui(pixels)
@@ -89,7 +96,35 @@ def match(data, output, gated=False, remember=True, token=None):
         _matcher.solo.floor_hint = floor
     else:
         _matcher.floor_hint = floor
-    result,candidate,message=match_with_cache(_matcher,map_pixels,_cached,require_map_ui=False,floor_hint=floor)
+    offer=None
+    if _confirmed is not None and floor is not None and floor != _confirmed.floor:
+        ref=next((r for r in _matcher.references if r.map_id==_confirmed.map_id),None)
+        if ref is not None and any(r['floor']==floor for r in ref.regions):
+            offer=dict(map_id=_confirmed.map_id,floor=floor)
+    centered=False
+    if force_floor:
+        if offer is None or force_floor != floor:
+            return json.dumps(dict(ok=False,message='楼层已变化，请重新识别'))
+        primary=_matcher.solo if isinstance(_matcher,MultiplayerFallback) and _confirmed.map_id.startswith('nightmare/solo/') else getattr(_matcher,'primary',_matcher)
+        previous=getattr(primary,'manual_scale_bounds',None)
+        primary.manual_scale_bounds=(_confirmed.pose.scale*.6,_confirmed.pose.scale*1.65)
+        try:
+            result=primary.register_manual_floor(map_pixels,_confirmed.map_id,floor)
+        finally:
+            primary.manual_scale_bounds=previous
+        candidate=next((c for c in result.candidates if c.pose is not None
+            and np.isfinite([c.pose.scale,c.pose.tx,c.pose.ty]).all()
+            and c.floor==floor and c.retrieval_score>=1 and (c.explained or 0)>=.25
+            and c.contradiction is not None and c.contradiction<=.75
+            and .6<=c.pose.scale/_confirmed.pose.scale<=1.65),None)
+        centered=candidate is None
+        if centered:
+            candidate=replace(_confirmed,floor=floor,pose=None)
+        message='手动居中显示，位置未校准' if centered else '直接叠图，请核对位置'
+    else:
+        result,candidate,message=match_with_cache(_matcher,map_pixels,_cached,require_map_ui=False,floor_hint=floor)
+        if offer is not None and (candidate is None or not automatic_cross_floor_reliable(candidate,_confirmed,result)):
+            return json.dumps(dict(ok=False,message='是否需要直接叠图？',manual_offer=offer,details=result.to_dict()),default=str)
     if candidate is None:
         failure_text = {
             'insufficient_visible_structure': '可见地图结构太少，请继续探索',
@@ -101,14 +136,17 @@ def match(data, output, gated=False, remember=True, token=None):
     if reference.source not in _originals:
         _originals.clear()  # Bound decoded-image memory to the currently used map.
         _originals[reference.source] = read_image(_root/reference.source)
-    layer=raw_layer(pixels.shape,_originals[reference.source],reference,candidate,full_view=True)
-    clip=np.zeros((h,w),bool);clip[y:Y,x:X]=True
-    layer[~clip,3]=0
+    layer=(centered_floor_layer(pixels.shape,_originals[reference.source],reference,floor,scale=_confirmed.pose.scale)
+           if centered else raw_layer(pixels.shape,_originals[reference.source],reference,candidate,full_view=True))
     ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
     if not ok:raise ValueError('Overlay encoding failed')
     Path(output).write_bytes(encoded.tobytes())
-    if remember:
+    if force_floor:
+        _pending_candidate=None
+    elif remember:
         _cached=candidate
+        if reliable_memory(candidate,{}):
+            _confirmed=candidate
     else:
         _pending_candidate=(token,candidate)
     if candidate.mode=='solo' and _matcher.__class__ is MultiplayerFallback:

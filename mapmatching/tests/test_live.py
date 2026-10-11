@@ -39,11 +39,21 @@ class LiveTests(unittest.TestCase):
         np.testing.assert_array_equal(layer[30,30],[100,150,200,255])
         self.assertEqual(layer[70,30,3],0)
         self.assertEqual(layer[42,42,3],0)
-        self.assertEqual(layer[10,30,3],0)
+        self.assertEqual(layer[10,30,3],255)
         screen=np.full_like(original,20)
         result=composite(screen,layer)
         np.testing.assert_array_equal(result[30,30],[44,59,74])
         np.testing.assert_array_equal(result[70,30],screen[70,30])
+
+    def test_full_floor_is_drawn_outside_extraction_viewport_and_hud_boxes(self):
+        original=np.full((100,100,3),100,np.uint8)
+        ref=Reference('test','hard',None,'unused',None,None,[{'floor':1,'bbox':[0,0,100,100]}],[])
+        layer=raw_layer(original.shape,original,ref,self.candidate(),[[0,0,100,100]])
+        self.assertTrue(np.all(layer[:,:,3]==255))
+        shifted=self.candidate();shifted.pose=Pose(1,-20,-20)
+        layer=raw_layer(original.shape,original,ref,shifted)
+        self.assertEqual(layer[0,0,3],255)
+        self.assertEqual(layer[90,90,3],0)
 
     def test_missing_floor_rejected(self):
         ref=Reference('test','hard',None,'unused',None,None)

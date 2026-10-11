@@ -107,6 +107,29 @@ class MapMatcher:
                            'rotation': 0,
                            'confidence_calibrated': False})
 
+    def register_manual_floor(self, screenshot: np.ndarray, map_id: str, floor: int) -> MatchResult:
+        """Explicit opt-in: compare both views of ONE map/floor, without automatic gates."""
+        refs=[r for r in self.floor_references if r.map_id == map_id
+              and any(region['floor'] == floor for region in r.regions)]
+        candidates=[]
+        for full_view in (False,True):
+            evidence=extract(screenshot,full_view=full_view)
+            if len(evidence.corners) < 4:
+                continue
+            for retrieved in retrieve(evidence,refs):
+                bounds=getattr(self,'manual_scale_bounds',None)
+                candidate=(register(evidence,retrieved,scale_bounds=bounds) if bounds is not None
+                           else register(evidence,retrieved))
+                if candidate.pose is not None and candidate.floor in (None,floor):
+                    # This atlas entry contains only the user-confirmed floor.
+                    # Sparse boundary votes need not independently identify it.
+                    candidate.floor=floor
+                    candidates.append(candidate)
+        candidates.sort(key=lambda c: (-(c.explained or 0),c.contradiction or 0))
+        return MatchResult(candidates=candidates,diagnostics=dict(
+            manual_alignment=True,full_view=True,identity_search_performed=False,
+            pipeline='manual_known_floor',floor_tabs=dict(floor=floor)))
+
     def register_known(self, screenshot: np.ndarray, map_id: str) -> MatchResult:
         """Re-estimate scale, translation and floor against ONE remembered map.
 

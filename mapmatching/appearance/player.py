@@ -47,7 +47,7 @@ class PetAnimation:
         self.enabled = bool(enabled and not self.pixmap.isNull())
         self.timer.stop()
         if self.enabled:
-            self.mood = 'idle'
+            self.mood = 'matching' if getattr(self.button,'matching',False) else 'idle'
             self.clock.start()
             self.timer.start(50)
         self.button.setFixedSize(112, 132) if self.enabled else self.button.setFixedSize(46, 46)
@@ -55,6 +55,8 @@ class PetAnimation:
 
     def play(self, mood):
         if not self.enabled:
+            return
+        if getattr(self.button, 'matching', False) and mood != 'matching':
             return
         if self.timer.isActive() and self.mood == mood:
             return
@@ -67,15 +69,16 @@ class PetAnimation:
 
     def advance(self):
         if self.clock.elapsed() >= self.duration:
-            self.mood = 'idle'
+            if self.mood != 'matching':
+                self.mood = 'idle'
             self.clock.restart()
-            self.timer.setInterval(50)
+            self.timer.setInterval(33 if self.mood == 'matching' else 50)
         if self.button.isVisible():
             self.button.update()
 
     @property
     def duration(self):
-        return 4000 if self.mood == 'idle' else getattr(self.skin,'DURATIONS',{}).get(self.mood,2200)
+        return 3000 if self.mood == 'idle' else getattr(self.skin,'DURATIONS',{}).get(self.mood,2200)
 
     def paint(self, progress=None, render_scale=.32, origin=(7,20)):
         p = G.QPainter(self.button)

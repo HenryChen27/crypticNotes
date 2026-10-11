@@ -66,6 +66,7 @@ class SyncTests(unittest.TestCase):
         state=ToggleState(); token=state.open()
         candidate=Candidate('hard/test','hard',None,10,Pose(1,0,0),.9,.1,1)
         subject=Mock()
+        subject.manual_popup=None
         subject.worker_deadline=None
         subject.state=state
         subject.keys.edges.return_value=set()

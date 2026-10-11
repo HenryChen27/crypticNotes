@@ -352,6 +352,7 @@ class GearButton(W.QPushButton):
         p.drawImage(C.QRect(1,1,44,44),chalk_texture(44,44,False,.35,'circle'))
         p.drawImage(C.QRect(2,2,42,42),chalk_texture(42,42,'dark',.35,'circle'))
         p.translate(23,23)
+        p.rotate(getattr(self,'gear_rotation',0.))
         path=G.QPainterPath()
         for i in range(64):
             a=2*math.pi*i/64

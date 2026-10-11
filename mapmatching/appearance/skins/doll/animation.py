@@ -21,7 +21,10 @@ def body_motion(mood, progress):
     phase=2*math.pi*t
     if mood == 'idle':
         breath = (1-math.cos(phase))*.5
-        return dict(x=0., y=-5*breath, torso=0., squash=-.012*breath)
+        return dict(x=0., y=-14*breath, torso=0., squash=-.025*breath)
+    if mood == 'matching':
+        return dict(x=3*math.sin(phase), y=-10*(1-math.cos(phase)),
+                    torso=3*math.sin(phase), squash=0.)
     if mood in ('heart','happy'):
         sway=math.sin(phase)
         return dict(x=5*sway*envelope,y=-42*envelope,
@@ -40,6 +43,11 @@ def pose(mood, progress):
     flutter = math.sin(t*math.pi*12)*ease
     angles = dict(head=0., left_upper=0., left_lower=0.,
                   right_upper=0., right_lower=0., left_leg=0., right_leg=0.)
+    if mood == 'matching':
+        sway = math.sin(2*math.pi*t)
+        angles.update(head=18*sway, left_upper=18*sway,
+                      right_upper=18*sway, left_leg=-5*sway, right_leg=5*sway)
+        return angles, 0.
     if mood == 'idle':
         sway = math.sin(2*math.pi*t)**3
         angles.update(left_upper=2.2*sway, right_upper=-1.8*sway,

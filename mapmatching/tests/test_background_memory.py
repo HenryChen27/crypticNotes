@@ -36,6 +36,7 @@ class BackgroundMemoryTests(unittest.TestCase):
     def subject(self):
         state=ToggleState();state.open()
         return SimpleNamespace(state=state,overlay=Mock(),toast=Mock(),pending=None,
+            restore_capture_companion=Mock(),gear=Mock(),
             busy=True,process=Mock(),ready=True,stop_worker=Mock(),notify=Mock(),
             keys=SimpleNamespace(edges=lambda:set(),hide_key=8,toggle_key=71),enabled=Mock(),
             is_game=lambda _:False,connection=Mock(),worker_deadline=None,

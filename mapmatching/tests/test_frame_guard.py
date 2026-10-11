@@ -18,7 +18,8 @@ class FrameGuardTests(unittest.TestCase):
             foreground_lost=lambda:False,rect_at_capture=None,follow=Mock(),
             connection=Mock(),busy=True,started=0,follow_active=False,follow_dirty=True,
             mouse_busy=lambda:False,request_pixels=pixels,capture_rect=lambda:(0,0,10,10),
-            overlay=Mock(),opacity=SimpleNamespace(value=lambda:30),notify=Mock())
+            overlay=Mock(),gear=Mock(),opacity=SimpleNamespace(value=lambda:30),notify=Mock(),
+            dismiss_manual_offer=Mock())
         s.connection.poll.return_value=True
         s.connection.recv.return_value=('result',(token,pixels,'ok',candidate,10,{}))
         with patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42),patch.object(native,'capture',return_value=pixels),patch('mapmatching.src.frame_guard.unchanged_map',return_value=(True,{'reason':'test'})),patch('mapmatching.ui.no_map_evidence',return_value=False):
@@ -38,6 +39,17 @@ class FrameGuardTests(unittest.TestCase):
         image=np.zeros((600,960,3),np.uint8)
         with patch('mapmatching.src.frame_guard.inspect_map_ui',return_value={'visible':False}):
             self.assertFalse(unchanged_map(image,image)[0])
+
+    def test_companion_motion_is_ignored_but_terrain_changes_are_not(self):
+        image=np.zeros((600,960,3),np.uint8)
+        image[180:400,400:600]=150
+        after=image.copy();after[150:230,750:830]=200
+        ignored=(750,150,80,80)
+        with patch('mapmatching.src.frame_guard.inspect_map_ui',side_effect=[{'visible':False},{'visible':True}]):
+            self.assertTrue(unchanged_map(image,after,ignored_rect=ignored)[0])
+        after[200:350,450:550]=0
+        with patch('mapmatching.src.frame_guard.inspect_map_ui',side_effect=[{'visible':False},{'visible':True}]):
+            self.assertFalse(unchanged_map(image,after,ignored_rect=ignored)[0])
 
     def test_only_left_button_or_wheel_invalidates_map(self):
         watcher=MouseWatcher()

@@ -61,7 +61,7 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
     """BGRA original colors at full alpha; UI applies user opacity once.
 
     Only the identified floor is used. No recoloring, inpainting or substitute
-    drawing. Masks exclude source thumbnails and the game's HUD viewport.
+    drawing. Only atlas floor boundaries and source exclusions are masked.
     """
     if candidate.map_id != reference.map_id or candidate.pose is None:
         raise ValueError('Missing or mismatched pose')
@@ -80,17 +80,12 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
     source[:,:,3] = alpha
     h,w = shape[:2]
     layer = cv2.warpAffine(source, np.array([[p.scale,0,p.tx],[0,p.scale,p.ty]],float), (w,h))
-    # Same normalized viewport used by the evidence extractor.
-    mask = np.zeros((h,w),bool)
-    mask[int(.18*h):int(.82*h),int(.25*w):int(.91*w)] = True
-    if not full_view:
-        layer[~mask,3] = 0
-    for x0,y0,x1,y1 in excluded_boxes:
-        layer[max(0,y0):min(h,y1),max(0,x0):min(w,x1),3] = 0
+    # Evidence extraction excludes HUD clutter, but those exclusions must not
+    # clip the displayed floor. The screen edge is the only output boundary.
     return layer
 
 
-def centered_floor_layer(shape, original, reference, floor, margin=.10):
+def centered_floor_layer(shape, original, reference, floor, margin=.10, scale=None):
     """Show a known floor centered when screen geometry is too sparse to align.
 
     This is deliberately a presentation fallback: identity comes from the
@@ -101,6 +96,12 @@ def centered_floor_layer(shape, original, reference, floor, margin=.10):
     if region is None:
         return None
     x0, y0, x1, y1 = map(int, region['bbox'])
+    if scale is not None:
+        h,w=shape[:2]
+        from .types import Candidate, Pose
+        candidate=Candidate(reference.map_id,reference.difficulty,reference.mode,0,
+            Pose(scale,w/2-scale*(x0+x1)/2,h/2-scale*(y0+y1)/2),floor=floor)
+        return raw_layer(shape,original,reference,candidate)
     crop = original[max(0,y0):min(original.shape[0],y1),
                     max(0,x0):min(original.shape[1],x1)]
     if crop.size == 0:
@@ -213,6 +214,13 @@ class MultiplayerFallback:
         # Do not use a rejected solo candidate to infer the cached duo floor.
         return result
 
+    def register_manual_floor(self, pixels, map_id, floor):
+        if map_id.startswith('nightmare/solo/'):
+            if self.solo is None:
+                self.solo=self.solo_factory()
+            return self.solo.register_manual_floor(pixels,map_id,floor)
+        return self.primary.register_manual_floor(pixels,map_id,floor)
+
     def register_known(self, pixels, map_id):
         if map_id.startswith('nightmare/solo/'):
             if self.solo is None:
@@ -240,6 +248,9 @@ class SharedTerrainMatcher:
     @property
     def references(self):
         return self.primary.references
+
+    def register_manual_floor(self, pixels, map_id, floor):
+        return self.primary.register_manual_floor(pixels,map_id,floor)
 
     def register_known(self, pixels, map_id):
         self.primary.floor_hint = self.floor_hint
@@ -311,19 +322,68 @@ def worker(connection, root, difficulty, mode):
             cached = previous[0] if previous else None
             options = previous[1] if len(previous) > 1 else {}
             start = time.perf_counter()
-            result,candidate,message = match_with_cache(matcher,pixels,cached,
-                require_map_ui=options.get('source') == 'screen')
+            if options.get('force_floor') is not None and options.get('confirmed_candidate') is not None:
+                from .matcher import MatchResult
+                result=MatchResult(reason='manual_alignment_pending')
+                candidate=None
+                message='画面或楼层已变化，请重新识别后确认'
+            else:
+                result,candidate,message = match_with_cache(matcher,pixels,cached,
+                    require_map_ui=options.get('source') == 'screen')
+            centered_offer = None
+            confirmed=options.get('confirmed_candidate')
+            if confirmed is not None and options.get('force_floor') is None:
+                from .manual_alignment import blank_floor_offer, automatic_cross_floor_reliable
+                cross_offer=blank_floor_offer(pixels,confirmed,result.to_dict())
+                if cross_offer is not None and (candidate is None or
+                        not automatic_cross_floor_reliable(candidate,confirmed,result)):
+                    result.diagnostics['cross_floor_auto_rejected']=True
+                    candidate=None
+                    message='当前楼层线索不足，请确认是否直接叠图'
+            if (candidate is None or options.get('force_floor') is not None) and options.get('confirmed_candidate') is not None:
+                from .manual_alignment import cross_floor_candidate, blank_floor_offer
+                offer = blank_floor_offer(pixels,options['confirmed_candidate'],result.to_dict())
+                if options.get('force_floor') is not None:
+                    candidate=None
+                if offer is not None:
+                    ref=next((r for r in matcher.references if r.map_id == offer['map_id']),None)
+                    if ref is None:
+                        # A fresh duo worker may not have loaded the remembered solo atlas yet.
+                        matcher.register_known(pixels,offer['map_id'])
+                        ref=next((r for r in matcher.references if r.map_id == offer['map_id']),None)
+                    if ref is None or not any(r['floor'] == offer['floor'] for r in ref.regions):
+                        offer=None
+                if offer is not None:
+                    wanted = options.get('force_floor')
+                    if wanted == offer['floor']:
+                        forced, registration = cross_floor_candidate(
+                            matcher, pixels, options['confirmed_candidate'], result.to_dict())
+                        if forced is not None:
+                            result, candidate = registration, forced
+                        else:
+                            centered_offer=offer
+                            candidate=replace(options['confirmed_candidate'],floor=offer['floor'],pose=None)
+                        result.diagnostics['manual_alignment'] = True
+                        result.diagnostics['map_ui'] = dict(visible=True, reason='manual_verified_floor_panel')
+                        message = ('手动居中显示 · 空白楼层位置未校准' if centered_offer else
+                                   '手动沿用已确认地图 · 请核对对齐位置')
+                    else:
+                        result.diagnostics['manual_offer'] = offer
             layer = None
-            if candidate is not None:
+            if centered_offer is not None:
+                ref=next((r for r in matcher.references if r.map_id == candidate.map_id),None)
+                if ref is not None:
+                    layer=centered_floor_layer(pixels.shape,read_image(root/ref.source),ref,candidate.floor,
+                                               scale=options['confirmed_candidate'].pose.scale)
+                result.diagnostics['manual_centered'] = True
+            elif candidate is not None:
                 ref = next(r for r in matcher.references if r.map_id == candidate.map_id)
                 layer = raw_layer(pixels.shape, read_image(root/ref.source), ref, candidate,
                                   result.diagnostics.get('excluded_panel_boxes',[]),
                                   full_view=result.diagnostics.get('full_view',False))
-            # A failed geometric match is not evidence that the map UI is open.
-            # Never turn a rejected candidate into a centered overlay: ordinary
-            # gameplay can have corners and even a spurious floor assignment.
-            # Centered previews require independent map-UI/floor detection,
-            # which the current matcher does not provide.
+            # Centering is allowed ONLY after this request's explicit consent,
+            # reliable other-floor history and independent UI/floor validation.
+            # It never establishes identity or becomes an automatic cached pose.
             if layer is not None and mode == 'duo' and candidate.mode == 'solo':
                 message = '多人暂无专用路线'
                 result.diagnostics['multiplayer_solo_fallback'] = True

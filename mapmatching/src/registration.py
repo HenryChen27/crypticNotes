@@ -6,20 +6,31 @@ from .types import Candidate, Evidence, Pose
 from .verification import observed_points, verify, residuals
 
 
-def register(game: Evidence, retrieved: Retrieved) -> Candidate:
+def register(game: Evidence, retrieved: Retrieved, *, scale_bounds=None) -> Candidate:
     ref = retrieved.reference
     result = Candidate(ref.map_id, ref.difficulty, ref.mode, retrieved.score)
     points = observed_points(game)
-    if not len(points) or not len(retrieved.hypotheses):
+    # Work in normalized image coordinates so resolution and atlas pixel size
+    # do not change the gate. Reject collapsed whole-floor hypotheses BEFORE
+    # scoring, allowing a valid larger hypothesis to win instead.
+    low,high=.45,4.0
+    if scale_bounds is not None:
+        factor=game.image_factor/ref.evidence.image_factor
+        low=max(low,scale_bounds[0]*factor)
+        high=min(high,scale_bounds[1]*factor)
+    hypotheses=np.asarray(retrieved.hypotheses)
+    if len(hypotheses):
+        hypotheses=hypotheses[(hypotheses[:,0]>=low)&(hypotheses[:,0]<=high)]
+    if not len(points) or not len(hypotheses):
         return result
-    ranked = sorted(retrieved.hypotheses, key=lambda p: -verify(p, points, ref)[0])
+    ranked = sorted(hypotheses, key=lambda p: -verify(p, points, ref)[0])
     best, best_score = ranked[0], -1.
     for initial in ranked[:3]:
         # Bounded local refinement, never a whole-map translation search.
         s, tx, ty = initial
         def objective(p: np.ndarray) -> float:
             return float(np.minimum(residuals(p, points, ref), 10).mean())
-        fit = minimize(objective, initial, method='Powell', bounds=[(s*.9, s*1.1), (tx-8, tx+8), (ty-8, ty+8)], options={'maxiter': 12, 'xtol': .02, 'ftol': .001})
+        fit = minimize(objective, initial, method='Powell', bounds=[(max(low,s*.9), min(high,s*1.1)), (tx-8, tx+8), (ty-8, ty+8)], options={'maxiter': 12, 'xtol': .02, 'ftol': .001})
         for pose in (initial, fit.x):
             score, contradiction = verify(pose, points, ref)
             if score > best_score:

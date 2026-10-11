@@ -24,10 +24,12 @@ class PetTests(unittest.TestCase):
                 self.assertTrue(button.pet.timer.isActive())
         button.pet.enable(False)
 
-    def test_idle_breath_is_small_and_loops_at_rest(self):
+    def test_idle_breath_is_visible_and_loops_at_rest(self):
         from mapmatching.appearance.skins.doll.animation import body_motion
         self.assertEqual(body_motion('idle', 0), body_motion('idle', 1))
-        self.assertLessEqual(abs(body_motion('idle', .5)['y']), 6)
+        self.assertGreaterEqual(abs(body_motion('idle', .5)['y']), 12)
+        button=DraggableGear(W.QWidget());button.pet.enable(True)
+        self.assertEqual(button.pet.duration,3000)
         for t in (0, .5, 1):
             self.assertTrue(all(abs(v) < 1e-10 for v in pose('idle', t)[0].values()))
         forward, _ = pose('idle', .25)
@@ -36,6 +38,24 @@ class PetTests(unittest.TestCase):
             self.assertGreater(abs(forward[limb]), 0)
             self.assertLess(abs(forward[limb]), 3)
             self.assertAlmostEqual(forward[limb], -backward[limb])
+
+    def test_matching_loops_and_hover_cannot_interrupt(self):
+        from unittest.mock import patch
+        button=DraggableGear(W.QWidget());button.pet.enable(True)
+        button.set_matching(True)
+        button.pet.play('curious')
+        self.assertEqual(button.pet.mood,'matching')
+        with patch.object(button.pet,'clock') as clock:
+            clock.elapsed.return_value=3000
+            button.pet.advance()
+            self.assertEqual(button.pet.mood,'matching')
+        button.set_matching(False)
+        self.assertEqual(button.pet.mood,'idle')
+        self.assertFalse(button.match_timer.isActive())
+        button.pet.enable(False)
+        button.set_matching(True)
+        self.assertTrue(button.match_timer.isActive())
+        button.set_matching(False)
 
     @classmethod
     def setUpClass(cls):

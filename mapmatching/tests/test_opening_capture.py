@@ -52,7 +52,7 @@ class OpeningCaptureTests(unittest.TestCase):
         state=ToggleState();token=state.open();callbacks=[]
         s=SimpleNamespace(state=state,opening=True,open_probe_count=0,demo_window=None,
             foreground_lost=lambda:False,capture_rect=lambda:(0,0,2560,1600),
-            show=Mock(),take_capture=Mock(),start_worker=Mock(),cached_candidate=None,
+            show=Mock(),restore_capture_companion=Mock(),take_capture=Mock(),start_worker=Mock(),cached_candidate=None,
             record_failures=SimpleNamespace(isChecked=lambda:True),status=Mock(),
             records_directory=lambda:'test-records')
         with patch.object(native,'capture',return_value=np.zeros((10,10,3),np.uint8)),patch.object(C.QTimer,'singleShot',side_effect=lambda ms,fn:callbacks.append(fn)),patch('mapmatching.src.map_visibility.inspect_map_ui',return_value={'visible':False}):

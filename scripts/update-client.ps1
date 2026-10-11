@@ -1,4 +1,4 @@
-﻿param([string]$InstallRoot = '', [switch]$Detached, [switch]$FunctionsOnly)
+﻿param([string]$InstallRoot = '', [switch]$Detached, [switch]$FunctionsOnly, [string]$ReadyFile = '')
 $ErrorActionPreference = 'Stop'
 
 function Resolve-Child([string]$Root, [string]$Relative) {
@@ -105,13 +105,16 @@ $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 if (-not $Detached) {
     $tempScript = Join-Path ([IO.Path]::GetTempPath()) ('crypticnotes-update-' + [Guid]::NewGuid().ToString('N') + '.ps1')
     Copy-Item -LiteralPath $PSCommandPath -Destination $tempScript
-    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$tempScript+'"'),'-Detached','-InstallRoot',('"'+$InstallRoot+'"'))
+    $launchArgs = @('-NoProfile','-STA','-ExecutionPolicy','Bypass','-File',('"'+$tempScript+'"'),'-Detached','-InstallRoot',('"'+$InstallRoot+'"'))
+    if ($ReadyFile) { $launchArgs += @('-ReadyFile',('"'+$ReadyFile+'"')) }
+    Start-Process powershell.exe -WindowStyle Hidden -ArgumentList $launchArgs
     exit
 }
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
+[Windows.Forms.Application]::SetCompatibleTextRenderingDefault($true)
 
 # A bare MessageBox can land behind the game or editor exactly like the main
 # window did, so give it an invisible topmost owner: an owned dialog inherits
@@ -172,7 +175,27 @@ $form.MaximizeBox = $false
 $form.TopMost = $true
 $form.BackColor = [Drawing.Color]::FromArgb(37,55,69)
 $form.ForeColor = [Drawing.Color]::FromArgb(224,235,242)
-$form.Font = [Drawing.Font]::new('Microsoft YaHei UI',10)
+# Load bundled fonts privately, without changing the system font collection.
+$updateFonts = [Drawing.Text.PrivateFontCollection]::new()
+$fontMemory = [IntPtr]::Zero
+$fontFamily = 'Microsoft YaHei UI'
+try {
+    $settingsFile = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'IdentityVMapAssistant\out\mapmatching\ui_settings.json'
+    $fontMode = 'game'
+    if (Test-Path -LiteralPath $settingsFile) { $fontMode = (Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json).font_mode }
+    if ($fontMode -eq 'game' -or -not $fontMode) {
+        $fontFile = Join-Path $InstallRoot 'mapmatching\assets\fonts\HYDiWRGJ.ttf'
+        if (Test-Path -LiteralPath $fontFile) {
+            # AddFontFile retains a lock and would block replacement on update.
+            $fontBytes = [IO.File]::ReadAllBytes($fontFile)
+            $fontMemory = [Runtime.InteropServices.Marshal]::AllocHGlobal($fontBytes.Length)
+            [Runtime.InteropServices.Marshal]::Copy($fontBytes,0,$fontMemory,$fontBytes.Length)
+            $updateFonts.AddMemoryFont($fontMemory,$fontBytes.Length)
+            $fontFamily = $updateFonts.Families[0]
+        }
+    } elseif ($fontMode.StartsWith('family:')) { $fontFamily = $fontMode.Substring(7) }
+} catch { $fontFamily = 'Microsoft YaHei UI' }
+$form.Font = [Drawing.Font]::new($fontFamily,10)
 $label = [Windows.Forms.Label]::new()
 $label.SetBounds(22,18,396,92)
 $label.Text = '正在检查更新…'
@@ -187,6 +210,7 @@ $button.Add_Click({ $form.Close() })
 $form.Controls.AddRange(@($label,$bar,$button))
 $form.Show()
 [void]$form.Activate()
+if ($ReadyFile) { [IO.File]::WriteAllText($ReadyFile,'ready') }
 $work = Join-Path ([IO.Path]::GetTempPath()) ('crypticnotes-package-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($work)
 $client = [Net.WebClient]::new()
@@ -386,4 +410,7 @@ try {
     }
     if ($locked) { $mutex.ReleaseMutex() }
     $mutex.Dispose()
+    $form.Dispose()
+    $updateFonts.Dispose()
+    if ($fontMemory -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::FreeHGlobal($fontMemory) }
 }

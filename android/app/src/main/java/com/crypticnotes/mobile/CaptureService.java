@@ -226,6 +226,27 @@ public class CaptureService extends Service {
     private boolean checking = false;
     private long checkingSince = 0;
     private boolean manualRetry = false;
+    private View manualPrompt;
+    private int pendingForceFloor;
+    private boolean manualOfferSuppressed;
+
+    private void dismissManualPrompt() {
+        if(manualPrompt!=null) { windows.removeView(manualPrompt);manualPrompt=null; }
+    }
+
+    private void showManualPrompt(JSONObject offer,int token) {
+        if(manualOfferSuppressed || manualPrompt!=null) return;
+        final int floor=offer.optInt("floor");
+        manualPrompt=new ManualAlignmentPrompt(this,()-> {
+            if(destroyed || token!=generation) { dismissManualPrompt();return; }
+            clearOverlay();pendingForceFloor=floor;manualRetry=true;lastMatch=0;
+            repoll(0);
+        },()-> { dismissManualPrompt();manualOfferSuppressed=true; });
+        WindowManager.LayoutParams p=params(Theme.px(this,200),Theme.px(this,106),true);
+        p.x=Math.max(0,Math.min(width-p.width,badgeParams.x-p.width));
+        p.y=Math.max(0,Math.min(height-p.height,badgeParams.y));
+        windows.addView(manualPrompt,p);
+    }
     private boolean timeoutReported = false;
     private int width, height, density;
     /**
@@ -872,6 +893,7 @@ public class CaptureService extends Service {
     }
 
     private void clearOverlay() {
+        dismissManualPrompt();pendingForceFloor=0;manualOfferSuppressed=false;
         generation++;
         overlayLayer = null;
         overlayAttached = false;
@@ -1011,6 +1033,11 @@ public class CaptureService extends Service {
             manualRetry = false;
             gateOnly = false;
             blink();
+            return;
+        }
+        if(manualPrompt!=null) {
+            if(SystemClock.elapsedRealtime()-lastGateAt>=800) { gateOnly=true;capture(); }
+            else repoll(WATCH_MS);
             return;
         }
         if ((overlayLayer != null || busy) && SystemClock.elapsedRealtime() - lastGateAt >= 800) {
@@ -1243,15 +1270,19 @@ public class CaptureService extends Service {
         matchPixels = framePixels;
         final int token = generation;
         final int requestEpoch = memoryEpoch;
+        final int forceFloor=pendingForceFloor;
+        pendingForceFloor=0; // Consent is consumed by exactly this request.
         compute.execute(() -> {
             Bitmap layer = null;
+            JSONObject offer=null;
             String label = "识别失败，请重试";
             try {
                 File file = new File(getCacheDir(), "overlay.png");
                 // gated=True: capture() already confirmed the panel is open on
                 // this exact frame, so the adapter need not re-run the gate.
                 JSONObject result = new JSONObject(
-                        bridge.callAttr("match", frame, file.toString(), true, false, token).toString());
+                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor).toString());
+                offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
                 if (ok) layer = BitmapFactory.decodeFile(file.toString());
                 String message = result.optString("message");
@@ -1260,6 +1291,7 @@ public class CaptureService extends Service {
             }
             final Bitmap decoded = layer;
             final String text = label;
+            final JSONObject proposedOffer=offer;
             main.post(() -> {
                 busy = false;
                 // Closing only suppresses presentation. Reopening supersedes
@@ -1273,6 +1305,10 @@ public class CaptureService extends Service {
                     return;
                 }
                 if (decoded == null) {
+                    if(proposedOffer!=null) {
+                        setStatus(S_IDLE,null);collapseBadge();showManualPrompt(proposedOffer,token);
+                        repoll(WATCH_MS);return;
+                    }
                     if (overlayLayer == null) setStatus(S_FAILED, text);
                     repoll(WATCH_MS);
                     return;
@@ -1676,6 +1712,7 @@ public class CaptureService extends Service {
         if (current == this) current = null;
         generation++;
         main.removeCallbacksAndMessages(null);
+        dismissManualPrompt();
         if (spin != null) spin.cancel();
         if (recordingPulse != null) recordingPulse.cancel();
         if (bubbleAnim != null) bubbleAnim.cancel();
