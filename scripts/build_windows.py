@@ -10,6 +10,11 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     env=os.environ.copy()
+    # Host Anaconda DLLs can shadow Windows ICU while PyInstaller resolves Qt
+    # dependencies. Use this build interpreter and the Windows runtime only.
+    windows=Path(env.get('SystemRoot',r'C:\Windows'))
+    env['PATH']=os.pathsep.join(map(str,(Path(sys.executable).parent,
+        windows/'System32',windows,windows/'System32/Wbem')))
     extras=[]
     if importlib.util.find_spec('PyInstaller') is None and (ROOT/'.build-deps').exists():
         extras.append(str(ROOT/'.build-deps'))
@@ -18,7 +23,7 @@ def main():
     env['PYTHONPATH']=os.pathsep.join([str(ROOT),*extras])
     subprocess.run([sys.executable,'-m','mapmatching','build-index',
                     '--index',str(ROOT/'maps')],cwd=ROOT,env=env,check=True)
-    args=[sys.executable,'-m','PyInstaller','--noconfirm','--onedir','--windowed',
+    args=[sys.executable,'-m','PyInstaller','--clean','--noconfirm','--onedir','--windowed',
           '--contents-directory','.','--name','IdentityVMapAssistant','--paths',str(ROOT),
           '--hidden-import','mapmatching.portable_check',
           '--distpath',str(ROOT/'dist'),'--workpath',str(ROOT/'build/pyinstaller'),
