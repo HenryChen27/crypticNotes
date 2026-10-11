@@ -85,7 +85,7 @@ class GameStore:
             actual = hashlib.file_digest(stream, 'sha256').hexdigest()
         if actual != checksum:
             raise ValueError('小游戏包校验失败，请重新下载')
-        staging = Path(tempfile.mkdtemp(prefix='.install-', dir=self.root))
+        staging = Path(tempfile.mkdtemp(prefix='.install-', dir=self.root)).resolve()
         backup = self.root / '.previous-jellyfish'
         try:
             with zipfile.ZipFile(archive) as bundle:

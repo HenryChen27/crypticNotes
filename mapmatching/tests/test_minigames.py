@@ -5,6 +5,7 @@ import json
 import tempfile
 import unittest
 import zipfile
+import sys
 from pathlib import Path
 from unittest.mock import patch
 from mapmatching.minigames import GameStore, package_info, platform_key
@@ -64,6 +65,22 @@ class GamePackageTests(unittest.TestCase):
         archive, checksum = self.bundle((link, b'../../escaped'))
         with self.assertRaises(ValueError):
             self.store.install(archive, checksum)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'Signed app links are macOS only')
+    def test_mac_framework_links_and_escape(self):
+        link = zipfile.ZipInfo('Jellyfish.app/Contents/Frameworks/Fixture.framework/Versions/Current')
+        link.external_attr = 0o120777 << 16
+        archive, _ = self.bundle()
+        with zipfile.ZipFile(archive, 'a') as z:
+            z.writestr('Jellyfish.app/Contents/Frameworks/Fixture.framework/Versions/A/data', b'framework')
+            z.writestr(link, b'A')
+        checksum = hashlib.sha256(archive.read_bytes()).hexdigest()
+        self.store.install(archive, checksum)
+        self.assertEqual((self.store.folder/link.filename/'data').read_bytes(), b'framework')
+        archive, checksum = self.bundle((link, b'../../../../../../escaped'))
+        with self.assertRaises(ValueError):
+            self.store.install(archive, checksum)
+        self.assertTrue(self.store.installed())
 
     def test_wrong_download_size_and_cancel_leave_no_install(self):
         archive, checksum = self.bundle()
