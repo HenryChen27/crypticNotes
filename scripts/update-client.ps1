@@ -1,6 +1,23 @@
 ﻿param([string]$InstallRoot = '', [switch]$Detached, [switch]$FunctionsOnly, [string]$ReadyFile = '')
 $ErrorActionPreference = 'Stop'
 
+function Stop-UpdateProcessTree([int]$TargetId, [string]$AppPath) {
+    # The UI may exit together with its worker between enumeration and taskkill.
+    # PowerShell 5.1 promotes native stderr to a terminating error under Stop.
+    $previousPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & taskkill.exe /PID $TargetId /T /F 2>$null | Out-Null
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+    Wait-Process -Id $TargetId -Timeout 8 -ErrorAction SilentlyContinue
+    $remaining = Get-Process -Id $TargetId -ErrorAction SilentlyContinue
+    if ($remaining -and $remaining.Path -and [IO.Path]::GetFullPath($remaining.Path) -eq $AppPath) {
+        throw '插件进程未能退出，请关闭插件后重新更新；如果插件以管理员身份运行，请以管理员身份运行更新程序。'
+    }
+}
+
 function Resolve-Child([string]$Root, [string]$Relative) {
     if ([IO.Path]::IsPathRooted($Relative)) { throw '更新路径必须为相对路径' }
     $rootPath = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
@@ -374,8 +391,7 @@ try {
             # can leave that child holding package/map files long enough for
             # replacement to fail. taskkill /T scopes the cleanup to this app's
             # process tree and does not touch another installation.
-            & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
-            Wait-Process -Id $process.Id -Timeout 8 -ErrorAction SilentlyContinue
+            Stop-UpdateProcessTree $process.Id $appPath
         }
         Install-Payload $payload $InstallRoot (Join-Path $work 'backup')
         @{sha256=$expected} | ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding UTF8
