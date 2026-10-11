@@ -65,7 +65,7 @@ class GameWindow : Form {
                 File.WriteAllText(Path.Combine(profile,"ready"),"ready");save.Start();
                 if(report!=null){
                     await Task.Delay(2500);
-                    string result=await web.ExecuteScriptAsync("({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WebView2'})");
+                    string result=await web.ExecuteScriptAsync("({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,storage:(()=>{try{localStorage.setItem('__nativeSmoke','yes');return localStorage.getItem('__nativeSmoke')==='yes'}catch(e){return false}})(),images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WebView2'})");
                     File.WriteAllText(report,result);Close();
                 }
             };

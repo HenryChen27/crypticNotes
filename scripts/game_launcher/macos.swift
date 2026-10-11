@@ -26,6 +26,10 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback=[]
+        if let saved=try? String(contentsOf:profile.appendingPathComponent("local-storage.json"),encoding:.utf8),
+           let encoded=try? JSONSerialization.data(withJSONObject:[saved]),let literal=String(data:encoded,encoding:.utf8){
+            config.userContentController.addUserScript(WKUserScript(source:"try{Object.entries(JSON.parse(\(literal)[0])).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}",injectionTime:.atDocumentStart,forMainFrameOnly:true))
+        }
         if let audio=try? String(contentsOf:profile.appendingPathComponent("audio.json"),encoding:.utf8),
            let encoded=try? JSONSerialization.data(withJSONObject:[audio]),
            let literal=String(data:encoded,encoding:.utf8){
@@ -57,6 +61,9 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     }
     @objc func close(){window.close()}
     func saveAudio(){
+        view.evaluateJavaScript("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))"){result,error in
+            if let text=result as? String,text.utf8.count<5*1024*1024{try? text.write(to:profile.appendingPathComponent("local-storage.json"),atomically:true,encoding:.utf8)}
+        }
         view.evaluateJavaScript("localStorage.getItem('jellyfish.audioSettings')"){result,error in
             if let text=result as? String,text.utf8.count<4096{try? text.write(to:profile.appendingPathComponent("audio.json"),atomically:true,encoding:.utf8)}
         }
@@ -71,7 +78,7 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         try? "ready".write(to:profile.appendingPathComponent("ready"),atomically:true,encoding:.utf8)
         if let report=option("--smoke-report"){
             DispatchQueue.main.asyncAfter(deadline:.now()+2.5){
-                webView.evaluateJavaScript("JSON.stringify({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WKWebView'})"){result,error in
+                webView.evaluateJavaScript("JSON.stringify({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,storage:(()=>{try{localStorage.setItem('__nativeSmoke','yes');return localStorage.getItem('__nativeSmoke')==='yes'}catch(e){return false}})(),images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WKWebView'})"){result,error in
                     if let text=result as? String{try? text.write(toFile:report,atomically:true,encoding:.utf8)}
                     self.close()
                 }

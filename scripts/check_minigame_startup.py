@@ -14,7 +14,7 @@ from mapmatching.minigames import GameStore, LauncherStore, platform_key
 def main():
     native = '--native' in sys.argv
     output = ROOT/('out/minigames-native' if native else 'out/minigames')
-    catalog = json.loads((output/'desktop-games.json').read_text())
+    catalog = json.loads((output/('native-desktop-games.json' if native else 'desktop-games.json')).read_text())
     info = catalog['game'] if native else catalog['packages'][platform_key()]
     archive = output/info['url'].rsplit('/', 1)[1]
     with tempfile.TemporaryDirectory() as directory:
@@ -41,7 +41,7 @@ def main():
         data = json.loads(report.read_text())
         assert data.get('canvas') and data.get('matter'), data
         if native:
-            assert data.get('images',0) >= 16 and data.get('audio',0) >= 15, data
+            assert data.get('images',0) >= 16 and data.get('audio',0) >= 15 and data.get('storage'), data
         print('Installed signed game launched:', data)
         # WebView2 releases its user-data lock shortly after the host exits.
         for attempt in range(30):

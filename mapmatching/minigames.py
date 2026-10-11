@@ -12,7 +12,7 @@ import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
 
-CATALOG_URL = 'https://github.com/HenryChen27/Jellyfish/releases/latest/download/desktop-games.json'
+CATALOG_URL = 'https://github.com/HenryChen27/Jellyfish/releases/latest/download/native-desktop-games.json'
 GAME_ID = 'jellyfish'
 MAX_DOWNLOAD = 600 * 1024 * 1024
 MAX_EXTRACTED = 1400 * 1024 * 1024

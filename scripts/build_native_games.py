@@ -78,7 +78,7 @@ def main():
             hashes[rel.as_posix()]=checksum
     (out/'game-resource-hashes.json').write_text(json.dumps(hashes,ensure_ascii=False,indent=2),encoding='utf-8')
     (game/'package.json').write_text(json.dumps({'id':'jellyfish','runtime':'system-webview','version':'2.0.0'}),encoding='utf-8')
-    catalog_path=out/'desktop-games.json'
+    catalog_path=out/'native-desktop-games.json'
     catalog=json.loads(catalog_path.read_text()) if catalog_path.exists() else {'schema':2,'id':'jellyfish','launchers':{}}
     catalog['launchers'][key]=bundle(runtime,out/('GameLauncher-'+key+'.zip'))
     catalog['game']=bundle(game,out/'Jellyfish-game.zip')
