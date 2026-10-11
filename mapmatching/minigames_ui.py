@@ -147,7 +147,10 @@ class GameControls(W.QWidget):
         self.ready_file = profile/'ready'
         self.ready_file.unlink(missing_ok=True)
         self.process.setWorkingDirectory(str(self.store.folder))
-        self.process.start(str(self.store.entry()), ['--game-root', str(self.store.folder/'game'), '--profile', str(profile), '--title', '合成大水母'])
+        arguments = ['--game-root', str(self.store.folder/'game'), '--profile', str(profile)]
+        if self.store.native():
+            arguments += ['--title', '合成大水母']
+        self.process.start(str(self.store.entry()), arguments)
         self.start_timer.start(45000)
         self.ready_timer.start()
         self.status.setText('正在启动小游戏…')
