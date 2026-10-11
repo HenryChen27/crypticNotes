@@ -91,8 +91,8 @@ class GameControls(W.QWidget):
         busy = self.task is not None
         installed = self.store.installed()
         legacy = installed and not self.store.native()
-        self.download.setEnabled((not installed or legacy) and not self.running())
-        self.download.setText('取消下载' if busy else '升级轻量版' if legacy else '已下载' if installed else '下载')
+        self.download.setEnabled(not self.running())
+        self.download.setText('取消下载' if busy else '升级轻量版' if legacy else '更新游戏' if installed else '下载')
         self.launch.setEnabled(installed and not busy and not self.running())
         self.launch.setText('运行中' if self.running() else '启动')
         self.remove.setEnabled(installed and not busy and not self.running())
@@ -104,8 +104,6 @@ class GameControls(W.QWidget):
             self.task.requestInterruption()
             self.download.setEnabled(False)
             self.status.setText('正在取消下载…')
-            return
-        if self.store.installed() and self.store.native():
             return
         self.download_error = ''
         self.task = DownloadTask(self.store, self)

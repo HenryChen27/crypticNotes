@@ -14,6 +14,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
+GAME_VERSION='2.1.0'
 
 
 def bundle(folder, target):
@@ -24,9 +25,9 @@ def bundle(folder, target):
                 info.create_system=3;info.external_attr=path.stat().st_mode<<16
                 info.compress_type=zipfile.ZIP_DEFLATED
                 z.writestr(info,path.read_bytes())
-    return {'version':'2.0.0','size':target.stat().st_size,
+    return {'version':GAME_VERSION,'size':target.stat().st_size,
         'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),
-        'url':'https://github.com/HenryChen27/Jellyfish/releases/download/desktop-v2.0.0/'+target.name}
+        'url':'https://github.com/HenryChen27/Jellyfish/releases/download/desktop-v'+GAME_VERSION+'/'+target.name}
 
 
 def main():
@@ -56,13 +57,13 @@ def main():
                         '-framework','Cocoa','-framework','WebKit'],check=True)
         (app/'Contents/Info.plist').write_bytes(plistlib.dumps({'CFBundleExecutable':'GameLauncher',
             'CFBundleIdentifier':'com.henrychen.minigames.launcher','CFBundleName':'小游戏',
-            'CFBundlePackageType':'APPL','CFBundleVersion':'2','CFBundleShortVersionString':'2.0.0',
+            'CFBundlePackageType':'APPL','CFBundleVersion':'3','CFBundleShortVersionString':GAME_VERSION,
             'LSUIElement':True,'NSHighResolutionCapable':True}))
         import build_macos
         build_macos.BUNDLE_ID='com.henrychen.minigames.launcher'
         keychain=os.environ.get('MACOS_KEYCHAIN','');identity=build_macos.signing_identity(keychain)
         build_macos.sign(app,identity,keychain);build_macos.verify(app,identity)
-    (runtime/'package.json').write_text(json.dumps({'id':'game-launcher','platform':key,'version':'2.0.0'}),encoding='utf-8')
+    (runtime/'package.json').write_text(json.dumps({'id':'game-launcher','platform':key,'version':GAME_VERSION}),encoding='utf-8')
     game=out/'jellyfish';game.mkdir(parents=True,exist_ok=True)
     hashes={}
     for name in ('index.html','assets','js','css'):
@@ -73,11 +74,19 @@ def main():
     for path in (game/'game').rglob('*'):
         if path.is_file():
             rel=path.relative_to(game/'game')
+            if not (args.source/rel).is_file():
+                if (ROOT/'games/jellyfish/overrides'/rel).is_file():continue
+                raise RuntimeError('Unexpected stale game resource: '+str(rel))
             checksum=hashlib.sha256(path.read_bytes()).hexdigest()
             assert checksum==hashlib.sha256((args.source/rel).read_bytes()).hexdigest(),rel
             hashes[rel.as_posix()]=checksum
     (out/'game-resource-hashes.json').write_text(json.dumps(hashes,ensure_ascii=False,indent=2),encoding='utf-8')
-    (game/'package.json').write_text(json.dumps({'id':'jellyfish','runtime':'system-webview','version':'2.0.0'}),encoding='utf-8')
+    shutil.copytree(ROOT/'games/jellyfish/overrides',game/'game',dirs_exist_ok=True)
+    page=game/'game/index.html'
+    text=page.read_text(encoding='utf-8').replace('</head>','<link rel="stylesheet" href="css/session.css">\n</head>')
+    text=text.replace('<script src="js/game.js">','<script src="js/session.js"></script>\n  <script src="js/game.js">')
+    page.write_text(text,encoding='utf-8')
+    (game/'package.json').write_text(json.dumps({'id':'jellyfish','runtime':'system-webview','version':GAME_VERSION}),encoding='utf-8')
     catalog_path=out/'native-desktop-games.json'
     catalog=json.loads(catalog_path.read_text()) if catalog_path.exists() else {'schema':2,'id':'jellyfish','launchers':{}}
     catalog['launchers'][key]=bundle(runtime,out/('GameLauncher-'+key+'.zip'))

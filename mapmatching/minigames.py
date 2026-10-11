@@ -10,6 +10,7 @@ import sys
 import tempfile
 import urllib.request
 import zipfile
+import uuid
 from pathlib import Path, PurePosixPath
 
 CATALOG_URL = 'https://github.com/HenryChen27/Jellyfish/releases/latest/download/native-desktop-games.json'
@@ -103,7 +104,15 @@ class GameStore:
             actual = hashlib.file_digest(stream, 'sha256').hexdigest()
         if actual != checksum:
             raise ValueError('小游戏包校验失败，请重新下载')
-        staging = Path(tempfile.mkdtemp(prefix='.install-', dir=self.root)).resolve()
+        # Python 3.13 mkdtemp uses a private Windows ACL. Renaming it into
+        # the installation preserves that ACL and blocks WebView2's renderer.
+        # Inherit the normal installation-directory permissions on Windows.
+        if sys.platform == 'win32':
+            staging = self.root / ('.install-' + uuid.uuid4().hex)
+            staging.mkdir()
+            staging = staging.resolve()
+        else:
+            staging = Path(tempfile.mkdtemp(prefix='.install-', dir=self.root)).resolve()
         backup = self.root / ('.previous-' + self.folder.name)
         try:
             with zipfile.ZipFile(archive) as bundle:
@@ -190,7 +199,13 @@ class GameStore:
             if not launcher.installed() or not launcher.satisfies(launcher_info.get('version')):
                 launcher.download_package(launcher_info,
                     lambda value, text: progress(value // 10, '正在安装公共小游戏启动器…'), cancelled)
-            self.download_package(package_info(catalog),
+            game_info = package_info(catalog)
+            if self.installed() and self.native():
+                metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+                if metadata.get('version') == game_info.get('version'):
+                    progress(100, '游戏已是最新版')
+                    return
+            self.download_package(game_info,
                 lambda value, text: progress(10 + value * 90 // 100, text), cancelled)
         else:
             self.download_package(package_info(catalog), progress, cancelled)

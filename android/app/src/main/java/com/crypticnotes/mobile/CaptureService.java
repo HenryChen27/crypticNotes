@@ -1521,6 +1521,12 @@ public class CaptureService extends Service {
         panel.addView(recordButton,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
         updateRecordingButton();
         recordButton.setOnClickListener(v -> toggleRecording());
+        Theme.ChalkButton miniGame = button("小游戏 · 合成大水母",false);
+        panel.addView(miniGame,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
+        miniGame.setOnClickListener(v->{closeQuickSettings();
+            if(new MiniGameStore(this).installed())startForegroundService(new Intent(this,MiniGameOverlayService.class));
+            else Toast.makeText(this,"请先在应用的小游戏一栏下载游戏",Toast.LENGTH_LONG).show();
+        });
 
         // Three actions, one row, outside the scroll area: stacked they are what
         // pushed the panel past the bottom of a landscape phone, and pinned they

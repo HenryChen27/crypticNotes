@@ -1,0 +1,13 @@
+.session-ui{font-family:JellyfishPOP,sans-serif;color:#dfedf0}
+.session-toolbar{position:fixed;right:16px;top:16px;display:flex;gap:8px;z-index:10}
+.session-ui button{font:inherit;color:inherit;border:0;background:var(--chalk-panel) center/100% 100%,linear-gradient(110deg,#263e50eF,#192d3eed);padding:10px 18px;cursor:pointer;border-radius:5px;min-height:42px}
+.session-ui button:hover{filter:brightness(1.2)}
+.session-ui button:disabled{opacity:.5}
+.session-shade{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#07172599;z-index:30}
+.session-shade[hidden]{display:none}
+.session-card{width:min(340px,90vw);max-height:85vh;overflow:auto;padding:24px;display:flex;flex-direction:column;gap:12px;background:var(--chalk-panel) center/100% 100%,linear-gradient(135deg,#263e50,#192d3e);border-radius:8px;box-shadow:0 5px 30px #0005}
+.session-card h2{font-size:23px;font-weight:400;margin:0 0 6px}
+.session-card p{font-family:sans-serif;font-size:13px;line-height:1.6;margin:0;color:#aec5d0}
+.session-records{font-family:sans-serif;font-size:14px;line-height:2;max-height:40vh;overflow:auto;padding-left:25px;margin:0}
+.session-card .session-error{color:#ffb1a7}
+@media(max-height:500px){.session-card{width:min(430px,90vw);padding:14px;gap:8px}.session-ui button{padding:7px 12px;min-height:36px}.session-toolbar{top:8px;right:8px}}

@@ -148,7 +148,7 @@ def sync_sources(github):
     # Refuse divergence; never overwrite somebody else's remote commits.
     run(['git','merge','--ff-only','origin/'+branch],checkout)
     names=run(['git','ls-files','-z'],ROOT,capture=True).split('\0')
-    files=[n for n in names if n and (n.startswith(('mapmatching/','android/','maps/','scripts/','docs/'))
+    files=[n for n in names if n and (n.startswith(('mapmatching/','android/','maps/','scripts/','docs/','games/'))
         or n in ('README.md','requirements.txt','requirements-build.txt'))]
     for name in files:
         source=ROOT/name
@@ -159,7 +159,7 @@ def sync_sources(github):
     if (ROOT/'macos-version.json').exists():extra.append('macos-version.json')
     for name in extra:
         target=checkout/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,target)
-    run(['git','add','mapmatching','android','maps','scripts','docs','README.md'],checkout)
+    run(['git','add','mapmatching','android','maps','scripts','docs','games','README.md'],checkout)
     if (checkout/'macos-version.json').exists():run(['git','add','macos-version.json'],checkout)
     if run(['git','diff','--cached','--name-only'],checkout,capture=True).strip():
         run(['git','commit','-m','Release: synchronize reviewed source and map library'],checkout)

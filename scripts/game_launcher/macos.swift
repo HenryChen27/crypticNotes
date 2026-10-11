@@ -18,14 +18,17 @@ final class GameWindow:NSWindow {
 final class DragBar:NSView {
     override func mouseDown(with event:NSEvent){window?.performDrag(with:event)}
 }
-final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDelegate,WKUIDelegate {
+final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDelegate,WKUIDelegate,WKScriptMessageHandler {
     var window:NSWindow!
     var view:WKWebView!
     var timer:Timer?
+    var allowClose=false
+    var closing=false
     func applicationDidFinishLaunching(_ notification:Notification){
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback=[]
+        config.userContentController.add(self,name:"game")
         if let saved=try? String(contentsOf:profile.appendingPathComponent("local-storage.json"),encoding:.utf8),
            let encoded=try? JSONSerialization.data(withJSONObject:[saved]),let literal=String(data:encoded,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"try{Object.entries(JSON.parse(\(literal)[0])).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}",injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -60,10 +63,36 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         timer=Timer.scheduledTimer(withTimeInterval:1,repeats:true){[weak self] _ in self?.saveAudio()}
     }
     @objc func close(){window.close()}
-    func saveAudio(){
-        view.evaluateJavaScript("JSON.stringify(Object.fromEntries(Object.entries(localStorage)))"){result,error in
-            if let text=result as? String,text.utf8.count<5*1024*1024{try? text.write(to:profile.appendingPathComponent("local-storage.json"),atomically:true,encoding:.utf8)}
+    func saveStorage(_ text:String)throws {
+        guard text.utf8.count<1024*1024,let data=text.data(using:.utf8),
+          let values=try JSONSerialization.jsonObject(with:data) as? [String:String],
+          values.keys.allSatisfy({$0.hasPrefix("jellyfish.")}) else {throw NSError(domain:"GameSave",code:1,userInfo:[NSLocalizedDescriptionKey:"无效存档"])}
+        try text.write(to:profile.appendingPathComponent("local-storage.json"),atomically:true,encoding:.utf8)
+    }
+    func userContentController(_ userContentController:WKUserContentController,didReceive message:WKScriptMessage){
+        guard message.frameInfo.isMainFrame,let url=message.frameInfo.request.url,url.isFileURL,
+          url.standardizedFileURL.path.hasPrefix(root.path+"/"),
+          let body=message.body as? [String:Any],body["type"] as? String=="save-storage",
+          let id=body["id"] as? Int,let text=body["json"] as? String else{return}
+        do {try saveStorage(text)
+            view.evaluateJavaScript("JellyfishSaveAck(\(id),null)"){_,_ in
+                if body["exit"] as? Bool == true {self.allowClose=true;self.close()}
+            }
+        }catch{
+            let literal=(try? JSONSerialization.data(withJSONObject:[error.localizedDescription])).flatMap{String(data:$0,encoding:.utf8)} ?? "[\"保存失败\"]"
+            view.evaluateJavaScript("JellyfishSaveAck(\(id),\(literal)[0])",completionHandler:nil)
         }
+    }
+    func windowShouldClose(_ sender:NSWindow)->Bool {
+        if allowClose{return true};if closing{return false};closing=true
+        view.evaluateJavaScript("window.JellyfishSession ? JellyfishSession.beforeClose() : JSON.stringify({})"){result,error in
+            do {guard let text=result as? String else {throw error ?? NSError(domain:"GameSave",code:2)}
+                try self.saveStorage(text);self.allowClose=true;self.close()
+            }catch{self.closing=false;let alert=NSAlert();alert.messageText="保存未完成，请重试";alert.informativeText=error.localizedDescription;alert.runModal()}
+        }
+        return false
+    }
+    func saveAudio(){
         view.evaluateJavaScript("localStorage.getItem('jellyfish.audioSettings')"){result,error in
             if let text=result as? String,text.utf8.count<4096{try? text.write(to:profile.appendingPathComponent("audio.json"),atomically:true,encoding:.utf8)}
         }
