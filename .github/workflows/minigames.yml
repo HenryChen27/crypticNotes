@@ -57,7 +57,9 @@ jobs:
       - name: Build optional game
         run: python scripts/build_minigame.py --source game-source
       - name: Verify installed signed game and launch
-        run: python scripts/check_minigame_startup.py
+        run: |
+          python -m unittest mapmatching.tests.test_minigames -v
+          python scripts/check_minigame_startup.py
       - name: Delete signing keychain
         if: always()
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
