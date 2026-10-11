@@ -21,7 +21,7 @@ class MacCaptureTests(unittest.TestCase):
             capture_rect=lambda:(10,20,320,180),demo_window=object(),demo=Path('fixture.png'),
             isVisible=lambda:True,cached_candidate=None,opening=True,
             record_failures=Mock(),records_directory=lambda:Path('out'),status=Mock(),
-            start_worker=Mock(),close_map=Mock(),notify=Mock())
+            start_worker=Mock(),close_map=Mock(),notify=Mock(),restore_capture_companion=Mock())
         with patch('mapmatching.ui.sys.platform',platform),patch('mapmatching.src.reference.read_image',return_value=pixels) as read,patch.object(native,'capture') as capture,patch.object(native,'mask_screen_rect') as mask:
             Companion.capture_after_hide(subject,token)
         read.assert_called_once_with(subject.demo)
@@ -35,7 +35,8 @@ class MacCaptureTests(unittest.TestCase):
         from mapmatching.ui import Companion
         for platform,stops in [('darwin',0),('win32',1)]:
             subject=SimpleNamespace(state=ToggleState(),overlay=Mock(),toast=Mock(),
-                busy=False,process=object(),ready=False,stop_worker=Mock(),notify=Mock())
+                busy=False,process=object(),ready=False,stop_worker=Mock(),notify=Mock(),
+                restore_capture_companion=Mock(),dismiss_manual_offer=Mock(),gear=Mock())
             with patch('mapmatching.ui.sys.platform',platform):
                 Companion.close_map(subject,silent=True)
             self.assertEqual(subject.stop_worker.call_count,stops)
