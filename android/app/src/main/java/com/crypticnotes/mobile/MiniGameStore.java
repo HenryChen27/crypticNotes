@@ -23,14 +23,19 @@ final class MiniGameStore {
         HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection();c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","CrypticNotes-mini-games");
         if(c.getResponseCode()!=200){c.disconnect();throw new IOException("下载失败，请稍后重试");}return c;
     }
-    void download(Progress progress)throws Exception{
-        root.mkdirs();progress.update("正在检查游戏更新…");
+    JSONObject catalogInfo()throws Exception{
         JSONObject catalog;
         HttpURLConnection c=connect(CATALOG);
         try(InputStream in=c.getInputStream()){byte[] raw=bytes(in,128*1024);catalog=new JSONObject(new String(raw,java.nio.charset.StandardCharsets.UTF_8));}finally{c.disconnect();}
         if(catalog.optInt("schema")!=2||!"jellyfish".equals(catalog.optString("id")))throw new IOException("无效游戏清单");
-        JSONObject info=catalog.getJSONObject("game");String url=info.getString("url"),sha=info.getString("sha256"),version=info.getString("version");long size=info.getLong("size");
+        JSONObject info=catalog.getJSONObject("game");String url=info.getString("url"),sha=info.getString("sha256");long size=info.getLong("size");
         if(!url.startsWith("https://github.com/HenryChen27/Jellyfish/releases/download/")||!sha.matches("[0-9a-f]{64}")||size<=0||size>600L*1024*1024)throw new IOException("无效游戏包");
+        return info;
+    }
+    void download(Progress progress)throws Exception{
+        root.mkdirs();progress.update("正在检查游戏更新…");
+        JSONObject info=catalogInfo();String url=info.getString("url"),sha=info.getString("sha256"),version=info.getString("version");long size=info.getLong("size");
+        HttpURLConnection c;
         if(installed()&&version.equals(version())){progress.update("游戏已是最新版");return;}
         File zip=new File(root,"download.zip"),stage=new File(root,".install-"+UUID.randomUUID()),backup=new File(root,".previous-jellyfish");
         try {

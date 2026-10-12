@@ -23,6 +23,8 @@ public class MiniGameOverlayService extends Service {
     private boolean closing;
     static volatile boolean running;
     static volatile boolean hidden;
+    static MiniGameOverlayService current;
+    private final Runnable autoClose=()->{if(hidden)saveAndClose();};
     private int barHeight;
     private WindowManager windows;
     private WindowManager.LayoutParams params;
@@ -33,10 +35,10 @@ public class MiniGameOverlayService extends Service {
     private final Runnable saveTimeout=()->{closing=false;showGame();Toast.makeText(this,"保存超时，请重试",Toast.LENGTH_LONG).show();};
     @Override public IBinder onBind(Intent intent){return null;}
     void runOnUiThread(Runnable action){new android.os.Handler(android.os.Looper.getMainLooper()).post(action);}
-    @Override public int onStartCommand(Intent intent,int flags,int id){if(intent!=null&&"show".equals(intent.getAction()))showGame();return START_NOT_STICKY;}
+    @Override public int onStartCommand(Intent intent,int flags,int id){if(intent!=null){if("show".equals(intent.getAction()))showGame();else if("auto-hide".equals(intent.getAction())&&!hidden){hideGame();handler.postDelayed(autoClose,5000);}}return START_NOT_STICKY;}
     @Override public void onCreate(){
         super.onCreate();
-        running=true;hidden=false;barHeight=Theme.px(this,30);
+        current=this;running=true;hidden=false;barHeight=Theme.px(this,30);
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("mini-game","小游戏",NotificationManager.IMPORTANCE_LOW));
         startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("合成大水母正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setContentIntent(PendingIntent.getForegroundService(this,0,new Intent(this,MiniGameOverlayService.class).setAction("show"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).setOngoing(true).build());
@@ -118,6 +120,7 @@ public class MiniGameOverlayService extends Service {
         if(shell!=null && shell.isAttachedToWindow())windows.removeViewImmediate(shell);
     }
     void showGame(){
+        handler.removeCallbacks(autoClose);
         hidden=false;
         if(shell!=null){
             resize();shell.setVisibility(View.VISIBLE);
@@ -127,6 +130,11 @@ public class MiniGameOverlayService extends Service {
     @Override public void onConfigurationChanged(Configuration c){
         super.onConfigurationChanged(c);
         if(params!=null){resize();if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);}
+    }
+    android.graphics.Rect visibleBounds(){
+        if(hidden||shell==null||!shell.isAttachedToWindow())return new android.graphics.Rect();
+        int[] location=new int[2];shell.getLocationOnScreen(location);
+        return new android.graphics.Rect(location[0],location[1],location[0]+shell.getWidth(),location[1]+shell.getHeight());
     }
     private synchronized void write(String json)throws Exception{
         if(json==null||json.length()>1024*1024)throw new IOException("存档过大");JSONObject data=new JSONObject(json);Iterator<String> keys=data.keys();while(keys.hasNext()){String key=keys.next();if(!key.startsWith("jellyfish.")||!(data.get(key) instanceof String))throw new IOException("无效存档");}
@@ -148,5 +156,5 @@ public class MiniGameOverlayService extends Service {
         handler.postDelayed(saveTimeout,10000);
         web.evaluateJavascript("window.__jellyfishHostSave(1)",null);
     }
-    @Override public void onDestroy(){running=false;hidden=false;handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null&&shell.isAttachedToWindow())windows.removeView(shell);if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
+    @Override public void onDestroy(){current=null;running=false;hidden=false;handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null&&shell.isAttachedToWindow())windows.removeView(shell);if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
 }

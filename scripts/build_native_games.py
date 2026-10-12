@@ -15,7 +15,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
-GAME_VERSION='2.4.1'
+GAME_VERSION='2.4.2'
 
 
 def bundle(folder, target):

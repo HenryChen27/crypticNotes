@@ -12,6 +12,7 @@ import android.widget.*;
 /** Settings screen. Visual language mirrors the desktop client (see {@link Theme}). */
 public class MainActivity extends Activity {
     private TextView status;
+    private Theme.SectionHeading gameHeading;
     private Theme.ChalkChoice difficulty, party;
     private int opacity = 30;
     private AppUpdater updater;
@@ -230,6 +231,8 @@ public class MainActivity extends Activity {
         recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
 
         LinearLayout games = fold("小游戏", true);
+        gameHeading=(Theme.SectionHeading)games.getTag();
+        gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
         games.addView(Theme.muted(this,"按需下载，使用系统引擎；本机保存进度和个人排行榜。"));
         Theme.ChalkButton openGames = new Theme.ChalkButton(this,"合成大水母",true);
         games.addView(openGames,matchWrap());
@@ -405,6 +408,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if(gameHeading!=null){gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));MiniGameUpdates.check(this,()->{if(!isDestroyed()&&gameHeading!=null)gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));});}
         if (updater != null) {
             // Re-attach before resuming: a download started from this screen keeps
             // running after it is left, and its progress should still be here.

@@ -12,6 +12,17 @@ from mapmatching.minigames import GameStore, LauncherStore, package_info, platfo
 
 
 class GamePackageTests(unittest.TestCase):
+    def test_same_launcher_version_requires_matching_download_hash(self):
+        launcher = LauncherStore(self.root)
+        launcher.folder.mkdir(parents=True)
+        metadata = {'version': '2.4.0', 'downloadSha256': 'a' * 64}
+        (launcher.folder/'package.json').write_text(json.dumps(metadata))
+        self.assertTrue(launcher.matches_download({'version': '2.4.0', 'sha256': 'a' * 64}))
+        self.assertFalse(launcher.matches_download({'version': '2.4.0', 'sha256': 'b' * 64}))
+        metadata.pop('downloadSha256')
+        (launcher.folder/'package.json').write_text(json.dumps(metadata))
+        self.assertFalse(launcher.matches_download({'version': '2.4.0', 'sha256': 'a' * 64}))
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.root = Path(self.directory.name)

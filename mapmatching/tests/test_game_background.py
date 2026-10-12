@@ -10,6 +10,13 @@ from mapmatching.ui import Companion
 
 
 class GameBackgroundTests(unittest.TestCase):
+    def test_start_button_restores_existing_game_without_new_process(self):
+        subject=SimpleNamespace(running=lambda:True,restore_game=Mock(),
+            companion=SimpleNamespace(panel=SimpleNamespace(isVisible=lambda:True),toggle_panel=Mock()))
+        GameControls.launch_game(subject)
+        subject.restore_game.assert_called_once()
+        subject.companion.toggle_panel.assert_called_once()
+
     def test_running_game_blocks_capture_and_retry_restores_instead(self):
         games=SimpleNamespace(running=lambda:True,game_hidden=True,restore_game=Mock())
         subject=SimpleNamespace(minigames=games)

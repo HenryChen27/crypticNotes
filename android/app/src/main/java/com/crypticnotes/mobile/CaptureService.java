@@ -110,7 +110,8 @@ public class CaptureService extends Service {
         updateRecordingPulse();
         if(!destroyed) ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(1,captureNotification());
         if(recordButton!=null) {
-            recordButton.setText(stoppingRecording?"正在保存…":recorder==null?"开始录制":"停止录制并保存");
+            recordButton.setText(stoppingRecording?"正在保存…":recorder==null?"屏幕录制":"停止录制");
+            ActionIcon.set(recordButton,recorder==null?ActionIcon.RECORD:ActionIcon.STOP,false);
             recordButton.setEnabled(!stoppingRecording);
         }
     }
@@ -1014,7 +1015,8 @@ public class CaptureService extends Service {
      */
     private void sample() {
         if (destroyed || !ready) return;
-        if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
+        if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);watchMiniGameScene();repoll(500);return;}
+        gameSceneDetector.reset();
         long nowWatch = SystemClock.elapsedRealtime();
         boolean overdue = (checking && nowWatch-checkingSince > BUSY_TIMEOUT_MS)
                 || (busy && nowWatch-busySince > BUSY_TIMEOUT_MS);
@@ -1356,6 +1358,31 @@ public class CaptureService extends Service {
         return label.toString();
     }
 
+    private final GameSceneDetector gameSceneDetector=new GameSceneDetector();
+    private long gameSceneSampleAt;
+    private int sceneWidth,sceneHeight;
+    private void watchMiniGameScene(){
+        if(MiniGameOverlayService.hidden||quickSettings!=null||!capturedVisible||!captureFitsScreen()){
+            gameSceneDetector.reset();return;
+        }
+        long now=SystemClock.elapsedRealtime();if(now-gameSceneSampleAt<1500)return;gameSceneSampleAt=now;
+        if(width!=sceneWidth||height!=sceneHeight){gameSceneDetector.reset();sceneWidth=width;sceneHeight=height;}
+        int[] pixels=sampleViewport();if(pixels==null)return;
+        boolean[] excluded=new boolean[14400];
+        MiniGameOverlayService game=MiniGameOverlayService.current;if(game==null)return;
+        android.graphics.Rect area=game.visibleBounds();
+        for(int y=0;y<90;y++)for(int x=0;x<160;x++){
+            int sx=x*width/160,sy=y*height/90;
+            boolean overGame=sx>=area.left-8&&sx<area.right+8&&sy>=area.top-8&&sy<area.bottom+8;
+            boolean overBadge=badgeParams!=null&&sx>=badgeParams.x-8&&sx<badgeParams.x+badgeParams.width+8&&sy>=badgeParams.y-8&&sy<badgeParams.y+badgeParams.height+8;
+            excluded[y*160+x]=overGame||overBadge;
+        }
+        if(gameSceneDetector.feed(pixels,excluded)){
+            startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("auto-hide"));
+            Toast.makeText(this,"游戏画面明显变化，小游戏已收起；5秒内恢复可继续",Toast.LENGTH_SHORT).show();
+        }
+    }
+
     private Bitmap grab() {
         if(recorder!=null) recorder.requestPreview();
         try (Image image = reader.acquireLatestImage()) {
@@ -1456,17 +1483,37 @@ public class CaptureService extends Service {
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        TextView title = label("游戏设置", 17, Theme.TITLE, 0);
-        header.addView(title, new LinearLayout.LayoutParams(0, Theme.px(this, 38), 1));
+        Theme.ChalkButton settingsTab=button("游戏设置",true);
+        Theme.ChalkButton gamesTab=button("小游戏",false);
+        ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
+        ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
+        header.addView(settingsTab,new LinearLayout.LayoutParams(0,Theme.px(this,40),1));
+        LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,Theme.px(this,40),1);tabParams.setMargins(Theme.px(this,6),0,Theme.px(this,6),0);
+        header.addView(gamesTab,tabParams);
         Theme.CloseButton dismiss = new Theme.CloseButton(this);
         header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
-        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 38)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
 
         Theme.MistPanel panel = new Theme.MistPanel(this);
         panel.setPadding(pad, 0, pad, pad);
         ScrollView scroll = new ScrollView(this);
         scroll.addView(panel, new ScrollView.LayoutParams(-1, -2));
-        shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        FrameLayout pages=new FrameLayout(this);
+        pages.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        LinearLayout gamePage=new LinearLayout(this);gamePage.setOrientation(1);gamePage.setPadding(pad,Theme.px(this,14),pad,pad);
+        gamePage.addView(label("合成大水母",17,Theme.TITLE,0));
+        Theme.ChalkButton launchGame=button(MiniGameOverlayService.running?"回到游戏":"启动",true);
+        LinearLayout.LayoutParams launchParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));launchParams.topMargin=Theme.px(this,12);gamePage.addView(launchGame,launchParams);
+        launchGame.setOnClickListener(v->{
+            if(!new MiniGameStore(this).installed()){Toast.makeText(this,"请先在应用内下载合成大水母",Toast.LENGTH_LONG).show();return;}
+            closeQuickSettings();startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
+        });
+        pages.addView(gamePage,new FrameLayout.LayoutParams(-1,-1));gamePage.setVisibility(View.GONE);
+        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.setAlpha(1f);gamesTab.setAlpha(.65f);});
+        gamesTab.setAlpha(.65f);
+        gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.setAlpha(.65f);gamesTab.setAlpha(1f);});
+        MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));});
+        shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         dismiss.setOnClickListener(v -> closeQuickSettings());
 
         preparationLabel = label(preparationText, 13, Theme.MUTED, 6);
@@ -1521,18 +1568,6 @@ public class CaptureService extends Service {
         });
 
         // Three actions, one row, outside the scroll area: stacked they are what
-        recordButton=button("开始录制",false);
-        panel.addView(recordButton,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
-        updateRecordingButton();
-        recordButton.setOnClickListener(v -> toggleRecording());
-        Theme.ChalkButton miniGame = button("小游戏 · 合成大水母",false);
-        panel.addView(miniGame,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
-        miniGame.setOnClickListener(v->{closeQuickSettings();
-            if(new MiniGameStore(this).installed())startForegroundService(new Intent(this,MiniGameOverlayService.class));
-            else Toast.makeText(this,"请先在应用的小游戏一栏下载游戏",Toast.LENGTH_LONG).show();
-        });
-
-        // Three actions, one row, outside the scroll area: stacked they are what
         // pushed the panel past the bottom of a landscape phone, and pinned they
         // cannot be scrolled away from either.
         LinearLayout actions = new LinearLayout(this);
@@ -1558,18 +1593,22 @@ public class CaptureService extends Service {
         LinearLayout.LayoutParams regionParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 42));
         regionParams.setMargins(pad, 0, pad, pad);
         region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
-        shell.addView(actions, new LinearLayout.LayoutParams(-1, -2));
-        shell.addView(region, regionParams);
+        actions.setPadding(0,0,0,Theme.px(this,8));
+        panel.addView(actions,0,new LinearLayout.LayoutParams(-1,-2));
+        panel.addView(region,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
+        recordButton=button("屏幕录制",true);updateRecordingButton();recordButton.setOnClickListener(v->toggleRecording());
+        LinearLayout.LayoutParams recordParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));recordParams.setMargins(pad,Theme.px(this,10),pad,pad);
+        shell.addView(recordButton,recordParams);
 
         quickSettings = shell;
         WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 320)),
-                Math.min(height - pad * 2, Theme.px(this, 320)), true);
+                Math.min(height - pad * 2, Theme.px(this, 380)), true);
         p.x = (width - p.width) / 2;
         // Park it on the side the button is not: the ball has to stay tappable
         // to be a second way out of here.
         boolean ballBelow = badgeParams.y + ballWidth / 2 > height / 2;
         p.y = ballBelow ? Theme.px(this, 12) : Math.max(Theme.px(this, 12), height - p.height - Theme.px(this, 12));
-        title.setOnTouchListener(new View.OnTouchListener() {
+        header.setOnTouchListener(new View.OnTouchListener() {
             float x,y; int startX,startY;
             public boolean onTouch(View v, MotionEvent e) {
                 if(e.getActionMasked()==MotionEvent.ACTION_DOWN) { x=e.getRawX(); y=e.getRawY(); startX=p.x; startY=p.y; }

@@ -150,8 +150,8 @@ class GameControls(W.QWidget):
         legacy = installed and not self.store.native()
         self.download.setEnabled(not self.running())
         self.download.setText('取消下载' if busy else '升级轻量版' if legacy else '更新游戏' if installed else '下载')
-        self.launch.setEnabled(installed and not busy and not self.running())
-        self.launch.setText('运行中' if self.running() else '启动')
+        self.launch.setEnabled(installed and not busy)
+        self.launch.setText('回到游戏' if self.running() else '启动')
         self.remove.setEnabled(installed and not busy and not self.running())
         if not busy:
             self.status.setText(f'已下载 · {self.store.size()/1024/1024:.0f} MB' if installed else '按需下载，未启动时不占用游戏运行资源')
@@ -190,7 +190,12 @@ class GameControls(W.QWidget):
             self.status.setText('小游戏包尚未上架，请稍后重试。' if 'HTTP Error 404' in error else error)
 
     def launch_game(self):
-        if not self.store.installed() or self.running():
+        if self.running():
+            if self.companion.panel.isVisible():
+                self.companion.toggle_panel()
+            self.restore_game()
+            return
+        if not self.store.installed():
             return
         self.companion.close_map(silent=True)
         if self.companion.panel.isVisible():
