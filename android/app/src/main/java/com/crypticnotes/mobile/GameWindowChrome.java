@@ -6,26 +6,35 @@ import android.view.*;
 import android.widget.*;
 /** Translucent gestures over the game itself; no title bar or extra frame. */
 final class GameWindowChrome extends FrameLayout {
-    interface Host {boolean fullscreen();void move(int dx,int dy);void scale(int delta,boolean left);void minimize();void toggleFull();void close();}
+    interface Host {boolean fullscreen();void move(int dx,int dy);void scale(int delta,boolean left);void finishResize();void beginSwipe();void previewSwipe(float delta);void endSwipe(int action);void minimize();void toggleFull();void close();}
     private final Host host;
     private final View bottom,left,right;
     private final LinearLayout menu;
     private final int slop;
+    private final View game;
+    private final ImageView snapshot;
+    private Bitmap previewBitmap;
+    private boolean previewing;
     GameWindowChrome(Context c,View game,Host host){
-        super(c);this.host=host;slop=ViewConfiguration.get(c).getScaledTouchSlop();addView(game,new LayoutParams(-1,-1));
+        super(c);this.host=host;this.game=game;slop=ViewConfiguration.get(c).getScaledTouchSlop();addView(game,new LayoutParams(-1,-1));
+        snapshot=new ImageView(c);snapshot.setScaleType(ImageView.ScaleType.FIT_XY);addView(snapshot,new LayoutParams(-1,-1));snapshot.setVisibility(GONE);
         setClipToOutline(true);setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View v,Outline outline){outline.setRoundRect(0,0,getWidth(),getHeight(),host.fullscreen()?0:dp(12));}});
-        View dots=new Mark(c,0);dots.setContentDescription("游戏窗口操作，长按拖动");LayoutParams dotParams=new LayoutParams(dp(56),dp(30),Gravity.TOP|Gravity.CENTER_HORIZONTAL);dotParams.topMargin=dp(3);addView(dots,dotParams);
-        dots.setOnTouchListener(new View.OnTouchListener(){float x,y,lastX,lastY;boolean dragging,held,moved;
-            final Runnable hold=()->{held=true;dragging=!host.fullscreen();};
+        View dots=new Mark(c,0);dots.setContentDescription("点击窗口菜单，滑动移动");LayoutParams dotParams=new LayoutParams(dp(64),dp(34),Gravity.TOP|Gravity.CENTER_HORIZONTAL);dotParams.topMargin=dp(2);addView(dots,dotParams);
+        dots.setOnTouchListener(new View.OnTouchListener(){float x,y,lastX,lastY;boolean dragging,moved;
             public boolean onTouch(View v,MotionEvent e){switch(e.getActionMasked()){
-                case MotionEvent.ACTION_DOWN:x=lastX=e.getRawX();y=lastY=e.getRawY();dragging=held=moved=false;postDelayed(hold,ViewConfiguration.getLongPressTimeout());return true;
-                case MotionEvent.ACTION_MOVE:if(Math.hypot(e.getRawX()-x,e.getRawY()-y)>slop){moved=true;if(!held)removeCallbacks(hold);}if(dragging){host.move(Math.round(e.getRawX()-lastX),Math.round(e.getRawY()-lastY));lastX=e.getRawX();lastY=e.getRawY();}return true;
-                case MotionEvent.ACTION_UP:removeCallbacks(hold);if(!held&&!moved)toggleMenu();dragging=false;return true;
-                case MotionEvent.ACTION_CANCEL:removeCallbacks(hold);dragging=false;return true;
+                case MotionEvent.ACTION_DOWN:x=lastX=e.getRawX();y=lastY=e.getRawY();dragging=moved=false;return true;
+                case MotionEvent.ACTION_MOVE:if(Math.hypot(e.getRawX()-x,e.getRawY()-y)>Math.max(dp(2),slop/2)){moved=true;if(!dragging&&!host.fullscreen()){dragging=true;dismissMenu();TouchFeedback.click(v);}}if(dragging){host.move(Math.round(e.getRawX()-lastX),Math.round(e.getRawY()-lastY));lastX=e.getRawX();lastY=e.getRawY();}return true;
+                case MotionEvent.ACTION_UP:if(!moved){TouchFeedback.click(v);toggleMenu();}dragging=false;return true;
+                case MotionEvent.ACTION_CANCEL:dragging=false;return true;
             }return true;}
         });
         bottom=new Mark(c,1);bottom.setContentDescription("向上滑动最小化，向下滑动全屏");addView(bottom,new LayoutParams(dp(120),dp(28),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
-        bottom.setOnTouchListener(new View.OnTouchListener(){float y;public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN)y=e.getRawY();if(e.getActionMasked()==MotionEvent.ACTION_UP){float delta=e.getRawY()-y;if(delta<-dp(20))host.minimize();else if(delta>dp(20)&&!host.fullscreen())host.toggleFull();}return true;}});
+        bottom.setOnTouchListener(new View.OnTouchListener(){float y;int reached;public boolean onTouch(View v,MotionEvent e){
+            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){y=e.getRawY();reached=0;dismissMenu();host.beginSwipe();}
+            float delta=e.getRawY()-y;int action=delta<=-dp(60)?-1:delta>=dp(60)?1:0;
+            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){host.previewSwipe(delta);if(action!=0&&action!=reached)TouchFeedback.click(v);reached=action;}
+            if(e.getActionMasked()==MotionEvent.ACTION_UP)host.endSwipe(action);
+            if(e.getActionMasked()==MotionEvent.ACTION_CANCEL)host.endSwipe(0);return true;}});
         left=new Mark(c,2);right=new Mark(c,3);addView(left,new LayoutParams(dp(36),dp(36),Gravity.BOTTOM|Gravity.LEFT));addView(right,new LayoutParams(dp(36),dp(36),Gravity.BOTTOM|Gravity.RIGHT));
         resizeTouch(left,true);resizeTouch(right,false);
         menu=new LinearLayout(c);menu.setGravity(Gravity.CENTER);GradientDrawable bg=new GradientDrawable();bg.setColor(0xd922303e);bg.setCornerRadius(dp(9));menu.setBackground(bg);menu.setElevation(dp(5));LayoutParams mp=new LayoutParams(-2,dp(42),Gravity.TOP|Gravity.CENTER_HORIZONTAL);mp.topMargin=dp(36);addView(menu,mp);menu.setVisibility(GONE);
@@ -33,12 +42,35 @@ final class GameWindowChrome extends FrameLayout {
     }
     private int dp(float n){return Theme.px(getContext(),n);}
     private void resizeTouch(View view,boolean left){view.setContentDescription("拖动等比例缩放");view.setOnTouchListener(new View.OnTouchListener(){float x,y;public boolean onTouch(View v,MotionEvent e){
-        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();}
-        else if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=(e.getRawX()-x)*(left?-1:1),dy=(e.getRawY()-y)*(float)GameWindowGeometry.RATIO;host.scale(Math.round(Math.abs(dx)>Math.abs(dy)?dx:dy),left);x=e.getRawX();y=e.getRawY();}return true;}});}
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();TouchFeedback.click(v);}
+        else if(e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=(e.getRawX()-x)*(left?-1:1),dy=(e.getRawY()-y)*(float)GameWindowGeometry.RATIO;host.scale(Math.round(Math.abs(dx)>Math.abs(dy)?dx:dy),left);x=e.getRawX();y=e.getRawY();}
+        else if(e.getActionMasked()==MotionEvent.ACTION_UP||e.getActionMasked()==MotionEvent.ACTION_CANCEL)host.finishResize();return true;}});}
+    void setPreviewing(boolean value){
+        if(previewing==value)return;previewing=value;
+        if(value){
+            try{
+                if(game.getWidth()==0||game.getHeight()==0){previewing=false;return;}
+                int w=Math.min(192,game.getWidth()),h=Math.max(1,Math.round(w*game.getHeight()/(float)game.getWidth()));
+                previewBitmap=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);Canvas canvas=new Canvas(previewBitmap);canvas.scale(w/(float)game.getWidth(),h/(float)game.getHeight());game.draw(canvas);
+                blurThumbnail(previewBitmap);
+                snapshot.setImageBitmap(previewBitmap);snapshot.setVisibility(VISIBLE);game.setVisibility(INVISIBLE);
+                if(game instanceof android.webkit.WebView)((android.webkit.WebView)game).evaluateJavascript("window.__jellyfishHostFrozen=true",null);
+            }catch(Exception e){previewing=false;snapshot.setVisibility(GONE);game.setVisibility(VISIBLE);}
+        }else{
+            if(game instanceof android.webkit.WebView)((android.webkit.WebView)game).evaluateJavascript("window.__jellyfishHostFrozen=false",null);
+            game.setVisibility(VISIBLE);snapshot.setVisibility(GONE);snapshot.setImageDrawable(null);previewBitmap=null;
+        }
+    }
+    private static void blurThumbnail(Bitmap bitmap){
+        int w=bitmap.getWidth(),h=bitmap.getHeight();int[] src=new int[w*h],tmp=new int[w*h],out=new int[w*h];bitmap.getPixels(src,0,w,0,0,w,h);
+        for(int y=0;y<h;y++)for(int x=0;x<w;x++){int r=0,g=0,b=0;for(int k=-4;k<=4;k++){int v=src[y*w+Math.max(0,Math.min(w-1,x+k))];r+=(v>>16)&255;g+=(v>>8)&255;b+=v&255;}tmp[y*w+x]=0xff000000|((r/9)<<16)|((g/9)<<8)|(b/9);}
+        for(int y=0;y<h;y++)for(int x=0;x<w;x++){int r=0,g=0,b=0;for(int k=-4;k<=4;k++){int v=tmp[Math.max(0,Math.min(h-1,y+k))*w+x];r+=(v>>16)&255;g+=(v>>8)&255;b+=v&255;}out[y*w+x]=0xff000000|((r/9)<<16)|((g/9)<<8)|(b/9);}
+        bitmap.setPixels(out,0,w,0,0,w,h);
+    }
     void updateMode(){boolean full=host.fullscreen();bottom.setVisibility(full?GONE:VISIBLE);left.setVisibility(full?GONE:VISIBLE);right.setVisibility(full?GONE:VISIBLE);menu.setVisibility(GONE);invalidateOutline();}
     void dismissMenu(){menu.setVisibility(GONE);}
-    private void toggleMenu(){if(menu.getVisibility()==VISIBLE){dismissMenu();return;}menu.removeAllViews();addOption(0,"最小化",host::minimize);addOption(1,host.fullscreen()?"恢复小窗":"全屏",host::toggleFull);if(host.fullscreen())addOption(2,"保存并关闭",host::close);menu.setVisibility(VISIBLE);}
-    private void addOption(int kind,String description,Runnable action){View option=new Mark(getContext(),kind+4);option.setContentDescription(description);option.setOnClickListener(v->{dismissMenu();action.run();});menu.addView(option,new LinearLayout.LayoutParams(dp(44),-1));}
+    private void toggleMenu(){if(menu.getVisibility()==VISIBLE){dismissMenu();return;}menu.removeAllViews();addOption(0,"最小化",host::minimize);addOption(1,host.fullscreen()?"恢复小窗":"全屏",host::toggleFull);addOption(2,"保存并关闭",host::close);menu.setVisibility(VISIBLE);}
+    private void addOption(int kind,String description,Runnable action){View option=new Mark(getContext(),kind+4);option.setContentDescription(description);option.setOnClickListener(v->{TouchFeedback.click(v);dismissMenu();action.run();});menu.addView(option,new LinearLayout.LayoutParams(dp(44),-1));}
     final class Mark extends View {
         final int kind;final Paint p=new Paint(3);Mark(Context c,int kind){super(c);this.kind=kind;}
         @Override protected void onDraw(Canvas c){float x=getWidth()/2f,y=getHeight()/2f,u=getResources().getDisplayMetrics().density;p.setColor(0x95d1dce3);p.setStrokeWidth(1.7f*u);p.setStrokeCap(Paint.Cap.ROUND);p.setStyle(Paint.Style.STROKE);

@@ -1370,6 +1370,7 @@ public class CaptureService extends Service {
         int[] pixels=sampleViewport();if(pixels==null)return;
         boolean[] excluded=new boolean[14400];
         MiniGameOverlayService game=MiniGameOverlayService.current;if(game==null)return;
+        if(game.interacting()){gameSceneDetector.reset();return;}
         android.graphics.Rect area=game.visibleBounds();
         for(int y=0;y<90;y++)for(int x=0;x<160;x++){
             int sx=x*width/160,sy=y*height/90;
