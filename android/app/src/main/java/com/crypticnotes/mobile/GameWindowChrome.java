@@ -29,10 +29,14 @@ final class GameWindowChrome extends FrameLayout {
             }return true;}
         });
         bottom=new Mark(c,1);bottom.setContentDescription("向上滑动最小化，向下滑动全屏");addView(bottom,new LayoutParams(dp(120),dp(28),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
-        bottom.setOnTouchListener(new View.OnTouchListener(){float y;int reached;public boolean onTouch(View v,MotionEvent e){
-            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){y=e.getRawY();reached=0;dismissMenu();host.beginSwipe();}
-            float delta=e.getRawY()-y;int action=delta<=-dp(60)?-1:delta>=dp(60)?1:0;
-            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){host.previewSwipe(delta);if(action!=0&&action!=reached)TouchFeedback.click(v);reached=action;}
+        bottom.setOnTouchListener(new View.OnTouchListener(){float y;int reached,screenHeight;boolean committed;public boolean onTouch(View v,MotionEvent e){
+            if(e.getActionMasked()==MotionEvent.ACTION_DOWN){y=e.getRawY();reached=0;committed=false;android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();((WindowManager)getContext().getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRealMetrics(metrics);screenHeight=metrics.heightPixels;dismissMenu();host.beginSwipe();}
+            if(committed)return true;
+            float delta=e.getRawY()-y;int action=GameWindowGeometry.swipeAction(y,e.getRawY(),screenHeight,getResources().getDisplayMetrics().density);
+            if(e.getActionMasked()==MotionEvent.ACTION_MOVE){host.previewSwipe(delta);if(action!=0&&action!=reached)TouchFeedback.click(v);reached=action;
+                // Commit before the system navigation area can cancel the touch.
+                if(action==1){committed=true;host.endSwipe(1);return true;}
+            }
             if(e.getActionMasked()==MotionEvent.ACTION_UP)host.endSwipe(action);
             if(e.getActionMasked()==MotionEvent.ACTION_CANCEL)host.endSwipe(0);return true;}});
         left=new Mark(c,2);right=new Mark(c,3);addView(left,new LayoutParams(dp(36),dp(36),Gravity.BOTTOM|Gravity.LEFT));addView(right,new LayoutParams(dp(36),dp(36),Gravity.BOTTOM|Gravity.RIGHT));
