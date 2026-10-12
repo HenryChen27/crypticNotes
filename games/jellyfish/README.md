@@ -1,30 +1,13 @@
 # 合成大水母：插件适配
 
-`overrides/` 是桌面和手机共用的游戏逻辑及界面。打包脚本先复制 Jellyfish 原项目，再应用这些文件；原项目音频、视频、图片和字体全部保留。
+游戏内容以 Jellyfish 原项目为准。打包脚本原样复制 `index.html`、`js/`、`css/` 和 `assets/`，不再应用 `overrides/` 中的旧逻辑或添加界面。音视频、图片和字体保持原文件；原项目删除的资源也不会残留在新包中。
 
-## 操作
+2026-10-12：原项目已自带存档、排行榜及结算界面，下面的操作说明仅描述旧适配版本，不作为当前原项目行为的承诺。`overrides/` 暂时保留用于回退，不参与打包。
 
-- 点击“暂停”或按 Esc 暂停物理和声音，点击“继续游戏”恢复。
-- “保存并退出”先写入存档，保存成功才关闭窗口；关闭窗口的 × 也会保存当前游戏。
-- 再次启动时选择“继续上次游戏”或“开始新游戏”；新开一局会先确认替换存档。
-- 对局结束自动记录本机个人排行榜，展示前 20 名。没有服务器、账号或成绩上传。
-- 游戏中每 3 秒自动保存；窗口失焦、锁屏也会暂停。系统强制结束可能丢失最后几秒。
-- 更新、删除游戏包保留存档；卸载 Android 应用会清除应用内存档。
+## 构建
 
-## 存储
+运行 scripts/build_native_games.py --source 指向 Jellyfish 原项目目录。生成的统一游戏资源包是 out/minigames-native/Jellyfish-game.zip。
 
-电脑存档在插件数据目录的 `minigame-saves/jellyfish/`。`local-storage.json` 使用原子替换，Windows 的 WebView2 也保留自身存储。
+本地安装位于 minigames/jellyfish。原项目的 tests 不进入发布包；根目录录屏文件也不进入发布包。
 
-Android 存档在应用私有目录的 `minigame-saves/jellyfish/local-storage.json`，使用 AtomicFile。游戏包另存在 `minigames/jellyfish/`，从统一资源包按需下载，不增加 APK 的音视频体积。
-
-Android 通过 `MiniGameOverlayService` 创建 TYPE_APPLICATION_OVERLAY 窗口，从布偶启动不会启动 Activity 或切换出游戏；需要已有的悬浮窗授权。运行期间通知栏显示小游戏服务状态。未开始采集时也可从应用的小游戏一栏启动。
-
-## 构建与验证
-
-```
-.venv/Scripts/python.exe scripts/build_native_games.py --source "D:\学习资料\node.js\jellyfish"
-.venv/Scripts/python.exe scripts/check_minigame_startup.py --native
-.venv/Scripts/python.exe scripts/test_jellyfish_session.py
-```
-
-最后一项需要 `pip install playwright` 和系统 Edge，测试暂停不改变位置、存档恢复、合并中途存档以及个人排行去重。Android 悬浮操作需真机验收。
+插件保留按需下载、删除和启动入口，游戏玩法、界面和存档均由原项目实现。

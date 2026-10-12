@@ -24,11 +24,18 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     var timer:Timer?
     var allowClose=false
     var closing=false
+    var restoredFrame:NSRect?
+    var statusItem:NSStatusItem!
+    var saveDeadline:DispatchWorkItem?
     func applicationDidFinishLaunching(_ notification:Notification){
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback=[]
         config.userContentController.add(self,name:"game")
+        let bridge=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("safe-exit.js")
+        if let source=try? String(contentsOf:bridge,encoding:.utf8){
+            config.userContentController.addUserScript(WKUserScript(source:"window.__jellyfishHostPost=m=>webkit.messageHandlers.game.postMessage(m);"+source,injectionTime:.atDocumentStart,forMainFrameOnly:true))
+        }
         if let saved=try? String(contentsOf:profile.appendingPathComponent("local-storage.json"),encoding:.utf8),
            let encoded=try? JSONSerialization.data(withJSONObject:[saved]),let literal=String(data:encoded,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"try{Object.entries(JSON.parse(\(literal)[0])).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}",injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -53,16 +60,27 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         bar.autoresizingMask=[.width,.minYMargin];bar.wantsLayer=true
         bar.layer?.backgroundColor=NSColor(red:0.094,green:0.141,blue:0.188,alpha:1).cgColor
         let label=NSTextField(labelWithString:window.title)
-        label.frame=NSRect(x:10,y:4,width:width-50,height:20);label.textColor = .white;label.isSelectable=false
+        label.frame=NSRect(x:10,y:4,width:width-210,height:20);label.textColor = .white;label.isSelectable=false
         bar.addSubview(label)
         let button=NSButton(title:"×",target:self,action:#selector(close))
         button.frame=NSRect(x:width-34,y:0,width:34,height:26);button.autoresizingMask=[.minXMargin]
         button.isBordered=false;button.contentTintColor = .white;bar.addSubview(button);content.addSubview(bar)
+        let full=NSButton(title:"全屏/半屏",target:self,action:#selector(toggleSize))
+        full.frame=NSRect(x:width-140,y:0,width:106,height:26);full.autoresizingMask=[.minXMargin];full.isBordered=false;full.contentTintColor = .white;bar.addSubview(full)
+        let hide=NSButton(title:"隐藏",target:self,action:#selector(hideWindow))
+        hide.frame=NSRect(x:width-198,y:0,width:58,height:26);hide.autoresizingMask=[.minXMargin];hide.isBordered=false;hide.contentTintColor = .white;bar.addSubview(hide)
+        statusItem=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength);statusItem.button?.title="水母"
+        let menu=NSMenu();menu.addItem(withTitle:"显示小游戏",action:#selector(showWindow),keyEquivalent:"").target=self
+        menu.addItem(withTitle:"保存并退出",action:#selector(close),keyEquivalent:"").target=self;statusItem.menu=menu
         window.center();window.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true)
         view.loadFileURL(root.appendingPathComponent("index.html"),allowingReadAccessTo:root)
         timer=Timer.scheduledTimer(withTimeInterval:1,repeats:true){[weak self] _ in self?.saveAudio()}
     }
     @objc func close(){window.close()}
+    @objc func hideWindow(){window.orderOut(nil)}
+    @objc func showWindow(){window.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true)}
+    @objc func toggleSize(){if let frame=restoredFrame{window.setFrame(frame,display:true);restoredFrame=nil}else{restoredFrame=window.frame;window.setFrame((window.screen ?? NSScreen.main!).frame,display:true)}}
+    func saveFailed(_ reason:String){saveDeadline?.cancel();closing=false;showWindow();let alert=NSAlert();alert.messageText="保存未完成，请重试";alert.informativeText=reason;alert.runModal()}
     func saveStorage(_ text:String)throws {
         guard text.utf8.count<1024*1024,let data=text.data(using:.utf8),
           let values=try JSONSerialization.jsonObject(with:data) as? [String:String],
@@ -70,6 +88,12 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         try text.write(to:profile.appendingPathComponent("local-storage.json"),atomically:true,encoding:.utf8)
     }
     func userContentController(_ userContentController:WKUserContentController,didReceive message:WKScriptMessage){
+        if message.frameInfo.isMainFrame,let url=message.frameInfo.request.url,url.isFileURL,url.standardizedFileURL.path.hasPrefix(root.path+"/"),
+           let body=message.body as? [String:Any],body["type"] as? String=="safe-exit",closing {
+            guard body["saved"] as? Bool == true,let text=body["json"] as? String else {saveFailed(body["reason"] as? String ?? "保存失败");return}
+            do {try saveStorage(text);saveDeadline?.cancel();allowClose=true;close()}catch{saveFailed(error.localizedDescription)}
+            return
+        }
         guard message.frameInfo.isMainFrame,let url=message.frameInfo.request.url,url.isFileURL,
           url.standardizedFileURL.path.hasPrefix(root.path+"/"),
           let body=message.body as? [String:Any],body["type"] as? String=="save-storage",
@@ -85,13 +109,12 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     }
     func windowShouldClose(_ sender:NSWindow)->Bool {
         if allowClose{return true};if closing{return false};closing=true
-        view.evaluateJavaScript("window.JellyfishSession ? JellyfishSession.beforeClose() : JSON.stringify({})"){result,error in
-            do {guard let text=result as? String else {throw error ?? NSError(domain:"GameSave",code:2)}
-                try self.saveStorage(text);self.allowClose=true;self.close()
-            }catch{self.closing=false;let alert=NSAlert();alert.messageText="保存未完成，请重试";alert.informativeText=error.localizedDescription;alert.runModal()}
-        }
+        let deadline=DispatchWorkItem{[weak self] in if self?.closing == true{self?.saveFailed("保存超时")}}
+        saveDeadline=deadline;DispatchQueue.main.asyncAfter(deadline:.now()+10,execute:deadline)
+        view.evaluateJavaScript("window.__jellyfishHostSave(1)"){_,error in if let error=error{self.saveFailed(error.localizedDescription)}}
         return false
     }
+    func webViewDidClose(_ webView:WKWebView){close()}
     func saveAudio(){
         view.evaluateJavaScript("localStorage.getItem('jellyfish.audioSettings')"){result,error in
             if let text=result as? String,text.utf8.count<4096{try? text.write(to:profile.appendingPathComponent("audio.json"),atomically:true,encoding:.utf8)}

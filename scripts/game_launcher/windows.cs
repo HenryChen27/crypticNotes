@@ -12,6 +12,9 @@ class GameWindow : Form {
     readonly Timer save = new Timer();
     bool dragging; Point start;
     bool allowClose, closing;
+    Rectangle restoredBounds;
+    NotifyIcon tray;
+    TaskCompletionSource<string> safeSave;
     public GameWindow(string game, string data, string smoke, string title, string script) {
         root=Path.GetFullPath(game);profile=Path.GetFullPath(data);report=smoke;
         testScript=script;
@@ -26,23 +29,32 @@ class GameWindow : Form {
         var label=new Label {Text=title,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(10,0,0,0)};
         var close=new Button {Text="×",Dock=DockStyle.Right,Width=34,FlatStyle=FlatStyle.Flat,TabStop=false};
         close.FlatAppearance.BorderSize=0;close.Click+=(s,e)=>Close();
+        var full=new Button {Text="全屏",Dock=DockStyle.Right,Width=72,FlatStyle=FlatStyle.Flat,TabStop=false};
+        full.Click+=(s,e)=>{if(WindowState==FormWindowState.Maximized){WindowState=FormWindowState.Normal;Bounds=restoredBounds;full.Text="全屏";}else{restoredBounds=Bounds;WindowState=FormWindowState.Maximized;full.Text="半屏";}};
+        var hide=new Button {Text="隐藏",Dock=DockStyle.Right,Width=60,FlatStyle=FlatStyle.Flat,TabStop=false};
+        hide.Click+=(s,e)=>Hide();
+        tray=new NotifyIcon {Icon=SystemIcons.Application,Text=title,Visible=true};
+        var menu=new ContextMenuStrip();menu.Items.Add("显示小游戏",null,(s,e)=>{Show();Activate();});menu.Items.Add("保存并退出",null,(s,e)=>Close());
+        tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>{Show();Activate();};
         label.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;start=Cursor.Position;}};
         label.MouseMove+=(s,e)=>{if(dragging){Point next=Cursor.Position;Location=new Point(Left+next.X-start.X,Top+next.Y-start.Y);start=next;}};
         label.MouseUp+=(s,e)=>dragging=false;
-        bar.Controls.Add(label);bar.Controls.Add(close);
+        bar.Controls.Add(label);bar.Controls.Add(hide);bar.Controls.Add(full);bar.Controls.Add(close);
         var grip=new Panel {Dock=DockStyle.Bottom,Height=12};
         grip.Paint+=(s,e)=>ControlPaint.DrawSizeGrip(e.Graphics,ForeColor,new Rectangle(grip.Width-12,0,12,12));
         grip.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){ReleaseCapture();SendMessage(Handle,0xA1,(IntPtr)17,IntPtr.Zero);}};
         view.Dock=DockStyle.Fill;Controls.Add(view);Controls.Add(bar);Controls.Add(grip);
         Shown+=async(s,e)=>await Initialize();
         save.Interval=1000;save.Tick+=async(s,e)=>await SaveAudio();
-        FormClosed+=(s,e)=>{save.Stop();view.Dispose();};
+        FormClosed+=(s,e)=>{save.Stop();tray.Dispose();view.Dispose();};
         FormClosing+=async(s,e)=>{
             if(allowClose||view.CoreWebView2==null)return;
             e.Cancel=true;if(closing)return;closing=true;
             try {
-                string result=await view.CoreWebView2.ExecuteScriptAsync("window.JellyfishSession ? JellyfishSession.beforeClose() : JSON.stringify({})");
-                SaveStorage(new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<string>(result));
+                safeSave=new TaskCompletionSource<string>();
+                await view.CoreWebView2.ExecuteScriptAsync("window.__jellyfishHostSave(1)");
+                if(await Task.WhenAny(safeSave.Task,Task.Delay(10000))!=safeSave.Task)throw new Exception("保存超时");
+                SaveStorage(await safeSave.Task);
                 allowClose=true;Close();
             } catch(Exception error){closing=false;MessageBox.Show(this,"保存未完成，请重试："+error.Message,"游戏存档");}
         };
@@ -54,6 +66,8 @@ class GameWindow : Form {
             var environment=await CoreWebView2Environment.CreateAsync(null,Path.Combine(profile,"webview2"));
             await view.EnsureCoreWebView2Async(environment);
             var web=view.CoreWebView2;
+            await web.AddScriptToExecuteOnDocumentCreatedAsync("window.__jellyfishHostPost=m=>chrome.webview.postMessage(m);"+File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"safe-exit.js")));
+            web.WindowCloseRequested+=(s,e)=>Close();
             if(testScript!=null)await web.AddScriptToExecuteOnDocumentCreatedAsync("window.__JELLYFISH_TEST=true");
             var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();
             string storage=Path.Combine(profile,"local-storage.json");
@@ -65,6 +79,9 @@ class GameWindow : Form {
                 if(!e.Source.StartsWith("https://minigame.local/",StringComparison.OrdinalIgnoreCase))return;
                 try {
                     var message=serializer.Deserialize<System.Collections.Generic.Dictionary<string,object>>(e.WebMessageAsJson);
+                    if(message.ContainsKey("type")&&(string)message["type"]=="safe-exit"){
+                        if(safeSave!=null){if(Convert.ToBoolean(message["saved"]))safeSave.TrySetResult((string)message["json"]);else safeSave.TrySetException(new Exception(Convert.ToString(message["reason"])));}return;
+                    }
                     if(!message.ContainsKey("type")||(string)message["type"]!="save-storage")return;
                     int id=Convert.ToInt32(message["id"]);
                     string saveError=null;

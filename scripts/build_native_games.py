@@ -14,7 +14,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
-GAME_VERSION='2.1.0'
+GAME_VERSION='2.3.0'
 
 
 def bundle(folder, target):
@@ -63,8 +63,15 @@ def main():
         build_macos.BUNDLE_ID='com.henrychen.minigames.launcher'
         keychain=os.environ.get('MACOS_KEYCHAIN','');identity=build_macos.signing_identity(keychain)
         build_macos.sign(app,identity,keychain);build_macos.verify(app,identity)
+    shutil.copy2(ROOT/'scripts/game_launcher/safe-exit.js',runtime/'safe-exit.js')
     (runtime/'package.json').write_text(json.dumps({'id':'game-launcher','platform':key,'version':GAME_VERSION}),encoding='utf-8')
     game=out/'jellyfish';game.mkdir(parents=True,exist_ok=True)
+    # The source is authoritative, including removed/replaced resources.
+    payload=game/'game'
+    if payload.exists():
+        if payload.resolve().parent != (out/'jellyfish').resolve():
+            raise RuntimeError('Unexpected payload path')
+        shutil.rmtree(payload)
     hashes={}
     for name in ('index.html','assets','js','css'):
         source=args.source/name;target=game/'game'/name;target.parent.mkdir(parents=True,exist_ok=True)
@@ -81,11 +88,7 @@ def main():
             assert checksum==hashlib.sha256((args.source/rel).read_bytes()).hexdigest(),rel
             hashes[rel.as_posix()]=checksum
     (out/'game-resource-hashes.json').write_text(json.dumps(hashes,ensure_ascii=False,indent=2),encoding='utf-8')
-    shutil.copytree(ROOT/'games/jellyfish/overrides',game/'game',dirs_exist_ok=True)
-    page=game/'game/index.html'
-    text=page.read_text(encoding='utf-8').replace('</head>','<link rel="stylesheet" href="css/session.css">\n</head>')
-    text=text.replace('<script src="js/game.js">','<script src="js/session.js"></script>\n  <script src="js/game.js">')
-    page.write_text(text,encoding='utf-8')
+    # Use the upstream UI and save/record implementation without overrides.
     (game/'package.json').write_text(json.dumps({'id':'jellyfish','runtime':'system-webview','version':GAME_VERSION}),encoding='utf-8')
     catalog_path=out/'native-desktop-games.json'
     catalog=json.loads(catalog_path.read_text()) if catalog_path.exists() else {'schema':2,'id':'jellyfish','launchers':{}}
