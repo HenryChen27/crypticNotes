@@ -3,6 +3,7 @@ from __future__ import annotations
 from .src.ui_trace import trace
 import argparse
 import json
+import math
 import multiprocessing as mp
 import platform
 from pathlib import Path
@@ -704,6 +705,7 @@ class DraggableGear(GearButton):
         self.drag_start_pos=None
         self.moved=False
         self.matching=False
+        self.game_background=False
         self.match_clock=C.QElapsedTimer()
         self.match_timer=C.QTimer(self)
         self.match_timer.setInterval(33)
@@ -750,7 +752,11 @@ class DraggableGear(GearButton):
         if event.button()==C.Qt.LeftButton:
             self.click_timer.stop()
             self.double_release=True
-            self.window.retry()
+            games=getattr(self.window,'minigames',None)
+            if self.game_background and games is not None:
+                games.restore_game()
+            else:
+                self.window.retry()
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -765,10 +771,22 @@ class DraggableGear(GearButton):
             self.match_timer.start()
             self.pet.play('matching')
         else:
-            self.match_timer.stop()
+            if not self.game_background:self.match_timer.stop()
             if self.pet.mood == 'matching':
                 self.pet.play('idle')
         self.update()
+
+    def set_game_background(self, active):
+        self.game_background=bool(active)
+        if active:
+            self.match_clock.start();self.match_timer.start();self.pet.play('matching')
+        else:
+            if not self.matching:self.match_timer.stop();self.pet.play('idle')
+        self.update()
+
+    def game_orbit_pos(self):
+        angle=self.match_clock.elapsed()/3200*math.tau
+        return C.QPointF(self.width()/2+math.cos(angle)*(self.width()/2-12),self.height()/2+math.sin(angle)*(self.height()/2-12))
 
     def paintEvent(self,event):
         if self.pet.enabled:
@@ -782,6 +800,14 @@ class DraggableGear(GearButton):
             p.setPen(G.QPen(G.QColor('#c8e7fa'),3))
             p.drawArc(C.QRectF(35,113,42,12),-int(self.match_clock.elapsed()/5)*16,240*16)
             p.end()
+        if self.game_background:
+            p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
+            pos=self.game_orbit_pos();p.translate(pos)
+            p.setPen(G.QPen(G.QColor('#77caff'),1.6));p.setBrush(G.QColor(67,163,239,210))
+            p.drawChord(C.QRectF(-9,-9,18,16),0,180*16)
+            for offset in (-5,0,5):
+                path=G.QPainterPath(C.QPointF(offset,-1));path.cubicTo(offset-4,3,offset+4,6,offset,10);p.drawPath(path)
+            p.end()
 
     def enterEvent(self,event):
         self.pet.play('curious')
@@ -789,6 +815,8 @@ class DraggableGear(GearButton):
 
     def mousePressEvent(self,event):
         if event.button()==C.Qt.LeftButton:
+            if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<20:
+                self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
             self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
@@ -1568,6 +1596,10 @@ class Companion(W.QWidget):
             self.notify(f'无法启动更新：{exc}')
 
     def retry(self, force_floor=None):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():
+            if games.game_hidden:games.restore_game()
+            return
         if self.panel.isVisible():
             self.toggle_panel()
         self.cached_candidate = None
@@ -1586,6 +1618,8 @@ class Companion(W.QWidget):
                 {'force_floor':force_floor} if force_floor is not None else {})))
 
     def open_map(self, reason="map_hotkey", force_floor=None):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():return
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
@@ -1601,6 +1635,8 @@ class Companion(W.QWidget):
         C.QTimer.singleShot(self.delay.currentData(),lambda: self.take_capture(token))
 
     def take_capture(self,token):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():return
         if getattr(self,'_visibility_hidden',False):
             C.QTimer.singleShot(80,lambda:self.take_capture(token) if self.state.accepts(token) else None)
             return
