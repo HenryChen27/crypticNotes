@@ -22,7 +22,6 @@ public class MiniGameOverlayService extends Service {
     private AtomicFile save;
     private boolean closing;
     static volatile boolean running;
-    static volatile boolean hidden;
     private int barHeight;
     private WindowManager windows;
     private WindowManager.LayoutParams params;
@@ -37,7 +36,7 @@ public class MiniGameOverlayService extends Service {
     @Override public int onStartCommand(Intent intent,int flags,int id){if(intent!=null&&"show".equals(intent.getAction()))showGame();return START_NOT_STICKY;}
     @Override public void onCreate(){
         super.onCreate();
-        running=true;hidden=false;barHeight=Theme.px(this,30);
+        running=true;barHeight=Theme.px(this,30);
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("mini-game","小游戏",NotificationManager.IMPORTANCE_LOW));
         startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("合成大水母正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setOngoing(true).build());
@@ -46,10 +45,10 @@ public class MiniGameOverlayService extends Service {
         shell=new LinearLayout(this);shell.setOrientation(1);shell.setBackgroundColor(0xff182430);
         LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=new TextView(this);title.setText("合成大水母");title.setTextColor(Theme.TITLE);title.setPadding(12,0,0,0);bar.addView(title,new LinearLayout.LayoutParams(0,barHeight,1));
-        ControlIcon full=new ControlIcon(1);bar.addView(full,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));
-        full.setOnClickListener(v->{fullScreen=!fullScreen;full.invalidate();resize();windows.updateViewLayout(shell,params);});
-        ControlIcon hide=new ControlIcon(0);bar.addView(hide,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));hide.setOnClickListener(v->hideGame());
-        ControlIcon close=new ControlIcon(2);bar.addView(close,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));close.setOnClickListener(v->saveAndClose());shell.addView(bar);
+        TextView full=new TextView(this);full.setText("全屏");full.setTextColor(Theme.TITLE);full.setGravity(Gravity.CENTER);bar.addView(full,new LinearLayout.LayoutParams(Theme.px(this,62),barHeight));
+        full.setOnClickListener(v->{fullScreen=!fullScreen;full.setText(fullScreen?"半屏":"全屏");resize();windows.updateViewLayout(shell,params);});
+        TextView hide=new TextView(this);hide.setText("隐藏");hide.setTextColor(Theme.TITLE);hide.setGravity(Gravity.CENTER);bar.addView(hide,new LinearLayout.LayoutParams(Theme.px(this,48),barHeight));hide.setOnClickListener(v->hideGame());
+        TextView close=new TextView(this);close.setText("×");close.setTextColor(Theme.TITLE);close.setTextSize(24);close.setGravity(Gravity.CENTER);bar.addView(close,new LinearLayout.LayoutParams(Theme.px(this,40),barHeight));close.setOnClickListener(v->saveAndClose());shell.addView(bar);
         web=new WebView(this);shell.addView(web,new LinearLayout.LayoutParams(-1,0,1));
         windows=(WindowManager)getSystemService(WINDOW_SERVICE);
         params=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
@@ -95,19 +94,10 @@ public class MiniGameOverlayService extends Service {
         registerReceiver(screenReceiver,new android.content.IntentFilter(Intent.ACTION_SCREEN_OFF));
     }
     static boolean local(Uri uri){return "https".equals(uri.getScheme())&&"minigame.local".equals(uri.getHost());}
-    final class ControlIcon extends View {
-        final int kind;final android.graphics.Paint paint=new android.graphics.Paint(3);
-        ControlIcon(int kind){super(MiniGameOverlayService.this);this.kind=kind;setContentDescription(kind==0?"隐藏":kind==1?"全屏或恢复窗口":"保存并关闭");}
-        @Override protected void onDraw(android.graphics.Canvas c){super.onDraw(c);float unit=getResources().getDisplayMetrics().density,x=getWidth()/2f,y=getHeight()/2f;paint.setColor(Theme.TITLE);paint.setStrokeWidth(1.5f*unit);
-            if(kind==0)c.drawLine(x-6*unit,y,x+6*unit,y,paint);
-            else if(kind==2){c.drawLine(x-5*unit,y-5*unit,x+5*unit,y+5*unit,paint);c.drawLine(x-5*unit,y+5*unit,x+5*unit,y-5*unit,paint);}
-            else for(int sx:new int[]{-1,1})for(int sy:new int[]{-1,1}){float a=(fullScreen?7:2)*unit,b=(fullScreen?2:7)*unit,d=(fullScreen?1:-1)*unit,tx=x+sx*b,ty=y+sy*b;c.drawLine(x+sx*a,y+sy*a,tx,ty,paint);c.drawLine(tx,ty,tx+sx*d*4,ty,paint);c.drawLine(tx,ty,tx,ty+sy*d*4,paint);}
-        }
-    }
     static WebResourceResponse blocked(){return new WebResourceResponse("text/plain","UTF-8",403,"Blocked",Collections.emptyMap(),new ByteArrayInputStream(new byte[0]));}
     void resize(){android.util.DisplayMetrics m=getResources().getDisplayMetrics();int width=Math.min((int)(m.widthPixels*.90),(int)((m.heightPixels*.85-barHeight)*2559/1441));params.width=fullScreen?m.widthPixels:Math.max(240,width);params.height=fullScreen?m.heightPixels:(int)(params.width*1441.0/2559)+barHeight;params.x=(m.widthPixels-params.width)/2;params.y=(m.heightPixels-params.height)/2;}
-    void hideGame(){hidden=true;shell.setVisibility(View.GONE);if(restoreButton==null){restoreButton=new TextView(this);restoreButton.setText("水母");restoreButton.setTextColor(Theme.TITLE);restoreButton.setBackgroundColor(0xdd182430);restoreButton.setGravity(Gravity.CENTER);WindowManager.LayoutParams p=new WindowManager.LayoutParams(Theme.px(this,52),Theme.px(this,40),WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,android.graphics.PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.RIGHT;p.y=Theme.px(this,60);windows.addView(restoreButton,p);restoreButton.setOnClickListener(v->showGame());}restoreButton.setVisibility(View.VISIBLE);}
-    void showGame(){hidden=false;if(shell!=null)shell.setVisibility(View.VISIBLE);if(restoreButton!=null)restoreButton.setVisibility(View.GONE);}
+    void hideGame(){shell.setVisibility(View.GONE);if(restoreButton==null){restoreButton=new TextView(this);restoreButton.setText("水母");restoreButton.setTextColor(Theme.TITLE);restoreButton.setBackgroundColor(0xdd182430);restoreButton.setGravity(Gravity.CENTER);WindowManager.LayoutParams p=new WindowManager.LayoutParams(Theme.px(this,52),Theme.px(this,40),WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,android.graphics.PixelFormat.TRANSLUCENT);p.gravity=Gravity.TOP|Gravity.RIGHT;p.y=Theme.px(this,60);windows.addView(restoreButton,p);restoreButton.setOnClickListener(v->showGame());}restoreButton.setVisibility(View.VISIBLE);}
+    void showGame(){if(shell!=null)shell.setVisibility(View.VISIBLE);if(restoreButton!=null)restoreButton.setVisibility(View.GONE);}
     @Override public void onConfigurationChanged(Configuration c){super.onConfigurationChanged(c);if(params!=null){resize();windows.updateViewLayout(shell,params);}}
     private synchronized void write(String json)throws Exception{
         if(json==null||json.length()>1024*1024)throw new IOException("存档过大");JSONObject data=new JSONObject(json);Iterator<String> keys=data.keys();while(keys.hasNext()){String key=keys.next();if(!key.startsWith("jellyfish.")||!(data.get(key) instanceof String))throw new IOException("无效存档");}
@@ -129,5 +119,5 @@ public class MiniGameOverlayService extends Service {
         handler.postDelayed(saveTimeout,10000);
         web.evaluateJavascript("window.__jellyfishHostSave(1)",null);
     }
-    @Override public void onDestroy(){running=false;hidden=false;handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(restoreButton!=null&&restoreButton.isAttachedToWindow())windows.removeView(restoreButton);if(shell!=null&&shell.isAttachedToWindow())windows.removeView(shell);if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
+    @Override public void onDestroy(){running=false;handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(restoreButton!=null&&restoreButton.isAttachedToWindow())windows.removeView(restoreButton);if(shell!=null&&shell.isAttachedToWindow())windows.removeView(shell);if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
 }

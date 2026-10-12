@@ -15,18 +15,6 @@ class GameWindow : Form {
     Rectangle restoredBounds;
     NotifyIcon tray;
     TaskCompletionSource<string> safeSave;
-    string lastCommand;
-    readonly Timer commands=new Timer();
-    FormWindowState visibleState=FormWindowState.Normal;
-    WindowControl sizeControl,hideControl;
-    bool ProbeControls(){
-        sizeControl.PerformClick();bool expanded=WindowState==FormWindowState.Maximized&&sizeControl.Inward;
-        sizeControl.PerformClick();bool restored=WindowState==FormWindowState.Normal&&!sizeControl.Inward;
-        hideControl.PerformClick();bool hidden=WindowState==FormWindowState.Minimized&&ShowInTaskbar&&File.ReadAllText(Path.Combine(profile,"window-state.json")).Contains("true");
-        RestoreGame();return expanded&&restored&&hidden&&WindowState==FormWindowState.Normal;
-    }
-    void PublishState(){try{File.WriteAllText(Path.Combine(profile,"window-state.json"),"{\"hidden\":"+(WindowState==FormWindowState.Minimized?"true":"false")+"}");}catch(Exception){}}
-    void RestoreGame(){Show();WindowState=visibleState;Activate();PublishState();}
     public GameWindow(string game, string data, string smoke, string title, string script) {
         root=Path.GetFullPath(game);profile=Path.GetFullPath(data);report=smoke;
         testScript=script;
@@ -39,21 +27,15 @@ class GameWindow : Form {
         ClientSize=new Size(width,(int)(width*1441.0/2559)+38);
         var bar=new Panel {Dock=DockStyle.Top,Height=26};
         var label=new Label {Text=title,Dock=DockStyle.Fill,TextAlign=ContentAlignment.MiddleLeft,Padding=new Padding(10,0,0,0)};
-        var close=new WindowControl {Kind=2,AccessibleName="保存并关闭",Dock=DockStyle.Right,Width=34,FlatStyle=FlatStyle.Flat,TabStop=false};
+        var close=new Button {Text="×",Dock=DockStyle.Right,Width=34,FlatStyle=FlatStyle.Flat,TabStop=false};
         close.FlatAppearance.BorderSize=0;close.Click+=(s,e)=>Close();
-        var full=new WindowControl {Kind=1,AccessibleName="全屏或恢复窗口",Dock=DockStyle.Right,Width=34,FlatStyle=FlatStyle.Flat,TabStop=false};
-        sizeControl=full;
-        full.Click+=(s,e)=>{if(WindowState==FormWindowState.Maximized){WindowState=FormWindowState.Normal;Bounds=restoredBounds;full.Inward=false;}else{restoredBounds=Bounds;WindowState=FormWindowState.Maximized;full.Inward=true;}full.Invalidate();};
-        var hide=new WindowControl {Kind=0,AccessibleName="隐藏到任务栏",Dock=DockStyle.Right,Width=34,FlatStyle=FlatStyle.Flat,TabStop=false};
-        hideControl=hide;
-        hide.Click+=(s,e)=>{visibleState=WindowState;WindowState=FormWindowState.Minimized;};
-        ShowInTaskbar=true;
-        Resize+=(s,e)=>{if(WindowState!=FormWindowState.Minimized)visibleState=WindowState;PublishState();};
+        var full=new Button {Text="全屏",Dock=DockStyle.Right,Width=72,FlatStyle=FlatStyle.Flat,TabStop=false};
+        full.Click+=(s,e)=>{if(WindowState==FormWindowState.Maximized){WindowState=FormWindowState.Normal;Bounds=restoredBounds;full.Text="全屏";}else{restoredBounds=Bounds;WindowState=FormWindowState.Maximized;full.Text="半屏";}};
+        var hide=new Button {Text="隐藏",Dock=DockStyle.Right,Width=60,FlatStyle=FlatStyle.Flat,TabStop=false};
+        hide.Click+=(s,e)=>Hide();
         tray=new NotifyIcon {Icon=SystemIcons.Application,Text=title,Visible=true};
-        var menu=new ContextMenuStrip();menu.Items.Add("显示小游戏",null,(s,e)=>RestoreGame());menu.Items.Add("保存并退出",null,(s,e)=>Close());
-        tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>RestoreGame();
-        commands.Interval=200;commands.Tick+=(s,e)=>{try{string path=Path.Combine(profile,"window-command.json");if(!File.Exists(path))return;string text=File.ReadAllText(path);if(text==lastCommand)return;lastCommand=text;var command=new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(text);if(Convert.ToString(command["action"])=="show")RestoreGame();}catch(Exception){}};
-        Shown+=(s,e)=>{PublishState();commands.Start();};
+        var menu=new ContextMenuStrip();menu.Items.Add("显示小游戏",null,(s,e)=>{Show();Activate();});menu.Items.Add("保存并退出",null,(s,e)=>Close());
+        tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>{Show();Activate();};
         label.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;start=Cursor.Position;}};
         label.MouseMove+=(s,e)=>{if(dragging){Point next=Cursor.Position;Location=new Point(Left+next.X-start.X,Top+next.Y-start.Y);start=next;}};
         label.MouseUp+=(s,e)=>dragging=false;
@@ -64,7 +46,7 @@ class GameWindow : Form {
         view.Dock=DockStyle.Fill;Controls.Add(view);Controls.Add(bar);Controls.Add(grip);
         Shown+=async(s,e)=>await Initialize();
         save.Interval=1000;save.Tick+=async(s,e)=>await SaveAudio();
-        FormClosed+=(s,e)=>{save.Stop();commands.Stop();tray.Dispose();view.Dispose();};
+        FormClosed+=(s,e)=>{save.Stop();tray.Dispose();view.Dispose();};
         FormClosing+=async(s,e)=>{
             if(allowClose||view.CoreWebView2==null)return;
             e.Cancel=true;if(closing)return;closing=true;
@@ -138,9 +120,7 @@ class GameWindow : Form {
                         if(!tested.Contains("\"waitForExit\":true")&&!IsDisposed)Close();return;
                     }
                     string result=await web.ExecuteScriptAsync("({canvas:!!document.getElementById('gameCanvas'),matter:typeof Matter!=='undefined',width:innerWidth,height:innerHeight,storage:(()=>{try{localStorage.setItem('__nativeSmoke','yes');return localStorage.getItem('__nativeSmoke')==='yes'}catch(e){return false}})(),images:Object.keys(Loader.getAssets().images).length,audio:Object.keys(Loader.getAssets().audio).length,engine:'WebView2'})");
-                    var smoke=serializer.Deserialize<System.Collections.Generic.Dictionary<string,object>>(result);
-                    smoke["windowControls"]=ProbeControls();
-                    File.WriteAllText(report,serializer.Serialize(smoke));Close();
+                    File.WriteAllText(report,result);Close();
                 }
             };
             web.Navigate("https://minigame.local/index.html");
@@ -167,22 +147,6 @@ class GameWindow : Form {
         File.WriteAllText(Path.Combine(profile,"launcher-error.log"),message);
         if(report==null)MessageBox.Show(this,"小游戏启动失败，详情已保存到 launcher-error.log。","小游戏");
         Environment.ExitCode=1;Close();
-    }
-}
-class WindowControl:Button {
-    public int Kind;public bool Inward;
-    protected override void OnPaint(PaintEventArgs e){
-        base.OnPaint(e);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        float x=Width/2f,y=Height/2f;
-        using(var pen=new Pen(ForeColor,1.5f)){
-            if(Kind==0)e.Graphics.DrawLine(pen,x-6,y,x+6,y);
-            else if(Kind==2){e.Graphics.DrawLine(pen,x-5,y-5,x+5,y+5);e.Graphics.DrawLine(pen,x-5,y+5,x+5,y-5);}
-            else foreach(int sx in new[]{-1,1})foreach(int sy in new[]{-1,1}){
-                float a=Inward?7:2,b=Inward?2:7,tx=x+sx*b,ty=y+sy*b;
-                e.Graphics.DrawLine(pen,x+sx*a,y+sy*a,tx,ty);
-                float direction=Inward?1:-1;e.Graphics.DrawLine(pen,tx,ty,tx+sx*direction*4,ty);e.Graphics.DrawLine(pen,tx,ty,tx,ty+sy*direction*4);
-            }
-        }
     }
 }
 class Program {

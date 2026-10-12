@@ -1,7 +1,5 @@
 """Game download controls; the web runtime lives in an optional subprocess."""
 import sys
-import json
-import time
 from PySide6 import QtCore as C, QtWidgets as W
 from .paths import DATA_ROOT
 from .theme import ChalkButton
@@ -45,10 +43,6 @@ class GameControls(W.QWidget):
         self.ready_timer = C.QTimer(self)
         self.ready_timer.setInterval(250)
         self.ready_timer.timeout.connect(self.check_ready)
-        self.game_hidden=False
-        self.window_timer=C.QTimer(self)
-        self.window_timer.setInterval(200)
-        self.window_timer.timeout.connect(self.check_window_state)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(W.QLabel('合成大水母'))
@@ -79,26 +73,6 @@ class GameControls(W.QWidget):
 
     def running(self):
         return self.process.state() != C.QProcess.NotRunning
-
-    def check_window_state(self):
-        hidden=False
-        if self.running():
-            try:
-                hidden=bool(json.loads((DATA_ROOT/'minigame-saves/jellyfish/window-state.json').read_text()).get('hidden'))
-            except (OSError,ValueError):
-                pass
-        if hidden!=self.game_hidden:
-            self.game_hidden=hidden
-            self.companion.gear.set_game_background(hidden)
-
-    def restore_game(self):
-        if not self.running():return False
-        folder=DATA_ROOT/'minigame-saves/jellyfish'
-        target=folder/'window-command.json'
-        temp=folder/'window-command.tmp'
-        temp.write_text(json.dumps({'action':'show','id':time.time_ns()}),encoding='utf-8')
-        temp.replace(target)
-        return True
 
     def owns_window(self, handle):
         if not self.running() or not handle:
@@ -168,8 +142,6 @@ class GameControls(W.QWidget):
         self.output.clear()
         profile = DATA_ROOT/'minigame-saves/jellyfish'
         profile.mkdir(parents=True, exist_ok=True)
-        for name in ('window-state.json','window-command.json'):
-            (profile/name).unlink(missing_ok=True)
         self.ready_file = profile/'ready'
         self.ready_file.unlink(missing_ok=True)
         self.process.setWorkingDirectory(str(self.store.folder))
@@ -177,7 +149,6 @@ class GameControls(W.QWidget):
         if self.store.native():
             arguments += ['--title', '合成大水母']
         self.process.start(str(self.store.entry()), arguments)
-        self.window_timer.start()
         self.start_timer.start(45000)
         self.ready_timer.start()
         self.status.setText('正在启动小游戏…')
@@ -207,9 +178,6 @@ class GameControls(W.QWidget):
         self.status.setText('小游戏无法启动，请删除后重新下载')
 
     def game_finished(self, code, status):
-        self.window_timer.stop()
-        self.game_hidden=False
-        self.companion.gear.set_game_background(False)
         self.start_timer.stop()
         self.ready_timer.stop()
         self.refresh()
