@@ -23,10 +23,10 @@ public class MiniGamesActivity extends Activity {
         Theme.ChalkButton back=new Theme.ChalkButton(this,"返回");body.addView(back);back.setOnClickListener(v->finish());ScrollView scroll=new ScrollView(this);scroll.addView(body);setContentView(scroll);
         download.setOnClickListener(v->{if(busy||MiniGameOverlayService.running)return;busy=true;refresh();new Thread(()->{
             String error=null;try{store.download(text->runOnUiThread(()->status.setText(text)));}catch(Exception e){error=e.getMessage();}
-            final String result=error;runOnUiThread(()->{busy=false;if(isFinishing()||isDestroyed())return;refresh();if(result==null)getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",false).apply();status.setText(result==null?"游戏已是最新版，请从悬浮球启动":result);});
+            final String result=error;runOnUiThread(()->{busy=false;if(isFinishing()||isDestroyed())return;if(result==null)getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",false).apply();refresh();status.setText(result==null?"游戏已是最新版，请从悬浮球启动":result);});
         },"minigame-download").start();});
         delete.setOnClickListener(v->{if(MiniGameOverlayService.running)return;new AlertDialog.Builder(this).setMessage("删除游戏包？本机存档和排行榜会保留。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{
-            try{store.delete();refresh();}catch(Exception e){status.setText(e.getMessage());}
+            try{store.delete();getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",false).apply();refresh();}catch(Exception e){status.setText(e.getMessage());}
         }).show();});refresh();
     }
     @Override protected void onResume(){super.onResume();if(store!=null){refresh();MiniGameUpdates.check(this,()->{if(!isDestroyed()&&!isFinishing())refresh();});}}

@@ -163,6 +163,11 @@ def sync_sources(github):
     names=run(['git','ls-files','-z'],ROOT,capture=True).split('\0')
     files=[n for n in names if n and (n.startswith(('mapmatching/','android/','maps/','scripts/','docs/','games/'))
         or n in ('README.md','requirements.txt','requirements-build.txt'))]
+    # New Android classes and host bridges are build inputs before a local Git
+    # commit exists. Export them too, or the public source cannot reproduce APKs.
+    files=sorted(set(files)|{p.relative_to(ROOT).as_posix() for pattern in
+        ('android/app/src/**','scripts/game_launcher/**') for p in ROOT.glob(pattern)
+        if p.is_file() and p.suffix not in ('.pyc','.log')})
     for name in files:
         source=ROOT/name
         if not source.is_file(): raise RuntimeError('Tracked source missing: '+name)

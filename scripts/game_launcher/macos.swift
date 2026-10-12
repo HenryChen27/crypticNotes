@@ -159,6 +159,7 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     }
     func webView(_ webView:WKWebView,createWebViewWith configuration:WKWebViewConfiguration,for navigationAction:WKNavigationAction,windowFeatures:WKWindowFeatures)->WKWebView? {nil}
     func webView(_ webView:WKWebView,didFinish navigation:WKNavigation!){
+        view.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(window.isMiniaturized))",completionHandler:nil)
         try? "ready".write(to:profile.appendingPathComponent("ready"),atomically:true,encoding:.utf8)
         if let report=option("--smoke-report"){
             DispatchQueue.main.asyncAfter(deadline:.now()+2.5){
