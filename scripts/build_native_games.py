@@ -7,6 +7,7 @@ from pathlib import Path
 import platform
 import plistlib
 import shutil
+import struct
 import subprocess
 import sys
 import urllib.request
@@ -14,7 +15,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
-GAME_VERSION='2.3.0'
+GAME_VERSION='2.4.0'
 
 
 def bundle(folder, target):
@@ -46,8 +47,14 @@ def main():
                          'runtimes/win-x64/native/WebView2Loader.dll','LICENSE.txt'):
                 (runtime/Path(name).name).write_bytes(z.read(name))
         compiler=Path(os.environ.get('SystemRoot',r'C:\Windows'))/'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+        # ICO container embeds the original PNG bytes; no game asset is altered.
+        icon_png=(ROOT/'mapmatching/assets/minigames/fish5.png').read_bytes()
+        iw,ih=struct.unpack('>II',icon_png[16:24])
+        icon=ROOT/'build/native-games/GameLauncher.ico'
+        (runtime/'GameLauncher.ico').unlink(missing_ok=True)
+        icon.write_bytes(struct.pack('<HHH',0,1,1)+struct.pack('<BBBBHHII',iw if iw<256 else 0,ih if ih<256 else 0,0,0,1,32,len(icon_png),22)+icon_png)
         subprocess.run([str(compiler),'/nologo','/target:winexe','/platform:x64','/optimize+',
-            '/out:'+str(runtime/'GameLauncher.exe'),'/r:System.Windows.Forms.dll','/r:System.Drawing.dll',
+            '/out:'+str(runtime/'GameLauncher.exe'),'/win32icon:'+str(icon),'/r:System.Windows.Forms.dll','/r:System.Drawing.dll',
             '/r:System.Web.Extensions.dll','/r:'+str(runtime/'Microsoft.Web.WebView2.Core.dll'),
             '/r:'+str(runtime/'Microsoft.Web.WebView2.WinForms.dll'),str(ROOT/'scripts/game_launcher/windows.cs')],check=True)
     else:

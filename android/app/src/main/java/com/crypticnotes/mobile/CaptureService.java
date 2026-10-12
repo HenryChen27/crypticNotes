@@ -302,6 +302,7 @@ public class CaptureService extends Service {
     private final Runnable badgeSingleTap = () -> { badgeTapAt = 0; if (!destroyed) toggleQuickSettings(); };
 
     private void retryFromBadge() {
+        if(MiniGameOverlayService.running){if(MiniGameOverlayService.hidden)startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));return;}
         badgeText = ""; // Explicit actions must acknowledge every tap.
         if (!ready && !applying) { setStatus(S_IDLE, "正在准备，请稍候"); return; }
         if (quickSettings != null) closeQuickSettings();
@@ -473,7 +474,8 @@ public class CaptureService extends Service {
 
         // The emblem is on screen in every state, so the button is one object
         // that speaks rather than a circle that turns into a strip and back.
-        badgeEmblem = new ImageView(this);
+        badge.setClipChildren(false);badge.setClipToPadding(false);
+        badgeEmblem = new GameBadgeView(this);
         badgeEmblem.setImageResource(R.drawable.floating_emblem);
         badgeEmblem.setScaleType(ImageView.ScaleType.FIT_CENTER);
         badgeEmblem.setContentDescription("地图助手");
@@ -1012,6 +1014,7 @@ public class CaptureService extends Service {
      */
     private void sample() {
         if (destroyed || !ready) return;
+        if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
         long nowWatch = SystemClock.elapsedRealtime();
         boolean overdue = (checking && nowWatch-checkingSince > BUSY_TIMEOUT_MS)
                 || (busy && nowWatch-busySince > BUSY_TIMEOUT_MS);
@@ -1126,6 +1129,7 @@ public class CaptureService extends Service {
 
     private void capture() {
         if (destroyed) return;
+        if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
         if (checking) { repoll(100); return; }
         if(recorder!=null && !recordingReady) { repoll(100); return; }
         if(!capturedVisible) { clearOverlay(); repoll(500); return; }
@@ -1183,7 +1187,7 @@ public class CaptureService extends Service {
                     // from submission starves matching when inspection is slow.
                     lastGateAt = SystemClock.elapsedRealtime();
                     if (!destroyed && calibration == null && quickSettings == null) badge.setVisibility(View.VISIBLE);
-                    if (destroyed || token != generation) { repoll(POLL_IDLE_MS); return; }
+                    if (destroyed || token != generation || MiniGameOverlayService.running) { repoll(POLL_IDLE_MS); return; }
                     if (!ran) {
                         clearOverlay();
                         setStatus(S_FAILED, "画面检测失败");
@@ -1296,10 +1300,10 @@ public class CaptureService extends Service {
                 busy = false;
                 // Closing only suppresses presentation. Reopening supersedes
                 // the previous identity proposal before it can update memory.
-                if (!destroyed && decoded != null && requestEpoch == memoryEpoch) {
+                if (!destroyed && !MiniGameOverlayService.running && decoded != null && requestEpoch == memoryEpoch) {
                     compute.execute(() -> bridge.callAttr("commit_match", token));
                 }
-                if (destroyed || token != generation) {
+                if (destroyed || token != generation || MiniGameOverlayService.running) {
                     if (decoded != null) decoded.recycle();
                     repoll(WATCH_MS);
                     return;

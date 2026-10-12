@@ -118,8 +118,8 @@ class MapMatcher:
                 continue
             for retrieved in retrieve(evidence,refs):
                 bounds=getattr(self,'manual_scale_bounds',None)
-                candidate=(register(evidence,retrieved,scale_bounds=bounds) if bounds is not None
-                           else register(evidence,retrieved))
+                candidate=(register(evidence,retrieved,scale_bounds=bounds,refinement_radius=32,refinement_candidates=12) if bounds is not None
+                           else register(evidence,retrieved,refinement_radius=32,refinement_candidates=12))
                 if candidate.pose is not None and candidate.floor in (None,floor):
                     # This atlas entry contains only the user-confirmed floor.
                     # Sparse boundary votes need not independently identify it.

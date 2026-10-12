@@ -25,7 +25,7 @@ def main():
                     '--index',str(ROOT/'maps')],cwd=ROOT,env=env,check=True)
     args=[sys.executable,'-m','PyInstaller','--clean','--noconfirm','--onedir','--windowed',
           '--contents-directory','.','--name','IdentityVMapAssistant','--paths',str(ROOT),
-          '--hidden-import','mapmatching.portable_check',
+          '--hidden-import','mapmatching.portable_check','--collect-all','windows_capture',
           '--distpath',str(ROOT/'dist'),'--workpath',str(ROOT/'build/pyinstaller'),
           '--specpath',str(ROOT/'build')]
     for p in extras:

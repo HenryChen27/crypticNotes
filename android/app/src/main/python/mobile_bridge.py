@@ -112,11 +112,17 @@ def match(data, output, gated=False, remember=True, token=None, force_floor=0):
             result=primary.register_manual_floor(map_pixels,_confirmed.map_id,floor)
         finally:
             primary.manual_scale_bounds=previous
+        # A blank floor is a presentation request, not a pose inferred from HUD.
+        from mapmatching.src.evidence import extract
+        evidence=extract(map_pixels)
+        empty_floor=len(evidence.corners)<4 or evidence.mask.sum()<80
         candidate=next((c for c in result.candidates if c.pose is not None
             and np.isfinite([c.pose.scale,c.pose.tx,c.pose.ty]).all()
             and c.floor==floor and c.retrieval_score>=1 and (c.explained or 0)>=.25
             and c.contradiction is not None and c.contradiction<=.75
             and .6<=c.pose.scale/_confirmed.pose.scale<=1.65),None)
+        if empty_floor:
+            candidate=None
         centered=candidate is None
         if centered:
             candidate=replace(_confirmed,floor=floor,pose=None)

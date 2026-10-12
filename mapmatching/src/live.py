@@ -96,12 +96,25 @@ def centered_floor_layer(shape, original, reference, floor, margin=.10, scale=No
     if region is None:
         return None
     x0, y0, x1, y1 = map(int, region['bbox'])
+    # Atlas floor boxes can include wide blank margins and HUD labels. Center
+    # the actual floor geometry, rather than that editing/annotation rectangle.
+    evidence = getattr(reference, 'evidence', None)
+    if evidence is not None:
+        factor = evidence.image_factor
+        mask = evidence.mask.copy()
+        yy, xx = np.indices(mask.shape)
+        mask *= ((xx >= x0*factor) & (xx < x1*factor)
+                 & (yy >= y0*factor) & (yy < y1*factor))
+        ys, xs = np.nonzero(mask)
+        if len(xs):
+            x0, y0, x1, y1 = xs.min()/factor, ys.min()/factor, (xs.max()+1)/factor, (ys.max()+1)/factor
     if scale is not None:
         h,w=shape[:2]
         from .types import Candidate, Pose
         candidate=Candidate(reference.map_id,reference.difficulty,reference.mode,0,
             Pose(scale,w/2-scale*(x0+x1)/2,h/2-scale*(y0+y1)/2),floor=floor)
-        return raw_layer(shape,original,reference,candidate)
+        return raw_layer(shape,original,reference,candidate,full_view=True)
+    x0,y0,x1,y1=map(round,(x0,y0,x1,y1))
     crop = original[max(0,y0):min(original.shape[0],y1),
                     max(0,x0):min(original.shape[1],x1)]
     if crop.size == 0:

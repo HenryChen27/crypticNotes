@@ -72,9 +72,18 @@ class ManualAlignmentTests(unittest.TestCase):
         good=replace(self.confirmed,floor=2,explained=.45,contradiction=.4)
         matcher=Mock();matcher.register_manual_floor.return_value=SimpleNamespace(candidates=[wrong,bad,good])
         with patch('mapmatching.src.floor_tabs.inspect_floor_tabs',return_value={'floor':2}), \
-             patch('mapmatching.src.map_visibility.inspect_map_ui',return_value={'visible':True}):
+             patch('mapmatching.src.map_visibility.inspect_map_ui',return_value={'visible':True}), \
+             patch('mapmatching.src.evidence.extract',return_value=SimpleNamespace(corners=[1,2,3,4],mask=SimpleNamespace(sum=lambda:100))):
             candidate,_=cross_floor_candidate(matcher,object(),self.confirmed,{})
         self.assertIs(candidate,good)
+
+    def test_empty_floor_does_not_fit_hud_noise(self):
+        matcher=Mock()
+        with patch('mapmatching.src.manual_alignment.manual_floor_reading',return_value={'floor':2}), \
+             patch('mapmatching.src.map_visibility.inspect_map_ui',return_value={'visible':True}), \
+             patch('mapmatching.src.evidence.extract',return_value=SimpleNamespace(corners=[],mask=SimpleNamespace(sum=lambda:0))):
+            self.assertEqual(cross_floor_candidate(matcher,object(),self.confirmed,{}),(None,None))
+        matcher.register_manual_floor.assert_not_called()
 
     def test_stale_popup_cannot_start_manual_request(self):
         from mapmatching.ui import Companion

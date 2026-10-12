@@ -7,6 +7,27 @@ from mapmatching.appearance.skins.doll.animation import pose
 
 
 class PetTests(unittest.TestCase):
+    def test_background_game_uses_matching_pose_without_matching_ring(self):
+        button=DraggableGear(W.QWidget());button.pet.enable(True)
+        button.set_game_background(True)
+        self.assertEqual((button.width(),button.height()),(146,176))
+        from unittest.mock import patch
+        with patch.object(button,'match_clock') as clock:
+            clock.elapsed.return_value=0
+            self.assertAlmostEqual(button.game_orbit_pos().x()-button.width()/2,34*1.5)
+            clock.elapsed.return_value=1875
+            self.assertAlmostEqual(button.game_orbit_pos().y()-button.height()/2,44*1.5)
+        button.pet.play('heart')
+        self.assertFalse(button.matching)
+        self.assertEqual(button.pet.mood,'matching')
+        self.assertTrue(button.match_timer.isActive())
+        frame=button.grab().toImage()
+        self.assertFalse(frame.isNull())
+        button.set_game_background(False)
+        self.assertEqual((button.width(),button.height()),(112,132))
+        self.assertEqual(button.pet.mood,'idle')
+        self.assertFalse(button.match_timer.isActive())
+
     def test_greeting_selects_hand_and_returns_to_idle(self):
         from unittest.mock import patch
         button = DraggableGear(W.QWidget())

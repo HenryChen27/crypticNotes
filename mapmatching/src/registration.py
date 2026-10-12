@@ -6,7 +6,7 @@ from .types import Candidate, Evidence, Pose
 from .verification import observed_points, verify, residuals
 
 
-def register(game: Evidence, retrieved: Retrieved, *, scale_bounds=None) -> Candidate:
+def register(game: Evidence, retrieved: Retrieved, *, scale_bounds=None, refinement_radius=8, refinement_candidates=3) -> Candidate:
     ref = retrieved.reference
     result = Candidate(ref.map_id, ref.difficulty, ref.mode, retrieved.score)
     points = observed_points(game)
@@ -25,12 +25,12 @@ def register(game: Evidence, retrieved: Retrieved, *, scale_bounds=None) -> Cand
         return result
     ranked = sorted(hypotheses, key=lambda p: -verify(p, points, ref)[0])
     best, best_score = ranked[0], -1.
-    for initial in ranked[:3]:
+    for initial in ranked[:refinement_candidates]:
         # Bounded local refinement, never a whole-map translation search.
         s, tx, ty = initial
         def objective(p: np.ndarray) -> float:
             return float(np.minimum(residuals(p, points, ref), 10).mean())
-        fit = minimize(objective, initial, method='Powell', bounds=[(max(low,s*.9), min(high,s*1.1)), (tx-8, tx+8), (ty-8, ty+8)], options={'maxiter': 12, 'xtol': .02, 'ftol': .001})
+        fit = minimize(objective, initial, method='Powell', bounds=[(max(low,s*.9), min(high,s*1.1)), (tx-refinement_radius, tx+refinement_radius), (ty-refinement_radius, ty+refinement_radius)], options={'maxiter': 12, 'xtol': .02, 'ftol': .001})
         for pose in (initial, fit.x):
             score, contradiction = verify(pose, points, ref)
             if score > best_score:

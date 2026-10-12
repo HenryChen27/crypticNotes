@@ -1,5 +1,7 @@
 """Game download controls; the web runtime lives in an optional subprocess."""
 import sys
+import json
+import time
 from PySide6 import QtCore as C, QtWidgets as W
 from .paths import DATA_ROOT
 from .theme import ChalkButton
@@ -43,6 +45,11 @@ class GameControls(W.QWidget):
         self.ready_timer = C.QTimer(self)
         self.ready_timer.setInterval(250)
         self.ready_timer.timeout.connect(self.check_ready)
+        self.game_hidden=False
+        self.scene_watcher=None
+        self.window_timer=C.QTimer(self)
+        self.window_timer.setInterval(200)
+        self.window_timer.timeout.connect(self.check_window_state)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(W.QLabel('合成大水母'))
@@ -73,6 +80,56 @@ class GameControls(W.QWidget):
 
     def running(self):
         return self.process.state() != C.QProcess.NotRunning
+
+    def check_window_state(self):
+        hidden=self.game_hidden if self.running() else False
+        if self.running():
+            try:
+                hidden=bool(json.loads((DATA_ROOT/'minigame-saves/jellyfish/window-state.json').read_text()).get('hidden'))
+            except (OSError,ValueError):
+                pass
+        if hidden!=self.game_hidden:
+            self.game_hidden=hidden
+            self.companion.gear.set_game_background(hidden)
+            if hidden:self.stop_scene_watch()
+            elif self.running():self.start_scene_watch()
+
+    def stop_scene_watch(self):
+        watcher=self.scene_watcher;self.scene_watcher=None
+        if watcher is not None:watcher.stop();watcher.deleteLater()
+
+    def start_scene_watch(self):
+        if sys.platform!='win32' or self.scene_watcher is not None or not self.running() or self.game_hidden:return
+        from .game_scene_watch import find_game_window,WindowSceneWatch
+        hwnd=find_game_window(getattr(self.companion,'last_external_target',None))
+        if not hwnd:
+            self.status.setText('小游戏运行中 · 未找到第五人格窗口，自动收起未启动');return
+        watcher=WindowSceneWatch(hwnd,self);self.scene_watcher=watcher
+        watcher.changed.connect(lambda score:self.scene_changed(watcher,score))
+        watcher.failed.connect(lambda message:self.scene_watch_failed(watcher,message))
+        try:watcher.start()
+        except Exception as error:self.scene_watch_failed(watcher,'画面检测未启动：'+str(error))
+
+    def scene_watch_failed(self,watcher,message):
+        if self.scene_watcher is not watcher:return
+        self.stop_scene_watch();self.status.setText(message)
+
+    def scene_changed(self,watcher,score):
+        if self.scene_watcher is not watcher or not self.running() or self.game_hidden:return
+        try:self.send_window_command('auto-hide')
+        except OSError as error:
+            self.stop_scene_watch();self.status.setText('自动收起失败：'+str(error));return
+        self.stop_scene_watch()
+        self.companion.notify('游戏画面明显变化，小游戏已收起；3秒内恢复可继续')
+
+    def send_window_command(self,action):
+        folder=DATA_ROOT/'minigame-saves/jellyfish';target=folder/'window-command.json';temp=folder/'window-command.tmp'
+        temp.write_text(json.dumps({'action':action,'id':time.time_ns()}),encoding='utf-8');temp.replace(target)
+
+    def restore_game(self):
+        if not self.running():return False
+        self.send_window_command('show')
+        return True
 
     def owns_window(self, handle):
         if not self.running() or not handle:
@@ -142,6 +199,8 @@ class GameControls(W.QWidget):
         self.output.clear()
         profile = DATA_ROOT/'minigame-saves/jellyfish'
         profile.mkdir(parents=True, exist_ok=True)
+        for name in ('window-state.json','window-command.json'):
+            (profile/name).unlink(missing_ok=True)
         self.ready_file = profile/'ready'
         self.ready_file.unlink(missing_ok=True)
         self.process.setWorkingDirectory(str(self.store.folder))
@@ -149,6 +208,7 @@ class GameControls(W.QWidget):
         if self.store.native():
             arguments += ['--title', '合成大水母']
         self.process.start(str(self.store.entry()), arguments)
+        self.window_timer.start()
         self.start_timer.start(45000)
         self.ready_timer.start()
         self.status.setText('正在启动小游戏…')
@@ -165,6 +225,7 @@ class GameControls(W.QWidget):
             self.ready_timer.stop()
             self.refresh()
             self.status.setText('运行中 · 拖动顶部窄栏移动，右上角关闭')
+            self.start_scene_watch()
 
     def start_timeout(self):
         if self.running() and not self.ready:
@@ -172,12 +233,17 @@ class GameControls(W.QWidget):
             self.companion.notify('小游戏启动较慢，请查看游戏窗口')
 
     def game_error(self, error):
+        self.stop_scene_watch()
         self.start_timer.stop()
         self.ready_timer.stop()
         self.refresh()
         self.status.setText('小游戏无法启动，请删除后重新下载')
 
     def game_finished(self, code, status):
+        self.stop_scene_watch()
+        self.window_timer.stop()
+        self.game_hidden=False
+        self.companion.gear.set_game_background(False)
         self.start_timer.stop()
         self.ready_timer.stop()
         self.refresh()
@@ -231,6 +297,7 @@ class GameControls(W.QWidget):
             self.status.setText('删除失败：' + str(error))
 
     def shutdown(self):
+        self.stop_scene_watch()
         self.ready_timer.stop()
         if self.task:
             self.task.requestInterruption()

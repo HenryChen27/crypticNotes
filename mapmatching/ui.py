@@ -3,6 +3,7 @@ from __future__ import annotations
 from .src.ui_trace import trace
 import argparse
 import json
+import math
 import multiprocessing as mp
 import platform
 from pathlib import Path
@@ -704,6 +705,8 @@ class DraggableGear(GearButton):
         self.drag_start_pos=None
         self.moved=False
         self.matching=False
+        self.game_background=False
+        self.game_icon=G.QPixmap(str(ROOT/'mapmatching/assets/minigames/fish5.png'))
         self.match_clock=C.QElapsedTimer()
         self.match_timer=C.QTimer(self)
         self.match_timer.setInterval(33)
@@ -750,7 +753,11 @@ class DraggableGear(GearButton):
         if event.button()==C.Qt.LeftButton:
             self.click_timer.stop()
             self.double_release=True
-            self.window.retry()
+            games=getattr(self.window,'minigames',None)
+            if self.game_background and games is not None:
+                games.restore_game()
+            else:
+                self.window.retry()
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -765,14 +772,31 @@ class DraggableGear(GearButton):
             self.match_timer.start()
             self.pet.play('matching')
         else:
-            self.match_timer.stop()
+            if not self.game_background:self.match_timer.stop()
             if self.pet.mood == 'matching':
                 self.pet.play('idle')
         self.update()
 
+    def set_game_background(self, active):
+        anchor=self.mapToGlobal(C.QPoint(self.width()//2,self.height()//2))
+        self.game_background=bool(active)
+        self.setFixedSize((146 if active else 112),(176 if active else 132)) if self.pet.enabled else self.setFixedSize(46,46)
+        if hasattr(self.window,'place_gear'):
+            self.window.adjustSize();self.window.layout().invalidate();self.window.layout().activate()
+            self.window.place_gear(anchor-C.QPoint(self.width()//2,self.height()//2))
+        if active:
+            self.match_clock.start();self.match_timer.start();self.pet.play('matching')
+        else:
+            if not self.matching:self.match_timer.stop();self.pet.play('idle')
+        self.update()
+
+    def game_orbit_pos(self):
+        angle=self.match_clock.elapsed()/7500*math.tau
+        return C.QPointF(self.width()/2+math.cos(angle)*(self.width()/2-22),self.height()/2+math.sin(angle)*(self.height()/2-22))
+
     def paintEvent(self,event):
         if self.pet.enabled:
-            self.pet.paint()
+            self.pet.paint(origin=(7+(self.width()-112)/2,20+(self.height()-132)/2))
         else:
             self.gear_rotation=(self.match_clock.elapsed() % 1800)/5. if self.matching else 0.
             super().paintEvent(event)
@@ -782,6 +806,12 @@ class DraggableGear(GearButton):
             p.setPen(G.QPen(G.QColor('#c8e7fa'),3))
             p.drawArc(C.QRectF(35,113,42,12),-int(self.match_clock.elapsed()/5)*16,240*16)
             p.end()
+        if self.game_background:
+            p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
+            p.setRenderHint(G.QPainter.SmoothPixmapTransform)
+            pos=self.game_orbit_pos();p.translate(pos)
+            p.drawPixmap(C.QRectF(-21,-21,42,42),self.game_icon,C.QRectF(self.game_icon.rect()))
+            p.end()
 
     def enterEvent(self,event):
         self.pet.play('curious')
@@ -789,6 +819,8 @@ class DraggableGear(GearButton):
 
     def mousePressEvent(self,event):
         if event.button()==C.Qt.LeftButton:
+            if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<30:
+                self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
             self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
@@ -1119,6 +1151,21 @@ class Companion(W.QWidget):
             C.QTimer.singleShot(0,lambda: self.notify(
                 '鼠标监听未启用：跟随已关闭，鼠标快捷键也收不到'
                 if mouse_hotkey else '鼠标监听未启用，跟随缩放/移动已关闭'))
+        if sys.platform in ('win32', 'darwin'):
+            self.tray = W.QSystemTrayIcon(self)
+            icon = self.windowIcon()
+            if icon.isNull():
+                pixmap = G.QPixmap(32,32); pixmap.fill(C.Qt.transparent)
+                painter = G.QPainter(pixmap); painter.setPen(G.QColor('#b8d4e6'))
+                painter.setFont(G.QFont('Segoe UI Symbol',24)); painter.drawText(pixmap.rect(), C.Qt.AlignCenter, '⚙'); painter.end()
+                icon = G.QIcon(pixmap)
+            self.tray.setIcon(icon)
+            self.tray.setToolTip('加页手记地图插件')
+            self.tray_menu = W.QMenu()
+            self.tray_menu.addAction('显示布偶', lambda: show_floating(self))
+            self.tray_menu.addAction('退出', W.QApplication.instance().quit)
+            self.tray.setContextMenu(self.tray_menu)
+            self.tray.show()
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
         # Prepare the filtered index while the gear is idle, before the first G.
         C.QTimer.singleShot(0,self.start_worker)
@@ -1568,6 +1615,10 @@ class Companion(W.QWidget):
             self.notify(f'无法启动更新：{exc}')
 
     def retry(self, force_floor=None):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():
+            if games.game_hidden:games.restore_game()
+            return
         if self.panel.isVisible():
             self.toggle_panel()
         self.cached_candidate = None
@@ -1585,7 +1636,9 @@ class Companion(W.QWidget):
             C.QTimer.singleShot(300,lambda: self.open_map("manual_retry",**(
                 {'force_floor':force_floor} if force_floor is not None else {})))
 
-    def open_map(self, reason="map_hotkey", force_floor=None):
+    def open_map(self, reason="map_hotkey", force_floor=None, target_override=None):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():return
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
@@ -1595,12 +1648,14 @@ class Companion(W.QWidget):
         self.visibility_obstructed = False
         self.open_probe_count = 0
         self.started = time.perf_counter()
-        self.target = int(self.demo_window.winId()) if self.demo_window is not None else win32gui.GetForegroundWindow()
+        self.target = int(self.demo_window.winId()) if self.demo_window is not None else (target_override or win32gui.GetForegroundWindow())
         self.status.setText('等待地图展开…')
         self.gear.set_matching(True)
         C.QTimer.singleShot(self.delay.currentData(),lambda: self.take_capture(token))
 
     def take_capture(self,token):
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():return
         if getattr(self,'_visibility_hidden',False):
             C.QTimer.singleShot(80,lambda:self.take_capture(token) if self.state.accepts(token) else None)
             return
@@ -1616,7 +1671,11 @@ class Companion(W.QWidget):
         self.toast.hide()
         # UI feedback is relevant only while this session remains visible.
         # Hide once across opening probes: masking destroys the map UI beneath.
-        if self.demo_window is None and sys.platform == 'win32' and self.isVisible():
+        window_capture = False
+        if self.demo_window is None and sys.platform == 'win32':
+            from .game_scene_watch import find_game_window
+            window_capture = find_game_window(getattr(self, 'target', None)) is not None
+        if self.demo_window is None and sys.platform == 'win32' and not window_capture and self.isVisible():
             self._capture_exclusion = native.client_rect(int(self.winId()))
             self._capture_hidden = True
             self.hide()
@@ -1638,7 +1697,40 @@ class Companion(W.QWidget):
                 from .src.reference import read_image
                 pixels = read_image(self.demo)
             else:
-                pixels = native.capture(self.rect_at_capture)
+                pixels = None
+                if sys.platform == 'win32':
+                    from .game_scene_watch import find_game_window
+                    from .window_map_capture import WindowSnapshot
+                    hwnd = find_game_window(getattr(self, 'target', None))
+                    if hwnd:
+                        attempt = getattr(self, '_window_snapshot', None)
+                        if attempt is None or attempt[0] != token:
+                            if attempt is not None:
+                                attempt[2].stop()
+                            try:
+                                attempt = (token, time.monotonic(), WindowSnapshot(hwnd))
+                                self._window_snapshot = attempt
+                            except Exception as exc:
+                                trace('window_capture_fallback', error=str(exc))
+                                attempt = None
+                        if attempt is not None:
+                            snapshot = attempt[2]
+                            if snapshot.result is not None:
+                                pixels, self.rect_at_capture = snapshot.result
+                                self._capture_window_hwnd = hwnd
+                                self._window_snapshot = None
+                                trace('window_frame_ready', hwnd=hwnd, shape=list(pixels.shape), rect=self.rect_at_capture)
+                            elif snapshot.error is None and time.monotonic()-attempt[1] < 3:
+                                C.QTimer.singleShot(30, lambda: self.capture_after_hide(token))
+                                return
+                            else:
+                                snapshot.stop()
+                                self._window_snapshot = None
+                                trace('window_capture_fallback', error=snapshot.error or 'timeout')
+                if pixels is None:
+                    self._capture_window_hwnd = None
+                    self.rect_at_capture = native.monitor_rect(self.target) if hasattr(self, 'target') else self.rect_at_capture
+                    pixels = native.capture(self.rect_at_capture)
             if sys.platform == 'darwin':
                 trace('mac_frame_ready',elapsed_ms=(time.perf_counter()-capture_started)*1000,
                       shape=list(pixels.shape),local=self.demo_window is not None)
@@ -1668,8 +1760,9 @@ class Companion(W.QWidget):
             self.close_map(silent=True)
             self.notify('截屏失败：'+str(error))
         finally:
-            self._capturing = False
-            if not getattr(self,'opening',False):
+            waiting = getattr(self, '_window_snapshot', None)
+            self._capturing = bool(waiting and waiting[0] == token)
+            if not self._capturing and not getattr(self,'opening',False):
                 self.restore_capture_companion()
 
     def restore_capture_companion(self):
@@ -1682,6 +1775,10 @@ class Companion(W.QWidget):
             if sys.platform == 'darwin':
                 return native.client_rect(int(self.demo_window.winId()))
             return native.client_rect(int(self.demo_window.winId()))
+        hwnd = getattr(self, '_capture_window_hwnd', None)
+        if sys.platform == 'win32' and hwnd:
+            from .window_map_capture import frame_rect
+            return frame_rect(hwnd)
         return native.monitor_rect(self.target)
 
     def start_worker(self):
@@ -1744,6 +1841,12 @@ class Companion(W.QWidget):
         popup.move(max(rect.left(),min(self.x()-popup.width(),rect.right()-popup.width())),
                    max(rect.top(),min(self.y(),rect.bottom()-popup.height())))
         show_floating(popup)
+        if sys.platform == 'win32':
+            # Keep Qt's logical geometry: native SetWindowPos uses physical pixels.
+            import win32con
+            hwnd = int(popup.winId())
+            style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            win32gui.SetWindowLong(hwnd, win32con.GWL_EXSTYLE, style | win32con.WS_EX_NOACTIVATE)
 
     def accept_manual_alignment(self):
         offer=getattr(self,'manual_offer',None)
@@ -1752,10 +1855,19 @@ class Companion(W.QWidget):
             return
         floor=offer[1]['floor']
         trace('manual_alignment_confirmed',token=offer[0],**offer[1])
+        target = getattr(self, 'target', None)
         self.dismiss_manual_offer()
-        self.retry(force_floor=floor)
+        if target and getattr(self, 'demo_window', None) is None:
+            native.activate_target(target)
+            self.open_map('manual_force', force_floor=floor, target_override=target)
+        else:
+            self.retry(force_floor=floor)
 
     def close_map(self,silent=False,background=False):
+        snapshot = getattr(self, '_window_snapshot', None)
+        if snapshot is not None:
+            snapshot[2].stop()
+            self._window_snapshot = None
         self.force_floor=None
         dismiss=getattr(self,'dismiss_manual_offer',None)
         if dismiss is not None:
@@ -1894,7 +2006,7 @@ class Companion(W.QWidget):
                     self.visibility_token = token
                 self.visibility_misses = self.visibility_misses+1 if visible is False else 0
                 if self.visibility_misses >= 2:
-                    if not clean and callable(getattr(self,'isVisible',None)) and self.isVisible():
+                    if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and not clean and callable(getattr(self,'isVisible',None)) and self.isVisible():
                         # Two obstructed frames are not proof of a closed map.
                         # Only then take one clean confirmation, avoiding periodic blinking.
                         self.visibility_clean_next=True
@@ -1920,7 +2032,22 @@ class Companion(W.QWidget):
             visible=None
             try:
                 from .src.map_visibility import inspect_map_ui
-                evidence=inspect_map_ui(native.capture(rect))
+                hwnd = getattr(self, '_capture_window_hwnd', None)
+                if sys.platform == 'win32' and hwnd:
+                    from .window_map_capture import WindowSnapshot
+                    shot = WindowSnapshot(hwnd)
+                    try:
+                        deadline = time.monotonic()+2
+                        while shot.result is None and shot.error is None and time.monotonic()<deadline:
+                            time.sleep(.02)
+                        if shot.result is None:
+                            raise RuntimeError(shot.error or 'window capture timeout')
+                        image = shot.result[0]
+                    finally:
+                        shot.stop()
+                else:
+                    image = native.capture(rect)
+                evidence=inspect_map_ui(image)
                 visible=evidence['visible']
                 # A clean confirmation already proved this map is open. A
                 # strongly visible remaining map control corroborates occlusion
@@ -1932,7 +2059,7 @@ class Companion(W.QWidget):
             results.put((token,visible))
         def launch():
             threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
-        if getattr(self,'visibility_clean_next',False):
+        if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and getattr(self,'visibility_clean_next',False):
             self.visibility_clean_next=False
             self._visibility_hidden=True
             self.hide()
@@ -2063,7 +2190,12 @@ class Companion(W.QWidget):
                                 from .src.frame_guard import unchanged_map
                                 try:
                                     current_rect=self.capture_rect()
-                                    current_pixels=native.capture(current_rect)
+                                    hwnd = getattr(self, '_capture_window_hwnd', None)
+                                    if sys.platform == 'win32' and hwnd:
+                                        from .window_map_capture import capture_now
+                                        current_pixels = capture_now(hwnd)
+                                    else:
+                                        current_pixels=native.capture(current_rect)
                                     exclusion=getattr(self,'request_exclusion',None)
                                     ignored=None
                                     if exclusion is not None:
@@ -2152,6 +2284,18 @@ class Companion(W.QWidget):
                 self.notify('匹配进程中断，请重试')
 
     def shutdown(self):
+        if getattr(self, '_shutdown_done', False):
+            return
+        self._shutdown_done = True
+        tray = getattr(self, 'tray', None)
+        if tray is not None:
+            tray.hide()
+        for timer in self.findChildren(C.QTimer):
+            timer.stop()
+        snapshot = getattr(self, '_window_snapshot', None)
+        if snapshot is not None:
+            snapshot[2].stop()
+            self._window_snapshot = None
         self.dismiss_manual_offer()
         self.gear.exit_timer.stop()
         self.gear.exit_zone.close()

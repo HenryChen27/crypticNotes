@@ -47,6 +47,11 @@ def cross_floor_candidate(matcher, pixels, confirmed, details):
     floor = manual_floor_reading(pixels)['floor']
     if floor is None or floor == confirmed.floor:
         return None, None
+    # Empty floors must be centered by the caller, never fitted to HUD noise.
+    from .evidence import extract
+    evidence = extract(pixels)
+    if len(evidence.corners) < 4 or evidence.mask.sum() < 80:
+        return None, None
     matcher.floor_hint = floor
     if hasattr(matcher, 'primary'):
         matcher.primary.floor_hint = floor

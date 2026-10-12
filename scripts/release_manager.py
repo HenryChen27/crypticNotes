@@ -18,7 +18,20 @@ from urllib.parse import urlsplit, quote
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'HenryChen27/crypticNotes'
-CERT = 'b7b3d8249c3d02aeae26f3bac11e966bd0addb073639933037b1a282c2699fb2'
+CERT = '2f64c22b7e9f186d0e9867e4f158f861e7b10511075e8799ddcd52aff2620bf3'
+
+def validate_android_signing():
+    config=Path(os.environ.get('JYSJ_ANDROID_SIGNING_CONFIG') or Path.home()/'.jysj-signing/android-signing.json')
+    if not config.is_file():raise RuntimeError('Original signing configuration missing; restore backup before release')
+    data=json.loads(config.read_text(encoding='utf-8-sig'))
+    key=Path(data['keystore']).resolve()
+    if not key.is_file():raise RuntimeError('Original signing key missing; refusing to create a new key')
+    if key.is_relative_to(ROOT/'out'):raise RuntimeError('Signing key must be stored outside the disposable out directory')
+    env=os.environ.copy();env['JYSJ_CERT_CHECK_PASSWORD']=data['storePassword']
+    output=run([ROOT/'out/android-tools/jdk/jdk-17.0.20.1+1/bin/keytool.exe',
+        '-J-Duser.language=en','-list','-keystore',key,'-alias',data['alias'],
+        '-storepass:env','JYSJ_CERT_CHECK_PASSWORD'],env=env,capture=True)
+    if CERT not in output.lower().replace(':',''):raise RuntimeError('Android signing identity mismatch; release stopped')
 
 PACKAGES = {
     'android': ['IdentityVMapAssistant-Android-arm64.apk'],
@@ -285,6 +298,7 @@ def main():
             print(platform, '没有可验证的历史内容记录；本次构建成功后建立记录，之后自动跳过未改动的平台。')
     if not platforms:
         print('所选平台均无变化，没有执行后续操作。'); return
+    if 'android' in platforms:validate_android_signing()
     stamp=dt.datetime.now().strftime('%Y%m%d-%H%M%S')
     directory=ROOT/'release/jobs'/stamp;directory.mkdir(parents=True)
     state={'id':stamp,'platforms':sorted(platforms),'ready':False,'files':{},
@@ -317,7 +331,7 @@ def main():
         run([sys.executable,'scripts/prepare_android.py'])
         env=os.environ.copy()
         env.setdefault('JAVA_HOME',str(ROOT/'out/android-tools/jdk/jdk-17.0.20.1+1'))
-        env['ANDROID_USER_HOME']=str(ROOT/'out/android-user');env['GRADLE_USER_HOME']=str(ROOT/'out/android-gradle-cache')
+        env['ANDROID_USER_HOME']=str(ROOT/'out/android-user');env['GRADLE_USER_HOME']=str(ROOT/'out/android-gradle-local-test')
         gradle=ROOT/'out/android-tools/gradle/gradle-8.13/bin/gradle.bat'
         run([gradle,'-p','android','assembleDebug','--console=plain','--no-problems-report'],env=env)
         apk=ROOT/'android/app/build/outputs/apk/debug/app-debug.apk'
@@ -325,7 +339,7 @@ def main():
             'verify','--print-certs',apk],env=env,capture=True)
         if CERT not in cert:raise RuntimeError('Android signing certificate changed; refuse incompatible update')
         n='IdentityVMapAssistant-Android-arm64.apk';shutil.copy2(apk,directory/n)
-        manifest=dict(packageName='com.crypticnotes.mobile',versionCode=code,versionName=android_version,
+        manifest=dict(packageName='com.crypticnotes.mobile.v2',versionCode=code,versionName=android_version,
             asset=n,size=apk.stat().st_size,sha256=digest(apk))
         (directory/'android-update.json').write_text(json.dumps(manifest,indent=2),encoding='utf-8')
         wanted.update([n,'android-update.json'])
