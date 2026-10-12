@@ -202,7 +202,13 @@ class GameStore:
             game_info = package_info(catalog)
             if self.installed() and self.native():
                 metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
-                if metadata.get('version') == game_info.get('version'):
+                installed_version = str(metadata.get('version', '')).split('.')
+                remote_version = str(game_info.get('version', '')).split('.')
+                no_upgrade = metadata.get('version') == game_info.get('version')
+                if (len(installed_version) == len(remote_version) == 3
+                        and all(part.isdigit() for part in installed_version + remote_version)):
+                    no_upgrade = tuple(map(int, installed_version)) >= tuple(map(int, remote_version))
+                if no_upgrade:
                     progress(100, '游戏已是最新版')
                     return
             self.download_package(game_info,
