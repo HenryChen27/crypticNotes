@@ -47,12 +47,14 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     var commands:Timer?
     var lastCommand=""
     var fullButton:WindowControl!
-    func publishState(_ hidden:Bool){try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
+    func publishState(_ hidden:Bool){web?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
     func applicationDidFinishLaunching(_ notification:Notification){
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback=[]
         config.userContentController.add(self,name:"game")
+        let hostAudio=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("host-audio.js")
+        if let source=try? String(contentsOf:hostAudio,encoding:.utf8){config.userContentController.addUserScript(WKUserScript(source:source,injectionTime:.atDocumentStart,forMainFrameOnly:true))}
         let bridge=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("safe-exit.js")
         if let source=try? String(contentsOf:bridge,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"window.__jellyfishHostPost=m=>webkit.messageHandlers.game.postMessage(m);"+source,injectionTime:.atDocumentStart,forMainFrameOnly:true))

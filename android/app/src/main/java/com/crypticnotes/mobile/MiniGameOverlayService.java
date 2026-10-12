@@ -31,6 +31,8 @@ public class MiniGameOverlayService extends Service {
     private LinearLayout shell;
     private android.content.BroadcastReceiver screenReceiver;
     private boolean fullScreen;
+    private int customWidth;
+    private android.graphics.Rect restoredBounds;
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable saveTimeout=()->{closing=false;showGame();Toast.makeText(this,"保存超时，请重试",Toast.LENGTH_LONG).show();};
     @Override public IBinder onBind(Intent intent){return null;}
@@ -48,17 +50,32 @@ public class MiniGameOverlayService extends Service {
         LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=new TextView(this);title.setText("合成大水母");title.setTextColor(Theme.TITLE);title.setPadding(12,0,0,0);bar.addView(title,new LinearLayout.LayoutParams(0,barHeight,1));
         ControlIcon full=new ControlIcon(1);bar.addView(full,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));
-        full.setOnClickListener(v->{fullScreen=!fullScreen;full.invalidate();resize();windows.updateViewLayout(shell,params);});
+        full.setOnClickListener(v->{
+            if(!fullScreen)restoredBounds=new android.graphics.Rect(params.x,params.y,params.x+params.width,params.y+params.height);
+            fullScreen=!fullScreen;full.invalidate();resize();
+            if(!fullScreen&&restoredBounds!=null){params.x=restoredBounds.left;params.y=restoredBounds.top;clampPosition();}
+            windows.updateViewLayout(shell,params);
+        });
         ControlIcon hide=new ControlIcon(0);bar.addView(hide,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));hide.setOnClickListener(v->hideGame());
         ControlIcon close=new ControlIcon(2);bar.addView(close,new LinearLayout.LayoutParams(Theme.px(this,34),barHeight));close.setOnClickListener(v->saveAndClose());shell.addView(bar);
-        web=new WebView(this);shell.addView(web,new LinearLayout.LayoutParams(-1,0,1));
+        web=new WebView(this);
+        FrameLayout viewport=new FrameLayout(this);viewport.addView(web,new FrameLayout.LayoutParams(-1,-1));
+        View grip=new View(this){private final android.graphics.Paint paint=new android.graphics.Paint(3);
+            @Override protected void onDraw(android.graphics.Canvas c){paint.setColor(0xffa8bfce);paint.setStrokeWidth(Theme.px(getContext(),1.5f));float d=Theme.px(getContext(),6);c.drawLine(getWidth()-3*d,getHeight()-d,getWidth()-d,getHeight()-3*d,paint);c.drawLine(getWidth()-2*d,getHeight()-d,getWidth()-d,getHeight()-2*d,paint);}};
+        FrameLayout.LayoutParams gripParams=new FrameLayout.LayoutParams(Theme.px(this,28),Theme.px(this,28),Gravity.BOTTOM|Gravity.RIGHT);viewport.addView(grip,gripParams);
+        grip.setContentDescription("拖动缩放游戏窗口");
+        grip.setOnTouchListener(new View.OnTouchListener(){float x;int initial;
+            public boolean onTouch(View v,MotionEvent e){if(fullScreen)return false;
+                if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();initial=params.width;}
+                else if(e.getActionMasked()==MotionEvent.ACTION_MOVE){customWidth=initial+Math.round(e.getRawX()-x);int px=params.x,py=params.y;resize();params.x=px;params.y=py;clampPosition();windows.updateViewLayout(shell,params);}return true;}});
+        shell.addView(viewport,new LinearLayout.LayoutParams(-1,0,1));
         windows=(WindowManager)getSystemService(WINDOW_SERVICE);
         params=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_FULLSCREEN,android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;if(android.os.Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;resize();windows.addView(shell,params);
         title.setOnTouchListener(new View.OnTouchListener(){float x,y;int sx,sy;
             public boolean onTouch(View v,MotionEvent e){if(e.getActionMasked()==MotionEvent.ACTION_DOWN){x=e.getRawX();y=e.getRawY();sx=params.x;sy=params.y;}
-                else if(e.getActionMasked()==MotionEvent.ACTION_MOVE && !fullScreen){params.x=Math.max(0,sx+Math.round(e.getRawX()-x));params.y=Math.max(0,sy+Math.round(e.getRawY()-y));windows.updateViewLayout(shell,params);}return true;}
+                else if(e.getActionMasked()==MotionEvent.ACTION_MOVE && !fullScreen){params.x=sx+Math.round(e.getRawX()-x);params.y=sy+Math.round(e.getRawY()-y);clampPosition();windows.updateViewLayout(shell,params);}return true;}
         });
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportMultipleWindows(false);
         web.addJavascriptInterface(new Bridge(),"NativeGame");
@@ -79,6 +96,7 @@ public class MiniGameOverlayService extends Service {
                         String page=MiniGameStore.read(f),saved="{}";
                         try(InputStream in=save.openRead()){saved=new String(MiniGameStore.bytes(in,1024*1024),StandardCharsets.UTF_8);}catch(IOException ignored){}
                         String script="<script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
+                        try(InputStream audio=getAssets().open("host-audio.js")){script+="<script>"+new String(MiniGameStore.bytes(audio,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream bridge=getAssets().open("safe-exit.js")){script+="<script>window.__jellyfishHostPost=m=>NativeGame.safeExit(JSON.stringify(m));"+new String(MiniGameStore.bytes(bridge,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         page=page.replace("<head>","<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'\">"+script);
                         return new WebResourceResponse("text/html","UTF-8",new ByteArrayInputStream(page.getBytes(StandardCharsets.UTF_8)));
@@ -88,6 +106,7 @@ public class MiniGameOverlayService extends Service {
                     return new WebResourceResponse(mime==null?"application/octet-stream":mime,null,new FileInputStream(f));
                 }catch(Exception e){return blocked();}
             }
+            @Override public void onPageFinished(WebView view,String url){setHostMuted(hidden);}
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())Toast.makeText(MiniGameOverlayService.this,"游戏加载失败："+error.getDescription(),Toast.LENGTH_LONG).show();}
         });web.loadUrl("https://minigame.local/index.html");
         screenReceiver=new android.content.BroadcastReceiver(){public void onReceive(android.content.Context c,Intent i){
@@ -110,23 +129,28 @@ public class MiniGameOverlayService extends Service {
         android.util.DisplayMetrics m=new android.util.DisplayMetrics();
         windows.getDefaultDisplay().getRealMetrics(m);
         int width=Math.min((int)(m.widthPixels*.90),(int)((m.heightPixels*.85-barHeight)*2559/1441));
-        params.width=fullScreen?m.widthPixels:Math.max(240,width);
+        int maxWidth=Math.min(m.widthPixels,(int)((m.heightPixels-barHeight)*2559.0/1441));
+        params.width=fullScreen?m.widthPixels:Math.max(Math.min(Theme.px(this,200),maxWidth),Math.min(maxWidth,customWidth>0?customWidth:width));
         params.height=fullScreen?m.heightPixels:(int)(params.width*1441.0/2559)+barHeight;
         params.x=fullScreen?0:(m.widthPixels-params.width)/2;
         params.y=fullScreen?0:(m.heightPixels-params.height)/2;
     }
     void hideGame(){
+        setHostMuted(true);
         hidden=true;
         if(shell!=null && shell.isAttachedToWindow())windows.removeViewImmediate(shell);
     }
     void showGame(){
         handler.removeCallbacks(autoClose);
+        setHostMuted(false);
         hidden=false;
         if(shell!=null){
-            resize();shell.setVisibility(View.VISIBLE);
+            clampPosition();shell.setVisibility(View.VISIBLE);
             if(!shell.isAttachedToWindow())windows.addView(shell,params);
         }
     }
+    void setHostMuted(boolean mute){if(web!=null)web.evaluateJavascript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted("+mute+")",null);}
+    void clampPosition(){android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);params.x=Math.max(0,Math.min(m.widthPixels-params.width,params.x));params.y=Math.max(0,Math.min(m.heightPixels-params.height,params.y));}
     @Override public void onConfigurationChanged(Configuration c){
         super.onConfigurationChanged(c);
         if(params!=null){resize();if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);}
