@@ -17,5 +17,5 @@ final class ActionIcon extends Drawable {
     @Override public void setAlpha(int a){paint.setAlpha(a);}
     @Override public void setColorFilter(ColorFilter f){paint.setColorFilter(f);}
     @Override public int getOpacity(){return PixelFormat.TRANSLUCENT;}
-    static void set(android.widget.TextView view,int kind,boolean dot){ActionIcon icon=new ActionIcon(kind,Theme.INK);icon.dot=dot;int size=Theme.px(view.getContext(),20);icon.setBounds(0,0,size,size);view.setCompoundDrawables(icon,null,null,null);view.setCompoundDrawablePadding(Theme.px(view.getContext(),6));}
+    static void set(android.widget.TextView view,int kind,boolean dot){ActionIcon icon=new ActionIcon(kind,view.getCurrentTextColor());icon.dot=dot;int size=Theme.px(view.getContext(),20);icon.setBounds(0,0,size,size);view.setCompoundDrawables(icon,null,null,null);view.setCompoundDrawablePadding(Theme.px(view.getContext(),6));}
 }

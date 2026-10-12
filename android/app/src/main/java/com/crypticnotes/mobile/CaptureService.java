@@ -1483,8 +1483,8 @@ public class CaptureService extends Service {
         LinearLayout header = new LinearLayout(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        Theme.ChalkButton settingsTab=button("游戏设置",true);
-        Theme.ChalkButton gamesTab=button("小游戏",false);
+        DarkTab settingsTab=new DarkTab(this,"游戏设置");settingsTab.select(true);
+        DarkTab gamesTab=new DarkTab(this,"小游戏");
         ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
         ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
         header.addView(settingsTab,new LinearLayout.LayoutParams(0,Theme.px(this,40),1));
@@ -1509,9 +1509,9 @@ public class CaptureService extends Service {
             closeQuickSettings();startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
         });
         pages.addView(gamePage,new FrameLayout.LayoutParams(-1,-1));gamePage.setVisibility(View.GONE);
-        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.setAlpha(1f);gamesTab.setAlpha(.65f);});
-        gamesTab.setAlpha(.65f);
-        gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.setAlpha(.65f);gamesTab.setAlpha(1f);});
+        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);});
+        gamesTab.select(false);
+        gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);});
         MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));});
         shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         dismiss.setOnClickListener(v -> closeQuickSettings());
@@ -1522,10 +1522,13 @@ public class CaptureService extends Service {
 
         String difficultyValue = prefs.getString("difficulty", "hard");
         String modeValue = prefs.getString("mode", "solo");
-        panel.addView(label("游戏难度", 14, Theme.MUTED, 6));
+
         Theme.ChalkChoice difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         difficulty.setIndex(difficultyValue.equals("nightmare") ? 1 : 0);
-        panel.addView(difficulty, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
+        LinearLayout difficultyRow=new LinearLayout(this);difficultyRow.setGravity(Gravity.CENTER_VERTICAL);
+        difficultyRow.addView(label("难度",14,Theme.MUTED,0),new LinearLayout.LayoutParams(Theme.px(this,56),-2));
+        difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(0,Theme.px(this,42),1));panel.addView(difficultyRow);
+
         TextView routeLabel = label("参考路线", 14, Theme.MUTED, 6);
         panel.addView(routeLabel);
         Theme.ChalkChoice party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
@@ -1560,7 +1563,7 @@ public class CaptureService extends Service {
         slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(android.widget.SeekBar bar, int value, boolean fromUser) {
                 int percent = value + 5;
-                opacityLabel.setText("叠图不透明度 " + percent + "%");
+                opacityLabel.setText("透明度 " + percent + "%");
                 applyOpacity(percent);
             }
             public void onStartTrackingTouch(android.widget.SeekBar bar) {}
@@ -1594,7 +1597,11 @@ public class CaptureService extends Service {
         regionParams.setMargins(pad, 0, pad, pad);
         region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
         actions.setPadding(0,0,0,Theme.px(this,8));
-        panel.addView(actions,0,new LinearLayout.LayoutParams(-1,-2));
+        int actionIndex=panel.indexOfChild(difficultyRow)+1;
+        panel.addView(actions,actionIndex,new LinearLayout.LayoutParams(-1,-2));
+        panel.removeView(opacityLabel);panel.removeView(slider);
+        opacityLabel.setText("透明度 " + startOpacity + "%");
+        panel.addView(opacityLabel,actionIndex+1);panel.addView(slider,actionIndex+2,new LinearLayout.LayoutParams(-1,Theme.px(this,40)));
         panel.addView(region,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
         recordButton=button("屏幕录制",true);updateRecordingButton();recordButton.setOnClickListener(v->toggleRecording());
         LinearLayout.LayoutParams recordParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));recordParams.setMargins(pad,Theme.px(this,10),pad,pad);

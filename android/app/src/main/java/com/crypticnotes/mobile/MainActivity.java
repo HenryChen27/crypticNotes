@@ -13,6 +13,7 @@ import android.widget.*;
 public class MainActivity extends Activity {
     private TextView status;
     private Theme.SectionHeading gameHeading;
+    private InlineGameManager inlineGames;
     private Theme.ChalkChoice difficulty, party;
     private int opacity = 30;
     private AppUpdater updater;
@@ -233,10 +234,9 @@ public class MainActivity extends Activity {
         LinearLayout games = fold("小游戏", true);
         gameHeading=(Theme.SectionHeading)games.getTag();
         gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
-        games.addView(Theme.muted(this,"按需下载，使用系统引擎；本机保存进度和个人排行榜。"));
-        Theme.ChalkButton openGames = new Theme.ChalkButton(this,"合成大水母",true);
-        games.addView(openGames,matchWrap());
-        openGames.setOnClickListener(v->startActivity(new Intent(this,MiniGamesActivity.class)));
+        inlineGames=new InlineGameManager(this);
+        inlineGames.stateChanged=()->gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
+        games.addView(inlineGames,matchWrap());
         LinearLayout updates = fold("应用更新", false);
         Theme.ChalkButton update = new Theme.ChalkButton(this, "检查应用更新");
         updates.addView(update, matchWrap());
@@ -408,7 +408,8 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        if(gameHeading!=null){gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));MiniGameUpdates.check(this,()->{if(!isDestroyed()&&gameHeading!=null)gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));});}
+        if(inlineGames!=null)inlineGames.refresh();
+        if(gameHeading!=null){gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));MiniGameUpdates.check(this,()->{if(!isDestroyed()&&gameHeading!=null)gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));if(inlineGames!=null)inlineGames.refresh();});}
         if (updater != null) {
             // Re-attach before resuming: a download started from this screen keeps
             // running after it is left, and its progress should still be here.
