@@ -40,7 +40,7 @@ public class MiniGameOverlayService extends Service {
     private long lastWindowMotionAt;
     private final Runnable applyLayout=()->{layoutQueued=false;if(shell!=null&&shell.isAttachedToWindow())windows.updateViewLayout(shell,params);};
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
-    private final Runnable saveTimeout=()->{closing=false;showGame();Toast.makeText(this,"保存超时，请重试",Toast.LENGTH_LONG).show();};
+    private final Runnable saveTimeout=()->closeFailed("保存超时");
     @Override public IBinder onBind(Intent intent){return null;}
     void runOnUiThread(Runnable action){new android.os.Handler(android.os.Looper.getMainLooper()).post(action);}
     @Override public int onStartCommand(Intent intent,int flags,int id){if(intent!=null){if("show".equals(intent.getAction()))showGame();else if("auto-hide".equals(intent.getAction())&&!hidden){hideGame();handler.postDelayed(autoClose,5000);}}return START_NOT_STICKY;}
@@ -188,7 +188,7 @@ public class MiniGameOverlayService extends Service {
             try{JSONObject m=new JSONObject(message);if(!"safe-exit".equals(m.optString("type")))return;
                 if(!m.optBoolean("saved"))throw new IOException(m.optString("reason","保存失败"));write(m.getString("json"));
                 runOnUiThread(()->{handler.removeCallbacks(saveTimeout);stopSelf();});
-            }catch(Exception e){runOnUiThread(()->{handler.removeCallbacks(saveTimeout);closing=false;showGame();Toast.makeText(MiniGameOverlayService.this,"存档未完成，请重试",Toast.LENGTH_LONG).show();});}
+            }catch(Exception e){runOnUiThread(()->closeFailed(e.getMessage()));}
         }
         @JavascriptInterface public String saveStorage(String json,boolean exit){
             try{write(json);if(exit)runOnUiThread(()->stopSelf());return "ok";}catch(Exception e){return "保存失败："+e.getMessage();}
@@ -198,7 +198,14 @@ public class MiniGameOverlayService extends Service {
         if(closing||web==null)return;closing=true;
         cancelReturn();if(swipeBounds!=null)restoreSwipe();shell.setPreviewing(false);
         handler.postDelayed(saveTimeout,10000);
-        web.evaluateJavascript("window.__jellyfishHostSave(1)",null);
+        web.evaluateJavascript("(()=>{if(typeof window.__jellyfishHostSave!=='function')return 'bridge_missing';window.__jellyfishHostSave(1);return 'started'})()",result->{if(closing&&"\"bridge_missing\"".equals(result))closeFailed("关闭接口未加载，请更新小游戏后重试");});
+    }
+    private void closeFailed(String reason){
+        handler.removeCallbacks(saveTimeout);closing=false;
+        if(web!=null)web.evaluateJavascript("window.__jellyfishHostFrozen=false",null);
+        android.util.Log.e("CrypticNotes","Mini-game close failed: "+reason);
+        // Never steal focus back from the main game after an automatic hide.
+        Toast.makeText(this,(hidden?"小游戏保持后台，":"")+"保存未完成："+reason+"。请更新小游戏后重试",Toast.LENGTH_LONG).show();
     }
     @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(shell.isAttachedToWindow())windows.removeView(shell);}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
 }

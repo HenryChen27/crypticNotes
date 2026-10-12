@@ -20,6 +20,13 @@ with sync_playwright() as p:
     assert result['saved'] is False and result['reason']=='save_failed' and 'json' not in result,result
     page.evaluate('delete window.JellyfishGame;__jellyfishHostSave(3)')
     assert page.evaluate('messages.pop().saved') is False
+    page.evaluate("window.JellyfishGame={save:()=>true};__jellyfishHostSave(4)")
+    result=page.evaluate('messages.pop()')
+    assert result['saved'] is True and result['id']==4 and 'json' in result,result
+    page.evaluate("window.JellyfishGame={save:()=>false};__jellyfishHostSave(5)")
+    result=page.evaluate('messages.pop()')
+    assert result['saved'] is False and 'json' not in result,result
+    assert page.evaluate('window.__jellyfishHostFrozen') is False
     assert (ROOT/'android/app/src/main/assets/safe-exit.js').read_bytes()==(ROOT/'scripts/game_launcher/safe-exit.js').read_bytes()
     browser.close()
 print('Host bridge passed: awaited save, prevented early close, filtered storage, retained failure.')
