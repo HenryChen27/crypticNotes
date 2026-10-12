@@ -47,7 +47,7 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     var commands:Timer?
     var lastCommand=""
     var fullButton:WindowControl!
-    func publishState(_ hidden:Bool){web?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
+    func publishState(_ hidden:Bool){view?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
     func applicationDidFinishLaunching(_ notification:Notification){
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
