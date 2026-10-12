@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="390" viewBox="0 0 1200 390">
+<defs><linearGradient id="bg" x2="1" y2="1"><stop stop-color="#132737"/><stop offset="1" stop-color="#0d1824"/></linearGradient><linearGradient id="card" x2="0" y2="1"><stop stop-color="#2c4354"/><stop offset="1" stop-color="#182b3b"/></linearGradient><filter id="grain"><feTurbulence baseFrequency=".7" numOctaves="2" stitchTiles="stitch"/><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncA type="linear" slope=".05"/></feComponentTransfer><feBlend in="SourceGraphic" mode="screen"/></filter></defs>
+<rect width="1200" height="390" rx="24" fill="url(#bg)"/>
+<g fill="none" stroke="#3e6278" stroke-width="1" opacity=".35"><path d="M40 40H1160V350H40Z"/><path d="M40 325H1160M1070 40V350"/></g>
+<text x="62" y="67" fill="#edf4f8" font-family="sans-serif" font-size="25">把探索过的线索，留给下一次开图</text>
+<text x="62" y="96" fill="#91acbf" font-family="sans-serif" font-size="14">SESSION MEMORY · CROSS-FLOOR REFERENCE</text>
+<g fill="url(#card)" stroke="#718b9e" stroke-opacity=".38"><rect x="60" y="124" width="250" height="207" rx="14"/><rect x="337" y="124" width="250" height="207" rx="14"/><rect x="614" y="124" width="250" height="207" rx="14"/><rect x="891" y="124" width="250" height="207" rx="14"/></g>
+<g stroke="#b3cfdf" stroke-width="3" fill="none"><path d="M94 194h40v-35h43v67h38v-37h51"/><path d="M395 188h34v-22h40v47h35v-25h35" stroke-dasharray="5 7"/><circle cx="739" cy="185" r="28" stroke="#83bca1"/><path d="m726 185 10 10 19-23" stroke="#83bca1"/><path d="M935 194h35v-35h42v67h40v-37h49"/></g>
+<g font-family="sans-serif" font-size="18" fill="#e2ebf1"><text x="84" y="269">01  确认当前楼层</text><text x="361" y="269">02  切换另一楼层</text><text x="638" y="269">03  自己决定叠图</text><text x="915" y="269">04  完整楼层参考</text></g>
+<g font-family="sans-serif" font-size="13" fill="#9cb2c3"><text x="84" y="299">记住可靠识别的地图</text><text x="361" y="299">线索不足时询问确认</text><text x="638" y="299">仅对这次请求生效</text><text x="915" y="299">空白楼层居中，位置未校准</text></g>
+<g stroke="#7a9bad" stroke-width="2" fill="none"><path d="m317 220 9 7-9 7M594 220l9 7-9 7M871 220l9 7-9 7"/></g>
+</svg>
