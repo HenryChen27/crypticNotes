@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <application android:label="加页手记地图助手" android:allowBackup="false" android:icon="@drawable/app_logo"
+    <application android:label="加页手记地图助手·新版" android:allowBackup="false" android:icon="@drawable/app_logo"
         android:theme="@android:style/Theme.Material.NoActionBar" android:supportsRtl="true">
         <provider android:name=".UpdateProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true" />

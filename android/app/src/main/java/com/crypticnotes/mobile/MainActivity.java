@@ -229,7 +229,7 @@ public class MainActivity extends Activity {
         syncRecordingRows();
         recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
 
-        LinearLayout games = fold("小游戏", false);
+        LinearLayout games = fold("小游戏", true);
         games.addView(Theme.muted(this,"按需下载，使用系统引擎；本机保存进度和个人排行榜。"));
         Theme.ChalkButton openGames = new Theme.ChalkButton(this,"合成大水母",true);
         games.addView(openGames,matchWrap());
@@ -246,7 +246,7 @@ public class MainActivity extends Activity {
         spinnerParams.topMargin = Theme.px(this, 12);
         spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
         updates.addView(spinner, spinnerParams);
-        TextView updateStatus = Theme.muted(this, "检查新版本，保留已有设置");
+        TextView updateStatus = Theme.muted(this, "当前版本 " + BuildConfig.VERSION_NAME + " · 检查新版本，保留已有设置");
         LinearLayout.LayoutParams updateStatusParams = matchWrap();
         updateStatusParams.topMargin = Theme.px(this, 8);
         updates.addView(updateStatus, updateStatusParams);

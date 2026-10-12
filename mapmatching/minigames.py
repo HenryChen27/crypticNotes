@@ -162,6 +162,8 @@ class GameStore:
                         raise ValueError('小游戏包包含越界链接')
             metadata = json.loads((staging/'package.json').read_text(encoding='utf-8'))
             self.validate_package(staging, metadata)
+            metadata['downloadSha256'] = actual
+            (staging/'package.json').write_text(json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
             if backup.exists():
                 shutil.rmtree(backup)
             if self.folder.exists():
@@ -196,7 +198,7 @@ class GameStore:
         if catalog.get('schema') == 2:
             launcher = LauncherStore(self.root.parent)
             launcher_info = package_info(catalog, platform_key())
-            if not launcher.installed() or not launcher.satisfies(launcher_info.get('version')):
+            if not launcher.installed() or not launcher.matches_download(launcher_info):
                 launcher.download_package(launcher_info,
                     lambda value, text: progress(value // 10, '正在安装公共小游戏启动器…'), cancelled)
             game_info = package_info(catalog)
@@ -276,6 +278,15 @@ class LauncherStore(GameStore):
             minimum = tuple(int(n) for n in required.split('.'))
             return len(installed) == len(minimum) == 3 and installed >= minimum
         except (AttributeError, ValueError):
+            return False
+
+    def matches_download(self, info):
+        try:
+            metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+            if metadata.get('version') == info.get('version'):
+                return metadata.get('downloadSha256') == info.get('sha256')
+            return self.satisfies(info.get('version'))
+        except (OSError, ValueError):
             return False
 
     def validate_package(self, staging, metadata):

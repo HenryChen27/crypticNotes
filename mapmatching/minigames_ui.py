@@ -120,7 +120,7 @@ class GameControls(W.QWidget):
         except OSError as error:
             self.stop_scene_watch();self.status.setText('自动收起失败：'+str(error));return
         self.stop_scene_watch()
-        self.companion.notify('游戏画面明显变化，小游戏已收起；3秒内恢复可继续')
+        self.companion.notify('游戏画面明显变化，小游戏已收起；5秒内恢复可继续')
 
     def send_window_command(self,action):
         folder=DATA_ROOT/'minigame-saves/jellyfish';target=folder/'window-command.json';temp=folder/'window-command.tmp'

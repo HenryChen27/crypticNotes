@@ -6,12 +6,14 @@ if (!new File(signingData.keystore).isFile()) throw new GradleException('Android
 android {
     namespace 'com.crypticnotes.mobile'
     compileSdk 35
+    buildFeatures { buildConfig true }
+    buildFeatures { buildConfig true }
     defaultConfig {
         applicationId 'com.crypticnotes.mobile.v2'
         minSdk 26
         targetSdk 35
-        versionCode 29
-        versionName '0.6.21-preview'
+        versionCode 30
+        versionName '0.6.22-preview'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {
