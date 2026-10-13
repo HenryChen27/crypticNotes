@@ -1359,29 +1359,43 @@ public class CaptureService extends Service {
     }
 
     private final GameSceneDetector gameSceneDetector=new GameSceneDetector();
+    private final CaptureOverlayMask sceneOverlayMask=new CaptureOverlayMask();
+    private String sceneWatchStatus="";
+    private long sceneWatchLoggedAt;
+    private void traceSceneWatch(String status){
+        long now=SystemClock.elapsedRealtime();
+        if(!status.equals(sceneWatchStatus)||now-sceneWatchLoggedAt>=15000){
+            sceneWatchStatus=status;sceneWatchLoggedAt=now;
+            android.util.Log.i("CrypticNotes","Mini-game scene watch: "+status);
+        }
+    }
     private long gameSceneSampleAt;
     private int sceneWidth,sceneHeight;
     private void watchMiniGameScene(){
-        if(MiniGameOverlayService.hidden||quickSettings!=null||!capturedVisible||!captureFitsScreen()){
-            gameSceneDetector.reset();return;
+        if(MiniGameOverlayService.hidden||quickSettings!=null){
+            traceSceneWatch("paused: hidden or settings open");gameSceneDetector.reset();sceneOverlayMask.reset();return;
         }
         long now=SystemClock.elapsedRealtime();if(now-gameSceneSampleAt<1500)return;gameSceneSampleAt=now;
-        if(width!=sceneWidth||height!=sceneHeight){gameSceneDetector.reset();sceneWidth=width;sceneHeight=height;}
-        int[] pixels=sampleViewport();if(pixels==null)return;
+        if(width!=sceneWidth||height!=sceneHeight){gameSceneDetector.reset();sceneOverlayMask.reset();sceneWidth=width;sceneHeight=height;}
+        int[] pixels=sampleViewport();if(pixels==null){traceSceneWatch("waiting for captured frame");return;}
         boolean[] excluded=new boolean[14400];
         MiniGameOverlayService game=MiniGameOverlayService.current;if(game==null)return;
-        if(game.interacting()){gameSceneDetector.reset();return;}
+        if(game.interacting()){traceSceneWatch("paused: window moving");gameSceneDetector.reset();return;}
         android.graphics.Rect area=game.visibleBounds();
+        // Single-app projection excludes overlay windows, even while the selected
+        // app is marked occluded. Compare actual pixels before masking our bounds.
+        boolean includeOverlay=sceneOverlayMask.includesOverlay(pixels,game.sceneOverlaySignature(width,height));
         for(int y=0;y<90;y++)for(int x=0;x<160;x++){
             int sx=x*width/160,sy=y*height/90;
             boolean overGame=sx>=area.left-8&&sx<area.right+8&&sy>=area.top-8&&sy<area.bottom+8;
             boolean overBadge=badgeParams!=null&&sx>=badgeParams.x-8&&sx<badgeParams.x+badgeParams.width+8&&sy>=badgeParams.y-8&&sy<badgeParams.y+badgeParams.height+8;
-            excluded[y*160+x]=overGame||overBadge;
+            excluded[y*160+x]=includeOverlay&&(overGame||overBadge);
         }
         if(gameSceneDetector.feed(pixels,excluded)){
+            traceSceneWatch("major change detected; auto-hide");
             startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("auto-hide"));
             Toast.makeText(this,"游戏画面明显变化，小游戏已收起；5秒内恢复可继续",Toast.LENGTH_SHORT).show();
-        }
+        }else traceSceneWatch((includeOverlay?"overlay pixels masked; ":"capture excludes overlay; ")+gameSceneDetector.status());
     }
 
     private Bitmap grab() {

@@ -28,6 +28,9 @@ public class MiniGameOverlayService extends Service {
     private WindowManager windows;
     private WindowManager.LayoutParams params;
     private GameWindowChrome shell;
+    // addView registers synchronously; isAttachedToWindow only becomes true
+    // during the later traversal, so it cannot guard duplicate registration.
+    private boolean windowRegistered;
     private android.content.BroadcastReceiver screenReceiver;
     private boolean fullScreen;
     private int customWidth;
@@ -71,7 +74,7 @@ public class MiniGameOverlayService extends Service {
         windows=(WindowManager)getSystemService(WINDOW_SERVICE);
         params=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_FULLSCREEN | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,android.graphics.PixelFormat.TRANSLUCENT);
-        params.gravity=Gravity.TOP|Gravity.LEFT;if(android.os.Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;resize();windows.addView(shell,params);
+        params.gravity=Gravity.TOP|Gravity.LEFT;if(android.os.Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;resize();registerWindow();
         requestHighRefreshRate();
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportMultipleWindows(false);
         web.addJavascriptInterface(new Bridge(),"NativeGame");
@@ -163,7 +166,7 @@ public class MiniGameOverlayService extends Service {
         if(shell!=null)shell.dismissMenu();
         setHostMuted(true);
         hidden=true;
-        if(shell!=null && shell.isAttachedToWindow())windows.removeViewImmediate(shell);
+        if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}
     }
     void showGame(){
         handler.removeCallbacks(autoClose);
@@ -171,8 +174,13 @@ public class MiniGameOverlayService extends Service {
         hidden=false;
         if(shell!=null){
             clampPosition();shell.setVisibility(View.VISIBLE);
-            if(!shell.isAttachedToWindow())windows.addView(shell,params);
+            registerWindow();
         }
+    }
+    private void registerWindow(){
+        if(windowRegistered||shell==null||windows==null)return;
+        windows.addView(shell,params);windowRegistered=true;
+        android.util.Log.i("CrypticNotes","Mini-game window registered");
     }
     void setHostMuted(boolean mute){if(web!=null)web.evaluateJavascript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted("+mute+")",null);}
     void clampPosition(){android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);params.x=Math.max(0,Math.min(m.widthPixels-params.width,params.x));params.y=Math.max(0,Math.min(m.heightPixels-params.height,params.y));}
@@ -192,6 +200,18 @@ public class MiniGameOverlayService extends Service {
         if(hidden||shell==null||!shell.isAttachedToWindow())return new android.graphics.Rect();
         int[] location=new int[2];shell.getLocationOnScreen(location);
         return new android.graphics.Rect(location[0],location[1],location[0]+shell.getWidth(),location[1]+shell.getHeight());
+    }
+    int[] sceneOverlaySignature(int screenWidth,int screenHeight){
+        if(shell==null||hidden||!shell.isAttachedToWindow())return null;
+        android.graphics.Bitmap bitmap=null;
+        try{
+            bitmap=android.graphics.Bitmap.createBitmap(160,90,android.graphics.Bitmap.Config.ARGB_8888);
+            android.graphics.Canvas canvas=new android.graphics.Canvas(bitmap);
+            canvas.scale(160f/screenWidth,90f/screenHeight);
+            int[] location=new int[2];shell.getLocationOnScreen(location);
+            canvas.translate(location[0],location[1]);shell.draw(canvas);
+            int[] result=new int[14400];bitmap.getPixels(result,0,160,0,0,160,90);return result;
+        }catch(Exception e){return null;}finally{if(bitmap!=null)bitmap.recycle();}
     }
     private synchronized void write(String json)throws Exception{
         if(json==null||json.length()>1024*1024)throw new IOException("存档过大");JSONObject data=new JSONObject(json);Iterator<String> keys=data.keys();while(keys.hasNext()){String key=keys.next();if(!key.startsWith("jellyfish.")||!(data.get(key) instanceof String))throw new IOException("无效存档");}
@@ -225,5 +245,5 @@ public class MiniGameOverlayService extends Service {
         // Never steal focus back from the main game after an automatic hide.
         Toast.makeText(this,(hidden?"小游戏保持后台，":"")+"保存未完成："+reason+"。请更新小游戏后重试",Toast.LENGTH_LONG).show();
     }
-    @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(shell.isAttachedToWindow())windows.removeView(shell);}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
+    @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
 }

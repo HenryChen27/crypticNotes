@@ -7,6 +7,7 @@ final class GameSceneDetector {
     private int[] reference;
     private boolean[] mask;
     private boolean armed;
+    String status(){return reference==null?"waiting for usable frame":armed?"armed":"waiting for stable reference";}
     void reset(){reference=null;mask=null;armed=false;}
     boolean feed(int[] pixels, boolean[] excluded){
         if(pixels==null||excluded==null||pixels.length!=14400||excluded.length!=pixels.length)return false;
