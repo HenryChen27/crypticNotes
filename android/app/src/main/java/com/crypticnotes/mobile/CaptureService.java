@@ -1385,6 +1385,11 @@ public class CaptureService extends Service {
         // Single-app projection excludes overlay windows, even while the selected
         // app is marked occluded. Compare actual pixels before masking our bounds.
         boolean includeOverlay=sceneOverlayMask.includesOverlay(pixels,game.sceneOverlaySignature(width,height));
+        if(includeOverlay){
+            gameSceneDetector.reset();
+            traceSceneWatch("disabled: capture includes mini-game window (whole-screen sharing)");
+            return;
+        }
         for(int y=0;y<90;y++)for(int x=0;x<160;x++){
             int sx=x*width/160,sy=y*height/90;
             boolean overGame=sx>=area.left-8&&sx<area.right+8&&sy>=area.top-8&&sy<area.bottom+8;
