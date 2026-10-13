@@ -40,7 +40,7 @@ BG = 'rgba(20,28,37,234)'
 # Order matters: Qt resolves glyph by glyph, so Latin stays with the italic face
 # and CJK falls through to the Chinese one.
 FONT_DIR = Path(__file__).resolve().parent/'assets/fonts'
-FONT_FILES = ('EssayText-Italic.ttf','HYDiWRGJ.ttf')
+FONT_FILES = ('DFPOP1-W5.ttf','EssayText-Italic.ttf','HYDiWRGJ.ttf')
 FONT_FALLBACK = 'PingFang SC' if sys.platform == 'darwin' else 'Microsoft YaHei UI'
 FONT_CACHE = []
 ARROW = (Path(__file__).resolve().parent/'assets/chevron.png').as_posix()

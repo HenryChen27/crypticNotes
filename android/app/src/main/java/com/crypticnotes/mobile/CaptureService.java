@@ -1481,17 +1481,17 @@ public class CaptureService extends Service {
         Theme.MistPanel shell = new Theme.MistPanel(this);
         int pad = Theme.px(this, 14);
         shell.setPadding(0, Theme.px(this, 12), 0, 0);
-        LinearLayout header = new LinearLayout(this);
+        DraggableHeader header = new DraggableHeader(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        DarkTab settingsTab=new DarkTab(this,"游戏设置");settingsTab.select(true);
+        DarkTab settingsTab=new DarkTab(this,"设置");settingsTab.select(true);
         DarkTab gamesTab=new DarkTab(this,"小游戏");
         ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
         ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
         header.addView(settingsTab,new LinearLayout.LayoutParams(0,Theme.px(this,40),1));
         LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,Theme.px(this,40),1);tabParams.setMargins(Theme.px(this,6),0,Theme.px(this,6),0);
         header.addView(gamesTab,tabParams);
-        Theme.CloseButton dismiss = new Theme.CloseButton(this);
+        HeaderClose dismiss = new HeaderClose(this);
         header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
         shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
 
@@ -1528,15 +1528,17 @@ public class CaptureService extends Service {
         difficulty.setIndex(difficultyValue.equals("nightmare") ? 1 : 0);
         LinearLayout difficultyRow=new LinearLayout(this);difficultyRow.setGravity(Gravity.CENTER_VERTICAL);
         difficultyRow.addView(label("难度",14,Theme.MUTED,0),new LinearLayout.LayoutParams(Theme.px(this,56),-2));
-        difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(0,Theme.px(this,42),1));panel.addView(difficultyRow);
+        difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(Theme.px(this,170),Theme.px(this,42)));panel.addView(difficultyRow);
 
         TextView routeLabel = label("参考路线", 14, Theme.MUTED, 6);
-        panel.addView(routeLabel);
-        Theme.ChalkChoice party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
+
+        Theme.ChalkChoice party = new Theme.ChalkChoice(this, new String[]{"单人", "多人"});
         party.setIndex(modeValue.equals("duo") ? 1 : 0);
-        panel.addView(party, new LinearLayout.LayoutParams(-1, Theme.px(this, 42)));
+        LinearLayout routeRow=new LinearLayout(this);routeRow.setGravity(Gravity.CENTER_VERTICAL);
+        routeRow.addView(routeLabel,new LinearLayout.LayoutParams(Theme.px(this,82),-2));
+        routeRow.addView(party,new LinearLayout.LayoutParams(Theme.px(this,144),Theme.px(this,42)));panel.addView(routeRow);
         party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
-        routeLabel.setVisibility(party.getVisibility());
+        routeRow.setVisibility(party.getVisibility());
 
         // The two choices above cost a matcher rebuild, so what is actually in
         // force needs a line of its own -- without it, closing the panel looks
@@ -1546,7 +1548,7 @@ public class CaptureService extends Service {
         Theme.ChalkChoice.Listener apply = i -> {
             boolean nightmare = difficulty.getIndex() == 1;
             party.setVisibility(nightmare ? View.VISIBLE : View.GONE);
-            routeLabel.setVisibility(party.getVisibility());
+            routeRow.setVisibility(party.getVisibility());
             applyRecognition(nightmare ? "nightmare" : "hard",
                     party.getIndex() == 0 ? "solo" : "duo", applied);
         };
@@ -1593,12 +1595,12 @@ public class CaptureService extends Service {
         });
         LinearLayout.LayoutParams lastParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
         lastParams.topMargin = Theme.px(this, 10);
-        Theme.ChalkButton region = button("小地图区域", false);
+        Theme.ChalkButton region = button("地图区域设置", false);
         LinearLayout.LayoutParams regionParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 42));
         regionParams.setMargins(pad, 0, pad, pad);
         region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
         actions.setPadding(0,0,0,Theme.px(this,8));
-        int actionIndex=panel.indexOfChild(difficultyRow)+1;
+        int actionIndex=panel.indexOfChild(routeRow)+1;
         panel.addView(actions,actionIndex,new LinearLayout.LayoutParams(-1,-2));
         panel.removeView(opacityLabel);panel.removeView(slider);
         opacityLabel.setText("透明度 " + startOpacity + "%");
@@ -1616,18 +1618,7 @@ public class CaptureService extends Service {
         // to be a second way out of here.
         boolean ballBelow = badgeParams.y + ballWidth / 2 > height / 2;
         p.y = ballBelow ? Theme.px(this, 12) : Math.max(Theme.px(this, 12), height - p.height - Theme.px(this, 12));
-        header.setOnTouchListener(new View.OnTouchListener() {
-            float x,y; int startX,startY;
-            public boolean onTouch(View v, MotionEvent e) {
-                if(e.getActionMasked()==MotionEvent.ACTION_DOWN) { x=e.getRawX(); y=e.getRawY(); startX=p.x; startY=p.y; }
-                if(e.getActionMasked()==MotionEvent.ACTION_MOVE) {
-                    p.x=Math.max(0,Math.min(width-p.width,startX+Math.round(e.getRawX()-x)));
-                    p.y=Math.max(0,Math.min(height-p.height,startY+Math.round(e.getRawY()-y)));
-                    windows.updateViewLayout(shell,p);
-                }
-                return true;
-            }
-        });
+        header.mover=(dx,dy)->{p.x=Math.max(0,Math.min(width-p.width,p.x+dx));p.y=Math.max(0,Math.min(height-p.height,p.y+dy));windows.updateViewLayout(shell,p);};
         windows.addView(shell, p);
     }
 

@@ -265,7 +265,7 @@ class DelaySlider(ChalkSlider):
 
 
 def install_font(app):
-    path = Path(__file__).resolve().parent/'assets/fonts/HYDiWRGJ.ttf'
+    path = Path(__file__).resolve().parent/'assets/fonts/DFPOP1-W5.ttf'
     families = []
     if path.exists():
         font_id = G.QFontDatabase.addApplicationFont(str(path))

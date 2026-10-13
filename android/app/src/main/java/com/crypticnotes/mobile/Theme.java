@@ -60,7 +60,7 @@ public final class Theme {
     public static Typeface typeface(Context context) {
         if (typeface == null) {
             try {
-                typeface = Typeface.createFromAsset(context.getAssets(), "fonts/HYDiWRGJ.ttf");
+                typeface = Typeface.createFromAsset(context.getAssets(), "fonts/DFPOP1-W5.ttf");
             } catch (Exception ignored) {
                 typeface = Typeface.SANS_SERIF;
             }

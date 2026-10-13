@@ -14,7 +14,7 @@ for name in ('src','assets/map-ui'):
     shutil.copytree(ROOT/'mapmatching'/name,python/name,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__'))
 # Same font as the desktop client, so both clients read as one product.
 # Only the UI face is staged; the italic accent face is desktop-only.
-font=ROOT/'mapmatching/assets/fonts/HYDiWRGJ.ttf'
+font=ROOT/'mapmatching/assets/fonts/DFPOP1-W5.ttf'
 if font.exists():
     (target/'assets/fonts').mkdir(parents=True,exist_ok=True)
     shutil.copy2(font,target/'assets/fonts'/font.name)
