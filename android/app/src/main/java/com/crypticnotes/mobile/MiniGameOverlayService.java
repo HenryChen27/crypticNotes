@@ -72,6 +72,7 @@ public class MiniGameOverlayService extends Service {
         params=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_FULLSCREEN | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;if(android.os.Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;resize();windows.addView(shell,params);
+        requestHighRefreshRate();
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportMultipleWindows(false);
         web.addJavascriptInterface(new Bridge(),"NativeGame");
         web.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_BACK){if(event.getAction()==KeyEvent.ACTION_UP)hideGame();return true;}return false;});
@@ -131,7 +132,7 @@ public class MiniGameOverlayService extends Service {
     }
     private void endWindowSwipe(int action){
         if(swipeBounds==null)return;
-        if(action!=0){cancelReturn();restoreSwipe();if(action<0)hideGame();else if(!fullScreen)toggleFullscreen();return;}
+        if(action!=0){cancelReturn();restoreSwipe();if(action<0)saveAndClose();else if(!fullScreen)toggleFullscreen();return;}
         final float from=swipeDelta;returnAnimator=android.animation.ValueAnimator.ofFloat(1,0);returnAnimator.setDuration(160);
         returnAnimator.setInterpolator(new android.view.animation.DecelerateInterpolator());
         returnAnimator.addUpdateListener(v->previewWindowSwipe(from*(float)v.getAnimatedValue()));
@@ -172,7 +173,15 @@ public class MiniGameOverlayService extends Service {
     void clampPosition(){android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);params.x=Math.max(0,Math.min(m.widthPixels-params.width,params.x));params.y=Math.max(0,Math.min(m.heightPixels-params.height,params.y));}
     @Override public void onConfigurationChanged(Configuration c){
         super.onConfigurationChanged(c);
-        if(params!=null){resize();if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);}
+        if(params!=null){resize();if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);requestHighRefreshRate();}
+    }
+    private void requestHighRefreshRate(){
+        Display display=windows.getDefaultDisplay();Display.Mode current=display.getMode();float rate=display.getRefreshRate();
+        for(Display.Mode mode:display.getSupportedModes())if(mode.getPhysicalWidth()==current.getPhysicalWidth()&&mode.getPhysicalHeight()==current.getPhysicalHeight())rate=Math.max(rate,mode.getRefreshRate());
+        params.preferredRefreshRate=rate;
+        if(android.os.Build.VERSION.SDK_INT>=35)web.setRequestedFrameRate(rate);
+        if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);
+        android.util.Log.i("CrypticNotes","Mini-game refresh requested="+rate+", current="+display.getRefreshRate()+", WebView="+WebView.getCurrentWebViewPackage());
     }
     android.graphics.Rect visibleBounds(){
         if(hidden||shell==null||!shell.isAttachedToWindow())return new android.graphics.Rect();
@@ -184,6 +193,10 @@ public class MiniGameOverlayService extends Service {
         FileOutputStream out=null;try{out=save.startWrite();out.write(json.getBytes(StandardCharsets.UTF_8));save.finishWrite(out);}catch(Exception e){if(out!=null)save.failWrite(out);throw e;}
     }
     final class Bridge {
+        @JavascriptInterface public void reportFrameStats(String json){
+            if(json==null||json.length()>1024)return;
+            try{JSONObject stats=new JSONObject(json);android.util.Log.i("CrypticNotes","Mini-game RAF fps="+stats.optDouble("rafFps")+", worst gap="+stats.optInt("worstGapMs")+"ms");}catch(Exception ignored){}
+        }
         @JavascriptInterface public void safeExit(String message){
             try{JSONObject m=new JSONObject(message);if(!"safe-exit".equals(m.optString("type")))return;
                 if(!m.optBoolean("saved"))throw new IOException(m.optString("reason","保存失败"));write(m.getString("json"));

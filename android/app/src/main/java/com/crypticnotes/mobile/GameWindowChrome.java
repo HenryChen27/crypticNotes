@@ -28,7 +28,7 @@ final class GameWindowChrome extends FrameLayout {
                 case MotionEvent.ACTION_CANCEL:dragging=false;return true;
             }return true;}
         });
-        bottom=new Mark(c,1);bottom.setContentDescription("向上滑动最小化，向下滑动全屏");addView(bottom,new LayoutParams(dp(120),dp(28),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
+        bottom=new Mark(c,1);bottom.setContentDescription("向上滑动保存并关闭，向下滑动全屏");addView(bottom,new LayoutParams(dp(120),dp(28),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL));
         bottom.setOnTouchListener(new View.OnTouchListener(){float y;int reached,screenHeight;boolean committed;public boolean onTouch(View v,MotionEvent e){
             if(e.getActionMasked()==MotionEvent.ACTION_DOWN){y=e.getRawY();reached=0;committed=false;android.util.DisplayMetrics metrics=new android.util.DisplayMetrics();((WindowManager)getContext().getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRealMetrics(metrics);screenHeight=metrics.heightPixels;dismissMenu();host.beginSwipe();}
             if(committed)return true;
