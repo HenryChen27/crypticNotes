@@ -166,7 +166,7 @@ def sync_sources(github):
     # New Android classes and host bridges are build inputs before a local Git
     # commit exists. Export them too, or the public source cannot reproduce APKs.
     files=sorted(set(files)|{p.relative_to(ROOT).as_posix() for pattern in
-        ('android/app/src/**','scripts/game_launcher/**') for p in ROOT.glob(pattern)
+        ('android/app/src/**','scripts/game_launcher/**','mapmatching/assets/fonts/*.ttf') for p in ROOT.glob(pattern)
         if p.is_file() and p.suffix not in ('.pyc','.log')})
     for name in files:
         source=ROOT/name
