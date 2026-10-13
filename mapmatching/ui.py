@@ -989,8 +989,11 @@ class Companion(W.QWidget):
         font_row.addWidget(font_label)
         self.font_choice=W.QComboBox()
         self.font_choice.addItem('游戏字体（默认）','game')
+        self.font_choice.addItem('汉仪第五人格体','family:HYDiWRGJ')
         self.font_choice.addItem('系统字体','system')
         for family in G.QFontDatabase.families():
+            if family in ('HYDiWRGJ', '汉仪第五人格体'):
+                continue
             self.font_choice.addItem(family,'family:'+family)
         self.font_choice.setMinimumWidth(0)
         self.font_choice.setSizeAdjustPolicy(W.QComboBox.AdjustToMinimumContentsLengthWithIcon)

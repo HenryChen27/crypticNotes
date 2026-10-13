@@ -54,7 +54,7 @@ def main():
         target = destination/'game'/name
         target.parent.mkdir(parents=True, exist_ok=True)
         if (source/name).is_dir():
-            shutil.copytree(source/name, target, ignore=shutil.ignore_patterns('__pycache__', '.DS_Store'))
+            shutil.copytree(source/name, target, ignore=shutil.ignore_patterns('__pycache__', '.DS_Store', '*.mp4', '*.MP4'))
         else:
             shutil.copy2(source/name, target)
     metadata = {'id': 'jellyfish', 'name': '合成大水母', 'version': args.version, 'platform': key}

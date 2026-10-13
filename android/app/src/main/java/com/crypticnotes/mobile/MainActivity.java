@@ -258,13 +258,6 @@ public class MainActivity extends Activity {
         updater.onAvailability(updateHeading::setUpdateAvailable);
         update.setOnClickListener(v -> updater.check());
         updater.checkSilently();
-        LinearLayout backups=fold("数据备份",false);
-        backups.addView(Theme.muted(this,"保存设置、小游戏存档和个人记录。旧签名版本的数据不能自动导入，请先保留旧版。"));
-        Theme.ChalkButton exportBackup=new Theme.ChalkButton(this,"导出备份");
-        Theme.ChalkButton importBackup=new Theme.ChalkButton(this,"导入备份");
-        backups.addView(exportBackup,matchWrap());backups.addView(importBackup,matchWrap());
-        exportBackup.setOnClickListener(v->DataBackup.choose(this,true));
-        importBackup.setOnClickListener(v->DataBackup.choose(this,false));
     }
 
     /**

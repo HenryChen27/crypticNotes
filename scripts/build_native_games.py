@@ -15,7 +15,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
-GAME_VERSION='2.4.2'
+GAME_VERSION='2.4.4'
 
 
 def bundle(folder, target):
@@ -83,7 +83,7 @@ def main():
     hashes={}
     for name in ('index.html','assets','js','css'):
         source=args.source/name;target=game/'game'/name;target.parent.mkdir(parents=True,exist_ok=True)
-        if source.is_dir():shutil.copytree(source,target,dirs_exist_ok=True)
+        if source.is_dir():shutil.copytree(source,target,dirs_exist_ok=True,ignore=shutil.ignore_patterns('*.mp4','*.MP4'))
         else:shutil.copy2(source,target)
     # Check every copied byte, including all music, videos, fonts and images.
     for path in (game/'game').rglob('*'):

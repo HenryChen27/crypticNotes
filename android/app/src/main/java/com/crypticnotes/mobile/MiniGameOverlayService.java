@@ -94,6 +94,7 @@ public class MiniGameOverlayService extends Service {
                         String script="<script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
                         try(InputStream audio=getAssets().open("host-audio.js")){script+="<script>"+new String(MiniGameStore.bytes(audio,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream performance=getAssets().open("host-performance.js")){script+="<script>"+new String(MiniGameStore.bytes(performance,64*1024),StandardCharsets.UTF_8)+"</script>";}
+                        try(InputStream animation=getAssets().open("host-animation-cache.js")){script+="<script>"+new String(MiniGameStore.bytes(animation,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream bridge=getAssets().open("safe-exit.js")){script+="<script>window.__jellyfishHostPost=m=>NativeGame.safeExit(JSON.stringify(m));"+new String(MiniGameStore.bytes(bridge,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         page=page.replace("<head>","<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'\">"+script);
                         return new WebResourceResponse("text/html","UTF-8",new ByteArrayInputStream(page.getBytes(StandardCharsets.UTF_8)));
@@ -148,7 +149,11 @@ public class MiniGameOverlayService extends Service {
     }
     void toggleFullscreen(){
         if(!fullScreen){restoredBounds=new android.graphics.Rect(params.x,params.y,params.x+params.width,params.y+params.height);customWidth=params.width;}
-        fullScreen=!fullScreen;resize();
+        fullScreen=!fullScreen;
+        params.screenOrientation=fullScreen
+            ?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            :android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+        resize();
         if(!fullScreen&&restoredBounds!=null){params.x=restoredBounds.left;params.y=restoredBounds.top;clampPosition();}
         shell.updateMode();windows.updateViewLayout(shell,params);
     }
