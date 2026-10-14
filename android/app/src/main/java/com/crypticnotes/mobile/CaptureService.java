@@ -1267,7 +1267,7 @@ public class CaptureService extends Service {
      *                    be dropped instead of flashed at the wrong position.
      */
     private boolean mapPanelOpen = false;
-    private int memoryEpoch = 0;
+    private volatile int memoryEpoch = 0;
 
     private void runMatch(byte[] frame, int[] framePixels) {
         busy = true;
@@ -1290,10 +1290,19 @@ public class CaptureService extends Service {
                         bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor).toString());
                 offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
-                if (ok) layer = BitmapFactory.decodeFile(file.toString());
+                if (ok) {
+                    if (!destroyed && requestEpoch == memoryEpoch) {
+                        boolean committed=bridge.callAttr("commit_match", token).toBoolean();
+                        if(committed) android.util.Log.i("CrypticNotes", "Recognition memory committed: token="+token+", epoch="+requestEpoch+", map="+result.optString("map_id")+", floor="+result.optInt("floor"));
+                    }
+                    layer = BitmapFactory.decodeFile(file.toString());
+                }
+                if (offer != null) android.util.Log.i("CrypticNotes", "Cross-floor consent offered: "+offer);
                 String message = result.optString("message");
                 label = ok ? describe(result, message) : message;
-            } catch (Exception ignored) {
+                if (!ok) android.util.Log.i("CrypticNotes", "Recognition declined: token="+token+", result="+result);
+            } catch (Exception error) {
+                android.util.Log.e("CrypticNotes", "Recognition failed: token="+token,error);
             }
             final Bitmap decoded = layer;
             final String text = label;
@@ -1302,10 +1311,7 @@ public class CaptureService extends Service {
                 busy = false;
                 // Closing only suppresses presentation. Reopening supersedes
                 // the previous identity proposal before it can update memory.
-                if (!destroyed && !MiniGameOverlayService.running && decoded != null && requestEpoch == memoryEpoch) {
-                    compute.execute(() -> bridge.callAttr("commit_match", token));
-                }
-                if (destroyed || token != generation || MiniGameOverlayService.running) {
+                if (destroyed || token != generation || !mapPanelOpen || MiniGameOverlayService.running) {
                     if (decoded != null) decoded.recycle();
                     repoll(WATCH_MS);
                     return;

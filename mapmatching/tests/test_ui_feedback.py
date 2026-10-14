@@ -51,6 +51,23 @@ class FeedbackTests(unittest.TestCase):
             self.assertEqual(self.app.font(),selected)
         subject.deleteLater()
 
+    def test_updater_start_blocks_settings_and_duplicate_launch(self):
+        subject=SimpleNamespace(_update_starting=True,notify=Mock(),toast=Mock())
+        with patch('subprocess.Popen') as launch:
+            Companion.toggle_panel(subject)
+            Companion.check_update(subject)
+        launch.assert_not_called()
+        subject.toast.hide.assert_not_called()
+        self.assertEqual(subject.notify.call_count,2)
+
+    def test_open_updater_process_is_not_launched_twice(self):
+        process=Mock();process.poll.return_value=None
+        subject=SimpleNamespace(_updater_process=process,notify=Mock())
+        with patch('subprocess.Popen') as launch:
+            Companion.check_update(subject)
+        launch.assert_not_called()
+        subject.notify.assert_called_once()
+
     def test_close_restores_hidden_companion_and_ends_feedback(self):
         state=ToggleState();state.open()
         subject=SimpleNamespace(state=state,_capture_hidden=True,gear=Mock(),overlay=Mock(),toast=Mock(),

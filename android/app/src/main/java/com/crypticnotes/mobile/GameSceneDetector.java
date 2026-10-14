@@ -6,9 +6,8 @@ import java.util.Arrays;
 final class GameSceneDetector {
     private int[] reference;
     private boolean[] mask;
-    private boolean armed;
-    String status(){return reference==null?"waiting for usable frame":armed?"armed":"waiting for stable reference";}
-    void reset(){reference=null;mask=null;armed=false;}
+    String status(){return reference==null?"waiting for usable frame":"armed";}
+    void reset(){reference=null;mask=null;}
     boolean feed(int[] pixels, boolean[] excluded){
         if(pixels==null||excluded==null||pixels.length!=14400||excluded.length!=pixels.length)return false;
         if(mask!=null&&!Arrays.equals(mask,excluded))reset();
@@ -28,10 +27,8 @@ final class GameSceneDetector {
             int delta=(Math.abs(((a>>16)&255)-((b>>16)&255))+Math.abs(((a>>8)&255)-((b>>8)&255))+Math.abs((a&255)-(b&255)))/3;
             total+=delta;if(delta>18)changed++;
         }
-        boolean stable=changed<usable*.08 && total<usable*6L;
-        if(!armed){reference=sample;armed=stable;return false;}
         if(changed>=usable*.25 && total>=usable*12L){reset();return true;}
-        if(stable)reference=sample;
+        reference=sample; // Always compare adjacent 1.5-second samples, never an aging baseline.
         return false;
     }
 }

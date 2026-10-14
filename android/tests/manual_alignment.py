@@ -59,6 +59,12 @@ class ManualTests(unittest.TestCase):
         bridge.commit_match(12)
         self.assertIs(bridge._confirmed,aligned)
 
+    def test_high_score_previous_floor_cannot_bypass_consent(self):
+        with patch('mobile_bridge.match_with_cache',return_value=(MatchResult(candidates=[self.known]),self.known,'cached')):
+            result=self.call()
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['manual_offer']['floor'],2)
+
     def test_sparse_auto_fit_cannot_bypass_offer(self):
         weak=replace(self.known,floor=2,retrieval_score=2,pose=Pose(.1,0,0))
         with patch('mobile_bridge.match_with_cache',return_value=(MatchResult(candidates=[weak]),weak,'cached')):

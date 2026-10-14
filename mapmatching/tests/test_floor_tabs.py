@@ -12,7 +12,7 @@ def tab_frame(selected, nightmare=True):
         if floor == -1 and not nightmare:
             continue
         frame[62:102, cx-28:cx+28] = 100 if floor == selected else 40
-        digit = cv2.imread(str(root/f'floor-{abs(floor)}.png'), 0)
+        digit = cv2.imdecode(np.frombuffer((root/f'floor-{abs(floor)}.png').read_bytes(), np.uint8), 0)
         digit = cv2.resize(digit, (6 if abs(floor)==1 else 14, 26), interpolation=cv2.INTER_NEAREST)
         x = cx-digit.shape[1]//2+(6 if floor==-1 else 0)
         patch = frame[69:95, x:x+digit.shape[1]]

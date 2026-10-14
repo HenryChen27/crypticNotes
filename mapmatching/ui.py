@@ -687,6 +687,23 @@ class ExitDropZone(W.QWidget):
         show_floating(self)
 
 
+def updater_process_running(pid):
+    """Check the detached updater without keeping it in the app's process tree."""
+    if not pid or sys.platform != 'win32':return False
+    import ctypes
+    from ctypes import wintypes
+    kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+    kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+    kernel.OpenProcess.restype=wintypes.HANDLE
+    kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
+    kernel.WaitForSingleObject.restype=wintypes.DWORD
+    kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+    handle=kernel.OpenProcess(0x100000,False,int(pid))
+    if not handle:return False
+    try:return kernel.WaitForSingleObject(handle,0)==258
+    finally:kernel.CloseHandle(handle)
+
+
 class DraggableGear(GearButton):
     """可拖拽的齿轮：按住拖动就搬动整个助手窗口，没拖动则照常弹出面板。
 
@@ -706,6 +723,7 @@ class DraggableGear(GearButton):
         self.moved=False
         self.matching=False
         self.game_background=False
+        self.waiting_icon=G.QPixmap(str(ROOT/'mapmatching/appearance/skins/doll/waiting.png'))
         self.game_icon=G.QPixmap(str(ROOT/'mapmatching/assets/minigames/fish5.png'))
         self.match_clock=C.QElapsedTimer()
         self.match_timer=C.QTimer(self)
@@ -750,6 +768,8 @@ class DraggableGear(GearButton):
             self.exit_zone.update()
 
     def mouseDoubleClickEvent(self,event):
+        if getattr(self.window,'_update_starting',False):
+            self.window.notify('更新中，请稍候…');event.accept();return
         if event.button()==C.Qt.LeftButton:
             self.click_timer.stop()
             self.double_release=True
@@ -763,7 +783,7 @@ class DraggableGear(GearButton):
         super().mouseDoubleClickEvent(event)
 
     def set_matching(self, active):
-        active=bool(active)
+        active=bool(active or getattr(self.window,'_update_starting',False))
         if self.matching == active:
             return
         self.matching=active
@@ -800,11 +820,13 @@ class DraggableGear(GearButton):
         else:
             self.gear_rotation=(self.match_clock.elapsed() % 1800)/5. if self.matching else 0.
             super().paintEvent(event)
-        if self.matching and self.pet.enabled:
+        if self.matching and self.pet.enabled and not getattr(self.window,'_update_starting',False):
             p=G.QPainter(self)
             p.setRenderHint(G.QPainter.Antialiasing)
-            p.setPen(G.QPen(G.QColor('#c8e7fa'),3))
-            p.drawArc(C.QRectF(35,113,42,12),-int(self.match_clock.elapsed()/5)*16,240*16)
+            p.setRenderHint(G.QPainter.SmoothPixmapTransform)
+            p.translate(90,26)
+            p.rotate(self.match_clock.elapsed()/8.)
+            p.drawPixmap(C.QRectF(-13,-13,26,26),self.waiting_icon,C.QRectF(self.waiting_icon.rect()))
             p.end()
         if self.game_background:
             p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
@@ -814,14 +836,14 @@ class DraggableGear(GearButton):
             p.end()
 
     def enterEvent(self,event):
-        self.pet.play('curious')
+        if not self.matching:self.pet.play('curious')
         super().enterEvent(event)
 
     def mousePressEvent(self,event):
         if event.button()==C.Qt.LeftButton:
             if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<30:
                 self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
-            self.pet.play('heart')
+            if not self.matching:self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
             self.drag_start_pos=C.QPoint(self.window.pos())
@@ -1166,6 +1188,7 @@ class Companion(W.QWidget):
             self.tray.setToolTip('加页手记地图插件')
             self.tray_menu = W.QMenu()
             self.tray_menu.addAction('显示布偶', lambda: show_floating(self))
+            self.tray_menu.addAction('显示布偶', lambda: show_floating(self))
             self.tray_menu.addAction('退出', W.QApplication.instance().quit)
             self.tray.setContextMenu(self.tray_menu)
             self.tray.show()
@@ -1216,6 +1239,9 @@ class Companion(W.QWidget):
         self.adjustSize()
 
     def toggle_panel(self):
+        if getattr(self,'_update_starting',False):
+            self.notify('更新中，请稍候…')
+            return
         self.toast.hide()
         right = self.geometry().right()
         if not self.panel.isVisible():
@@ -1568,6 +1594,13 @@ class Companion(W.QWidget):
 
     def check_update(self):
         import subprocess
+        if getattr(self,'_update_starting',False):
+            self.notify('更新中，请稍候…')
+            return
+        previous=getattr(self,'_updater_process',None)
+        if (previous is not None and previous.poll() is None) or updater_process_running(getattr(self,'_updater_pid',None)):
+            self.notify('更新窗口已打开，请在任务栏查看“加页手记 · 更新”')
+            return
         from .paths import FROZEN
         if not FROZEN:
             self.notify('源码版请更新源码；一键更新适用于打包版')
@@ -1585,6 +1618,9 @@ class Companion(W.QWidget):
             return
         try:
             self.save()
+            self._update_starting=True
+            gear=getattr(self,'gear',None)
+            if gear is not None: gear.set_matching(True)
             self.update_button.setText('正在打开更新窗口…')
             self.update_button.setEnabled(False)
             self.status.setText('正在启动更新器，请稍候…')
@@ -1600,17 +1636,24 @@ class Companion(W.QWidget):
                     return
                 timer.stop()
                 timer.deleteLater()
+                if ready:
+                    try:self._updater_pid=int(ready_file.read_text().strip())
+                    except (ValueError,OSError):self._updater_pid=None
                 ready_file.unlink(missing_ok=True)
+                self._update_starting=False
+                if gear is not None: gear.set_matching(bool(getattr(self,'busy',False)))
                 self.update_button.setEnabled(True)
                 self.update_button.setText('检查更新')
                 self.status.setText('更新窗口已打开' if ready else '更新器启动较慢，请查看是否已有更新窗口')
             timer.timeout.connect(update_ready)
             timer.start(200)
-            subprocess.Popen([
+            self._updater_process=subprocess.Popen([
                 'powershell.exe', '-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass',
                 '-File', str(ROOT/'scripts/update-client.ps1'),'-ReadyFile',str(ready_file)],
                 creationflags=subprocess.CREATE_NO_WINDOW, cwd=str(ROOT))
         except OSError as exc:
+            self._update_starting=False
+            if 'gear' in locals() and gear is not None: gear.set_matching(False)
             if 'timer' in locals():
                 timer.stop(); timer.deleteLater()
             self.update_button.setEnabled(True)
@@ -1687,6 +1730,7 @@ class Companion(W.QWidget):
     def capture_after_hide(self,token):
         if not self.state.accepts(token):
             self._capturing = False
+            if not self.state.opened:self.restore_capture_companion()
             return
         try:
             if self.foreground_lost():
@@ -2071,6 +2115,12 @@ class Companion(W.QWidget):
             launch()
 
     def tick(self):
+        # Capture cancellation must never leave only a tray icon behind.
+        if not self.state.opened and not getattr(self,'_shutdown_done',False):
+            self.restore_capture_companion()
+            if getattr(self,'_visibility_hidden',False):
+                self._visibility_hidden=False
+                show_floating(self)
         if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'maintain'):
             self.keyboard.maintain(int(self.winId()))
         # A missed Esc edge must not leave a full-screen overlay behind. Keep
@@ -2285,6 +2335,13 @@ class Companion(W.QWidget):
                 self.close_map(silent=True)
                 self.stop_worker()
                 self.notify('匹配进程中断，请重试')
+
+    def closeEvent(self,event):
+        try:
+            self.shutdown()
+        finally:
+            event.accept()
+            W.QApplication.instance().quit()
 
     def shutdown(self):
         if getattr(self, '_shutdown_done', False):

@@ -67,7 +67,11 @@ def commit_match(token):
         _cached = _pending_candidate[1]
         if reliable_memory(_cached,{}):
             _confirmed=_cached
+        elif _confirmed is not None and getattr(_cached,'map_id',None) != _confirmed.map_id:
+            _confirmed=None
         _pending_candidate = None
+        return True
+    return False
 
 
 def match(data, output, gated=False, remember=True, token=None, force_floor=0):
@@ -129,7 +133,7 @@ def match(data, output, gated=False, remember=True, token=None, force_floor=0):
         message='手动居中显示，位置未校准' if centered else '直接叠图，请核对位置'
     else:
         result,candidate,message=match_with_cache(_matcher,map_pixels,_cached,require_map_ui=False,floor_hint=floor)
-        if offer is not None and (candidate is None or not automatic_cross_floor_reliable(candidate,_confirmed,result)):
+        if offer is not None and (candidate is None or candidate.floor != floor or not automatic_cross_floor_reliable(candidate,_confirmed,result)):
             return json.dumps(dict(ok=False,message='是否需要直接叠图？',manual_offer=offer,details=result.to_dict()),default=str)
     if candidate is None:
         failure_text = {

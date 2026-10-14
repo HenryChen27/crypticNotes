@@ -56,6 +56,7 @@ public class MiniGameOverlayService extends Service {
         MiniGameStore store=new MiniGameStore(this);if(!store.installed()||!Settings.canDrawOverlays(this)){stopSelf();return;}
         root=new File(store.game,"game");File folder=new File(getFilesDir(),"minigame-saves/jellyfish");folder.mkdirs();save=new AtomicFile(new File(folder,"local-storage.json"));
         web=new WebView(this);
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         shell=new GameWindowChrome(this,web,new GameWindowChrome.Host(){
             public boolean fullscreen(){return fullScreen;}
             public void move(int dx,int dy){if(fullScreen)return;params.x+=dx;params.y+=dy;clampPosition();queueLayout();}
@@ -94,7 +95,7 @@ public class MiniGameOverlayService extends Service {
                     if(f.getName().equals("index.html")){
                         String page=MiniGameStore.read(f),saved="{}";
                         try(InputStream in=save.openRead()){saved=new String(MiniGameStore.bytes(in,1024*1024),StandardCharsets.UTF_8);}catch(IOException ignored){}
-                        String script="<script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
+                        String script="<style>*{-webkit-tap-highlight-color:transparent}html,body{overscroll-behavior:none}canvas{-webkit-user-select:none;user-select:none}</style><script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
                         try(InputStream audio=getAssets().open("host-audio.js")){script+="<script>"+new String(MiniGameStore.bytes(audio,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream performance=getAssets().open("host-performance.js")){script+="<script>"+new String(MiniGameStore.bytes(performance,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream animation=getAssets().open("host-animation-cache.js")){script+="<script>"+new String(MiniGameStore.bytes(animation,64*1024),StandardCharsets.UTF_8)+"</script>";}

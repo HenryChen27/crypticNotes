@@ -18,6 +18,8 @@ from urllib.parse import urlsplit, quote
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = 'HenryChen27/crypticNotes'
+TOOLS = Path(os.environ.get('JYSJ_ANDROID_TOOLS', ROOT/'out/android-tools'))
+CHECKOUT = Path(os.environ.get('JYSJ_RELEASE_CHECKOUT', ROOT/'release/crypticNotes'))
 CERT = '2f64c22b7e9f186d0e9867e4f158f861e7b10511075e8799ddcd52aff2620bf3'
 
 def validate_android_signing():
@@ -28,7 +30,7 @@ def validate_android_signing():
     if not key.is_file():raise RuntimeError('Original signing key missing; refusing to create a new key')
     if key.is_relative_to(ROOT/'out'):raise RuntimeError('Signing key must be stored outside the disposable out directory')
     env=os.environ.copy();env['JYSJ_CERT_CHECK_PASSWORD']=data['storePassword']
-    output=run([ROOT/'out/android-tools/jdk/jdk-17.0.20.1+1/bin/keytool.exe',
+    output=run([TOOLS/'jdk/jdk-17.0.20.1+1/bin/keytool.exe',
         '-J-Duser.language=en','-list','-keystore',key,'-alias',data['alias'],
         '-storepass:env','JYSJ_CERT_CHECK_PASSWORD'],env=env,capture=True)
     if CERT not in output.lower().replace(':',''):raise RuntimeError('Android signing identity mismatch; release stopped')
@@ -48,7 +50,7 @@ def input_fingerprint(platform, root=None):
     if platform == 'android':
         patterns += ['android/app/src/**', 'android/*.gradle', 'android/app/*.gradle',
                      'android/gradle.properties', 'scripts/prepare_android.py',
-                     'mapmatching/assets/map-ui/**', 'mapmatching/assets/fonts/HYDiWRGJ.ttf']
+                     'mapmatching/assets/map-ui/**', 'mapmatching/assets/fonts/*.ttf']
     else:
         patterns += ['mapmatching/**', 'requirements*.txt', 'scripts/dist_extras.py',
                      'scripts/run.cmd', 'scripts/create_shortcut.ps1', 'maps/disabled.json',
@@ -151,7 +153,7 @@ class GitHub:
         return json.loads(self.download(asset['browser_download_url']+'?v='+str(time.time_ns()))) if asset else {}
 
 def sync_sources(github):
-    checkout=ROOT/'release/crypticNotes'
+    checkout=CHECKOUT
     if not (checkout/'.git').exists():
         raise RuntimeError('Missing release/crypticNotes checkout; see docs/releasing.md')
     if run(['git','status','--porcelain'],checkout,capture=True).strip():
@@ -335,12 +337,13 @@ def main():
     if 'android' in platforms:
         run([sys.executable,'scripts/prepare_android.py'])
         env=os.environ.copy()
-        env.setdefault('JAVA_HOME',str(ROOT/'out/android-tools/jdk/jdk-17.0.20.1+1'))
-        env['ANDROID_USER_HOME']=str(ROOT/'out/android-user');env['GRADLE_USER_HOME']=str(ROOT/'out/android-gradle-local-test')
-        gradle=ROOT/'out/android-tools/gradle/gradle-8.13/bin/gradle.bat'
-        run([gradle,'-p','android','assembleDebug','--console=plain','--no-problems-report'],env=env)
+        env.setdefault('JAVA_HOME',str(TOOLS/'jdk/jdk-17.0.20.1+1'))
+        env.setdefault('ANDROID_USER_HOME',str(ROOT/'out/android-user'));env.setdefault('GRADLE_USER_HOME',str(ROOT/'out/android-gradle-local-test'))
+        env.setdefault('JYSJ_BUILD_PYTHON',str(TOOLS/'python310-full/python.exe'))
+        gradle=TOOLS/'gradle/gradle-8.13/bin/gradle.bat'
+        run([gradle,'-p','android','assembleDebug','-Pandroid.overridePathCheck=true','--console=plain','--no-problems-report'],env=env)
         apk=ROOT/'android/app/build/outputs/apk/debug/app-debug.apk'
-        cert=run([Path(env['JAVA_HOME'])/'bin/java.exe','-jar',ROOT/'out/android-tools/sdk/build-tools/35.0.0/lib/apksigner.jar',
+        cert=run([Path(env['JAVA_HOME'])/'bin/java.exe','-jar',TOOLS/'sdk/build-tools/35.0.0/lib/apksigner.jar',
             'verify','--print-certs',apk],env=env,capture=True)
         if CERT not in cert:raise RuntimeError('Android signing certificate changed; refuse incompatible update')
         n='IdentityVMapAssistant-Android-arm64.apk';shutil.copy2(apk,directory/n)

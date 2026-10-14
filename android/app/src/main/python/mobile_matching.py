@@ -8,8 +8,8 @@ from mapmatching.src.registration import register
 
 
 def selected_floor(pixels):
-    from mapmatching.src.floor_tabs import inspect_floor_tabs
-    return inspect_floor_tabs(pixels)['floor']
+    from mapmatching.src.manual_alignment import manual_floor_reading
+    return manual_floor_reading(pixels)['floor']
 
 
 def reject_reason(candidates, known=False, floor_confirmed=False):

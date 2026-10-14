@@ -12,8 +12,8 @@ android {
         applicationId 'com.crypticnotes.mobile.v2'
         minSdk 26
         targetSdk 35
-        versionCode 45
-        versionName '0.6.37-preview'
+        versionCode 46
+        versionName '0.6.38-preview'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {
@@ -30,7 +30,7 @@ android {
 chaquopy {
     defaultConfig {
         version '3.10'
-        buildPython "${rootDir}/../out/android-tools/python310-full/python.exe"
+        buildPython (System.getenv("JYSJ_BUILD_PYTHON") ?: "${rootDir}/../out/android-tools/python310-full/python.exe")
         pip { install 'numpy==1.23.3'; install 'scipy==1.8.1'; install 'opencv-python==4.5.1.48' }
         extractPackages 'mapmatching', 'mobile_templates'
     }

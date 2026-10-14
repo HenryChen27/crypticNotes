@@ -227,7 +227,7 @@ $button.Add_Click({ $form.Close() })
 $form.Controls.AddRange(@($label,$bar,$button))
 $form.Show()
 [void]$form.Activate()
-if ($ReadyFile) { [IO.File]::WriteAllText($ReadyFile,'ready') }
+if ($ReadyFile) { [IO.File]::WriteAllText($ReadyFile,[string]$PID) }
 $work = Join-Path ([IO.Path]::GetTempPath()) ('crypticnotes-package-' + [Guid]::NewGuid().ToString('N'))
 [void][IO.Directory]::CreateDirectory($work)
 $client = [Net.WebClient]::new()
