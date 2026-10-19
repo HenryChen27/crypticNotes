@@ -31,7 +31,16 @@ public class MainActivity extends Activity {
      */
     private boolean syncingRecording;
     /** The scrolling column everything on this screen is added to. */
-    private LinearLayout content;
+    private LinearLayout content,mapPage,gamesPage,generalPage;
+    private Theme.SectionHeading moduleHeading;
+    private MatchingModuleManager moduleManager;
+    private String pendingGame;
+    private View mapActions;
+    private DarkTab notesTab,gamesTab;
+    private void switchModule(String name){mapPage.setVisibility(name.equals("notes")?View.VISIBLE:View.GONE);gamesPage.setVisibility(name.equals("games")?View.VISIBLE:View.GONE);generalPage.setVisibility(name.equals("settings")?View.VISIBLE:View.GONE);notesTab.select(name.equals("notes"));gamesTab.select(name.equals("games"));if(!name.equals("settings"))getSharedPreferences("mobile",0).edit().putString("last_module",name).apply();}
+    private LinearLayout newPage(){LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);return page;}
+    private void updateModuleUi(){boolean installed=new MatchingModuleStore(this).installed();for(int i=0;i<mapPage.getChildCount();i++){View child=mapPage.getChildAt(i);boolean visible=installed;if(child.getTag() instanceof Theme.SectionHeading){Object state=((Theme.SectionHeading)child.getTag()).getTag();visible=installed&&!Boolean.FALSE.equals(state);}child.setVisibility(visible?View.VISIBLE:View.GONE);}moduleHeading.setVisibility(installed?View.VISIBLE:View.GONE);moduleManager.setVisibility(View.VISIBLE);moduleHeading.setExpanded(installed);}
+
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -68,11 +77,16 @@ public class MainActivity extends Activity {
         ruleParams.topMargin = Theme.px(this, 10);
         content.addView(rule, ruleParams);
 
+        LinearLayout host=content;
+        LinearLayout navigation=new LinearLayout(this);notesTab=new DarkTab(this,"加页手记");gamesTab=new DarkTab(this,"小游戏");TextView gear=new TextView(this);ActionIcon.set(gear,ActionIcon.GEAR,false);gear.setGravity(Gravity.CENTER);
+        navigation.addView(notesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1));navigation.addView(gamesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1));navigation.addView(gear,new LinearLayout.LayoutParams(Theme.px(this,48),Theme.px(this,48)));host.addView(navigation);
+        mapPage=newPage();gamesPage=newPage();generalPage=newPage();host.addView(mapPage);host.addView(gamesPage);host.addView(generalPage);content=mapPage;
+        notesTab.setOnClickListener(v->switchModule("notes"));gamesTab.setOnClickListener(v->switchModule("games"));gear.setOnClickListener(v->switchModule("settings"));
         // Starting is what this screen is for, so it sits above everything else
         // and outside the fold: the primary surface, the largest control, and
         // the only one that never scrolls out of the way.
         LinearLayout actions = card();
-        content.addView(actions);
+        content.addView(actions);mapActions=actions;
         status = Theme.status(this);
         status.setText("首次启动需要悬浮窗与屏幕采集授权。");
         LinearLayout serviceActions = new LinearLayout(this);
@@ -235,12 +249,17 @@ public class MainActivity extends Activity {
         syncRecordingRows();
         recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
 
+        content=gamesPage;
         LinearLayout games = fold("小游戏", true);
         gameHeading=(Theme.SectionHeading)games.getTag();
         gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
         inlineGames=new InlineGameManager(this);
         inlineGames.stateChanged=()->gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
         games.addView(inlineGames,matchWrap());
+        content=generalPage;
+        LinearLayout appearance=fold("界面设置",true);
+        Theme.ChalkChoice fontChoice=new Theme.ChalkChoice(this,new String[]{"游戏字体","系统字体"});fontChoice.setIndex(getSharedPreferences("mobile",0).getBoolean("fontSystem",false)?1:0);appearance.addView(choiceRow(fieldLabel("字体"),fontChoice));fontChoice.setListener(i->{getSharedPreferences("mobile",0).edit().putBoolean("fontSystem",i==1).apply();recreate();});
+        SeekBar fontSize=new SeekBar(this);fontSize.setMax(10);fontSize.setProgress(getSharedPreferences("mobile",0).getInt("fontSize",16)-12);appearance.addView(Theme.muted(this,"字号（12～22）"));appearance.addView(fontSize);fontSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean user){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){getSharedPreferences("mobile",0).edit().putInt("fontSize",12+s.getProgress()).apply();recreate();}});
         LinearLayout updates = fold("应用更新", false);
         Theme.ChalkButton update = new Theme.ChalkButton(this, "检查应用更新");
         updates.addView(update, matchWrap());
@@ -262,6 +281,11 @@ public class MainActivity extends Activity {
         updater.onAvailability(updateHeading::setUpdateAvailable);
         update.setOnClickListener(v -> updater.check());
         updater.checkSilently();
+        content=mapPage;moduleManager=new MatchingModuleManager(this);moduleHeading=heading("版本");moduleHeading.setExpanded(false);mapPage.addView(moduleHeading);mapPage.addView(moduleManager);moduleHeading.setOnClickListener(v->{boolean open=moduleManager.getVisibility()!=View.VISIBLE;moduleManager.setVisibility(open?View.VISIBLE:View.GONE);moduleHeading.setExpanded(open);});moduleManager.changed=()->{updateModuleUi();};updateModuleUi();
+        if(new MatchingModuleStore(this).installed()){moduleManager.setVisibility(View.GONE);moduleHeading.setExpanded(false);}
+        switchModule(getIntent().getStringExtra("open_module")!=null?getIntent().getStringExtra("open_module"):getSharedPreferences("mobile",0).getString("last_module","notes"));
+        if(state!=null)pendingGame=state.getString("pendingGame");
+        String launch=getIntent().getStringExtra("launch_game");if(launch!=null){getIntent().removeExtra("launch_game");startGame(launch);}
     }
 
     /**
@@ -295,11 +319,11 @@ public class MainActivity extends Activity {
         body.setTag(bar);
         content.addView(body);
         body.setVisibility(expanded ? View.VISIBLE : View.GONE);
-        bar.setExpanded(expanded);
+        bar.setExpanded(expanded);bar.setTag(expanded);
         bar.setOnClickListener(v -> {
             boolean open = body.getVisibility() != View.VISIBLE;
             body.setVisibility(open ? View.VISIBLE : View.GONE);
-            bar.setExpanded(open);
+            bar.setExpanded(open);bar.setTag(open);
         });
         return body;
     }
@@ -346,7 +370,22 @@ public class MainActivity extends Activity {
         return row;
     }
 
+    public void startGame(String id){
+        if(!new MiniGameStore(this,id).installed()){Toast.makeText(this,"请先下载小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(MiniGameOverlayService.running&&!id.equals(MiniGameOverlayService.activeGameId)){Toast.makeText(this,"请先关闭当前小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(!Settings.canDrawOverlays(this)){Toast.makeText(this,"请允许显示悬浮窗后再次打开",Toast.LENGTH_LONG).show();startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
+        boolean detection=getSharedPreferences("mobile",0).getBoolean("gameSceneEnabled",true);
+        CaptureService service=CaptureService.current;
+        if(service!=null&&(!detection||service.hasProjection())){service.openGame(id);return;}
+        if(!detection){startForegroundService(new Intent(this,CaptureService.class).setAction("games_only").putExtra("gameOnly",true).putExtra("launchGame",id));return;}
+        if(capturePermissionPending)return;pendingGame=id;requestCapturePermission();
+    }
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String module=intent.getStringExtra("open_module");if(module!=null)switchModule(module);String game=intent.getStringExtra("launch_game");if(game!=null){intent.removeExtra("launch_game");startGame(game);}}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("pendingGame",pendingGame);}
+
     private void startCapture() {
+        pendingGame=null;
+        if(!new MatchingModuleStore(this).installed()){status.setText("请先下载加页手记模块");return;}
         if (capturePermissionPending) return;
         if (!Settings.canDrawOverlays(this)) {
             status.setText("请允许显示在其他应用上层，返回后再次点击开启。");
@@ -441,7 +480,7 @@ public class MainActivity extends Activity {
         if (request != 10) return;
         capturePermissionPending = false;
         if (result != RESULT_OK || data == null) {
-            status.setText("未授权屏幕采集");
+            pendingGame=null;status.setText("未授权屏幕采集，未启动采集");
             return;
         }
         stopService(new Intent(this, CaptureService.class));
@@ -449,8 +488,9 @@ public class MainActivity extends Activity {
                 .putExtra("projection", data).putExtra("result", result)
                 .putExtra("difficulty", difficulty.getIndex() == 0 ? "hard" : "nightmare")
                 .putExtra("mode", party.getIndex() == 0 ? "solo" : "duo")
-                .putExtra("opacity", opacity);
-        startForegroundService(service);
+                .putExtra("opacity", opacity)
+                .putExtra("gameOnly",pendingGame!=null).putExtra("launchGame",pendingGame);
+        startForegroundService(service);pendingGame=null;
         status.setText("正在启动，准备好后请回到游戏。通知栏可随时停止。");
     }
 }

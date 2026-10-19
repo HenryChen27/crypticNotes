@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4
         with:
-          repository: HenryChen27/Jellyfish
+          repository: HenryChen27/mini_games
           path: game-source
       - uses: actions/setup-python@v5
         with:
@@ -55,7 +55,7 @@ jobs:
           echo "MACOS_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           echo "MACOS_SIGNING_IDENTITY=IdentityVMapAssistant Self-Signed Code Signing" >> "$GITHUB_ENV"
       - name: Build optional game
-        run: python scripts/build_minigame.py --source game-source
+        run: python scripts/build_minigame.py --source game-source/games/jellyfish
       - name: Verify installed signed game and launch
         run: |
           python -m unittest mapmatching.tests.test_minigames -v

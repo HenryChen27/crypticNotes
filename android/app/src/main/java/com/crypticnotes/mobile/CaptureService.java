@@ -51,8 +51,8 @@ public class CaptureService extends Service {
         PendingIntent action=PendingIntent.getService(this,0,new Intent(this,CaptureService.class).setAction("stop"),
                 PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder builder=new Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_menu_mapmode)
-                .setContentTitle(recorder==null?"加页手记正在本机识图":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
-                .setContentText("点击停止可结束屏幕采集").setOngoing(true)
+                .setContentTitle(gameOnly?"加页手记小游戏悬浮窗":recorder==null?"加页手记正在本机识图":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
+                .setContentText(gameOnly&&projection==null?"小游戏专用模式，不采集屏幕、不识别地图":"点击停止可结束屏幕采集").setOngoing(true)
                 .addAction(new Notification.Action.Builder(null,"停止全部",action).build());
         if(recorder!=null) {
             PendingIntent stopVideo=PendingIntent.getService(this,1,new Intent(this,CaptureService.class).setAction("stop_recording"),
@@ -303,6 +303,7 @@ public class CaptureService extends Service {
     private final Runnable badgeSingleTap = () -> { badgeTapAt = 0; if (!destroyed) toggleQuickSettings(); };
 
     private void retryFromBadge() {
+        if(gameOnly&&!MiniGameOverlayService.running){startActivity(new Intent(this,MainActivity.class).putExtra("launch_game",getSharedPreferences("mobile",0).getString("active_game","jellyfish")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));return;}
         if(MiniGameOverlayService.running){if(MiniGameOverlayService.hidden)startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));return;}
         badgeText = ""; // Explicit actions must acknowledge every tap.
         if (!ready && !applying) { setStatus(S_IDLE, "正在准备，请稍候"); return; }
@@ -361,6 +362,24 @@ public class CaptureService extends Service {
      */
     @android.annotation.SuppressLint("StaticFieldLeak")   // a Service, not a context to leak
     static CaptureService current;
+    boolean gameOnly;
+    private MediaProjection.Callback projectionCallback;
+    void releaseGameCapture(){
+        if(!gameOnly||projection==null||recorder!=null)return;
+        if(display!=null){display.release();display=null;}
+        if(reader!=null){reader.close();reader=null;}
+        if(projectionCallback!=null)projection.unregisterCallback(projectionCallback);
+        projection.stop();projection=null;
+        if(Build.VERSION.SDK_INT>=34)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+    }
+    boolean hasProjection(){return projection!=null;}
+    void openGame(String id){
+        if(MiniGameOverlayService.running&&!id.equals(MiniGameOverlayService.activeGameId)){Toast.makeText(this,"请先关闭当前小游戏",Toast.LENGTH_SHORT).show();return;}
+        gameOnly=true;generation++;clearOverlay();setSpinning(false);
+        getSharedPreferences("mobile",0).edit().putString("active_game",id).putString("last_module","games").apply();
+        startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
+        if(ready)repoll(0);
+    }
 
     @Override public void onCreate() {
         super.onCreate();
@@ -373,13 +392,25 @@ public class CaptureService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int id) {
         if (intent == null || "stop".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
         if("stop_recording".equals(intent.getAction())) { stopRecording(); return START_NOT_STICKY; }
-        if (projection != null) return START_NOT_STICKY;
-        startForeground(1, captureNotification());
+        boolean requestedGameOnly=intent.getBooleanExtra("gameOnly",false);
+        String launchGame=intent.getStringExtra("launchGame");
+        if("games_only".equals(intent.getAction())&&projection==null){
+            gameOnly=true;
+            if(Build.VERSION.SDK_INT>=34)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            else startForeground(1,captureNotification());
+            if(badge==null){DisplayMetrics m=new DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);width=m.widthPixels;height=m.heightPixels;density=m.densityDpi;setupOverlay();}
+            initializing=false;ready=true;setStatus(S_IDLE,"小游戏模式");
+            if(launchGame!=null)openGame(launchGame);repoll(1500);return START_NOT_STICKY;
+        }
+        if (projection != null) {if(launchGame!=null)openGame(launchGame);return START_NOT_STICKY;}
+        gameOnly=requestedGameOnly;
+        if(Build.VERSION.SDK_INT>=29)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
+        else startForeground(1, captureNotification());
         try {
             Intent permission = intent.getParcelableExtra("projection");
             projection = ((MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE))
                     .getMediaProjection(intent.getIntExtra("result", -1), permission);
-            projection.registerCallback(new MediaProjection.Callback() {
+            projection.registerCallback(projectionCallback=new MediaProjection.Callback() {
                 @Override public void onStop() { stopSelf(); }
                 @Override public void onCapturedContentVisibilityChanged(boolean visible) {
                     capturedVisible=visible;
@@ -394,26 +425,17 @@ public class CaptureService extends Service {
             // restarted by the system) fall back to what was last chosen.
             applyOpacity(intent.getIntExtra("opacity",
                     getSharedPreferences("mobile", 0).getInt("opacity", 30)));
-            setupOverlay(); resizeCapture();
+            if(badge==null)setupOverlay(); resizeCapture();
+            if(gameOnly){initializing=false;ready=true;setStatus(S_IDLE,"小游戏模式 · 画面检测已启用");if(launchGame!=null)openGame(launchGame);repoll(0);return START_NOT_STICKY;}
             android.util.Log.i("CrypticNotes", "Overlay attached; initialization started");
             setStatus(S_IDLE, preparationText);
             String difficulty = intent.getStringExtra("difficulty"), mode = intent.getStringExtra("mode");
             getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
             compute.execute(() -> {
                 try {
-                    int appVersion = getPackageManager().getPackageInfo(getPackageName(), 0).versionCode;
-                    refreshBundledMaps = getSharedPreferences("mobile", 0).getInt("map_asset_version", -1) != appVersion;
+                    if(!new MatchingModuleStore(this).installed())throw new IOException("请先下载加页手记模块");
                     preparationStatus("正在加载识图引擎…");
-                    if (!Python.isStarted()) Python.start(new AndroidPlatform(this));
-                    if (refreshBundledMaps || !new File(getFilesDir(), "maps/official-library.json").isFile()) {
-                        File bundledMaps = new File(getCacheDir(), "map-update-" + java.util.UUID.randomUUID() + "/maps");
-                        refreshBundledMaps = true;
-                        copyAssets("maps", bundledMaps);
-                        Python.getInstance().getModule("mapmatching.src.map_update")
-                                .callAttr("install", getFilesDir().toString(), bundledMaps.toString());
-                        getSharedPreferences("mobile", 0).edit().putInt("map_asset_version", appVersion).apply();
-                    }
-                    refreshBundledMaps = false;
+                    MatchingModuleStore.python(this);
                     bridge = Python.getInstance().getModule("mobile_bridge");
                     preparationStatus("正在准备地图特征…");
                     bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode);
@@ -1015,7 +1037,9 @@ public class CaptureService extends Service {
      * screen the frames are clean and a change just means "still moving".
      */
     private void sample() {
-        if (destroyed || !ready) return;
+        if(destroyed)return;
+        if(gameOnly){if(projection!=null&&MiniGameOverlayService.running)watchMiniGameScene();repoll(1500);return;}
+        if(!ready)return;
         if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);watchMiniGameScene();repoll(500);return;}
         gameSceneDetector.reset();
         long nowWatch = SystemClock.elapsedRealtime();
@@ -1132,6 +1156,7 @@ public class CaptureService extends Service {
     }
 
     private void capture() {
+        if(gameOnly||!new MatchingModuleStore(this).installed())return;
         if (destroyed) return;
         if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
         if (checking) { repoll(100); return; }
@@ -1397,6 +1422,7 @@ public class CaptureService extends Service {
     private long gameSceneSampleAt;
     private int sceneWidth,sceneHeight;
     private void watchMiniGameScene(){
+        if(projection==null||reader==null||!getSharedPreferences("mobile",0).getBoolean("gameSceneEnabled",true)){gameSceneDetector.reset();return;}
         if(MiniGameOverlayService.hidden||quickSettings!=null){
             traceSceneWatch("paused: hidden or settings open");gameSceneDetector.reset();sceneOverlayMask.reset();return;
         }
@@ -1524,11 +1550,11 @@ public class CaptureService extends Service {
         SharedPreferences prefs = getSharedPreferences("mobile", 0);
         Theme.MistPanel shell = new Theme.MistPanel(this);
         int pad = Theme.px(this, 14);
-        shell.setPadding(0, Theme.px(this, 12), 0, 0);
+        shell.setPadding(0,0,0,0);
         DraggableHeader header = new DraggableHeader(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        DarkTab settingsTab=new DarkTab(this,"设置");settingsTab.select(true);
+        DarkTab settingsTab=new DarkTab(this,"加页手记");settingsTab.select(true);
         DarkTab gamesTab=new DarkTab(this,"小游戏");
         ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
         ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
@@ -1536,6 +1562,7 @@ public class CaptureService extends Service {
         LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,Theme.px(this,40),1);tabParams.setMargins(Theme.px(this,6),0,Theme.px(this,6),0);
         header.addView(gamesTab,tabParams);
         HeaderClose dismiss = new HeaderClose(this);
+        TextView general=new TextView(this);ActionIcon.set(general,ActionIcon.GEAR,false);header.addView(general,new LinearLayout.LayoutParams(Theme.px(this,34),Theme.px(this,34)));general.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","settings").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
         header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
         shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
 
@@ -1546,17 +1573,22 @@ public class CaptureService extends Service {
         FrameLayout pages=new FrameLayout(this);
         pages.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout gamePage=new LinearLayout(this);gamePage.setOrientation(1);gamePage.setPadding(pad,Theme.px(this,14),pad,pad);
-        gamePage.addView(label("合成大水母",17,Theme.TITLE,0));
-        Theme.ChalkButton launchGame=button(MiniGameOverlayService.running?"回到游戏":"启动",true);
-        LinearLayout.LayoutParams launchParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));launchParams.topMargin=Theme.px(this,12);gamePage.addView(launchGame,launchParams);
-        launchGame.setOnClickListener(v->{
-            if(!new MiniGameStore(this).installed()){Toast.makeText(this,"请先在应用内下载合成大水母",Toast.LENGTH_LONG).show();return;}
-            closeQuickSettings();startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
-        });
+        for(String gameId:GameCatalog.ids(this)){
+            MiniGameStore store=new MiniGameStore(this,gameId);
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
+            row.addView(label(store.title(),16,Theme.TITLE,0),new LinearLayout.LayoutParams(0,-2,1));
+            Theme.ChalkButton launch=button(MiniGameOverlayService.running&&gameId.equals(MiniGameOverlayService.activeGameId)?"回到游戏":"打开",true);row.addView(launch);
+            launch.setOnClickListener(v->{
+                if(!store.installed()){Toast.makeText(this,"请在应用内下载该小游戏",Toast.LENGTH_SHORT).show();return;}
+                closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("launch_game",gameId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+            });gamePage.addView(row);
+        }
+        Theme.ChalkButton manage=button("小游戏设置 / 版本管理",false);gamePage.addView(manage);manage.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","games").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
         pages.addView(gamePage,new FrameLayout.LayoutParams(-1,-1));gamePage.setVisibility(View.GONE);
-        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);});
+        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);prefs.edit().putString("last_module","notes").apply();});
         gamesTab.select(false);
-        gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);});
+        gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);prefs.edit().putString("last_module","games").apply();});
+        if(gameOnly||prefs.getString("last_module","notes").equals("games")){scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);}
         MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));});
         shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         dismiss.setOnClickListener(v -> closeQuickSettings());
@@ -1650,7 +1682,11 @@ public class CaptureService extends Service {
         opacityLabel.setText("透明度 " + startOpacity + "%");
         panel.addView(opacityLabel,actionIndex+1);panel.addView(slider,actionIndex+2,new LinearLayout.LayoutParams(-1,Theme.px(this,40)));
         panel.addView(region,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
-        recordButton=button("屏幕录制",true);updateRecordingButton();recordButton.setOnClickListener(v->toggleRecording());
+        if(gameOnly||!new MatchingModuleStore(this).installed()){
+            panel.removeAllViews();panel.addView(label(gameOnly?"当前为小游戏专用悬浮窗，不进行地图识别":"请先下载加页手记模块",14,Theme.MUTED,8));
+            Theme.ChalkButton maps=button("前往加页手记",true);panel.addView(maps);maps.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","notes").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
+        }
+        recordButton=button("屏幕录制",true);updateRecordingButton();recordButton.setOnClickListener(v->{if(projection==null){Toast.makeText(this,"录屏需要先在应用内开启屏幕共享",Toast.LENGTH_SHORT).show();return;}toggleRecording();});
         LinearLayout.LayoutParams recordParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));recordParams.setMargins(pad,Theme.px(this,10),pad,pad);
         shell.addView(recordButton,recordParams);
 
@@ -1689,6 +1725,7 @@ public class CaptureService extends Service {
      * closing the panel changed nothing at all.
      */
     private void applyRecognition(String difficulty, String mode, TextView applied) {
+        if(gameOnly||bridge==null){applied.setText("小游戏模式不进行地图识别");return;}
         getSharedPreferences("mobile", 0).edit()
                 .putString("difficulty", difficulty).putString("mode", mode).apply();
         final int token = ++applyToken;
@@ -1779,6 +1816,7 @@ public class CaptureService extends Service {
         if (quickSettings != null) closeQuickSettings();
         if (calibration != null) finishCalibration();
         if (projection != null) resizeCapture();
+        else if(badge!=null){DisplayMetrics m=new DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);width=m.widthPixels;height=m.heightPixels;layoutBadge();}
     }
 
     private void copyAssets(String name, File target) throws IOException {

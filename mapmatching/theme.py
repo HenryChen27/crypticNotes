@@ -61,8 +61,9 @@ class ChalkButton(W.QPushButton):
 
     def paintEvent(self,event):
         p=G.QPainter(self)
-        p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),self.underMouse() or self.isDown(),.7,'rounded'))
-        p.setPen(G.QColor('#152635'))
+        enabled=self.isEnabled()
+        p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),(self.underMouse() or self.isDown()) if enabled else 'deep',.7,'rounded'))
+        p.setPen(G.QColor('#152635' if enabled else '#8294a1'))
         p.setFont(self.font())
         p.drawText(self.rect(),C.Qt.AlignCenter,self.text())
         self.paint_update_dot(p)
@@ -142,6 +143,7 @@ class FrostCheckBox(W.QCheckBox):
     def __init__(self, text):
         super().__init__(text)
         self.setMinimumHeight(30)
+        self.check_image=G.QPixmap(str(Path(__file__).with_name('correct.png')))
 
     def paintEvent(self, event):
         p = G.QPainter(self)
@@ -149,19 +151,11 @@ class FrostCheckBox(W.QCheckBox):
         box = C.QRect(3, (self.height()-20)//2, 20, 20)
         p.drawImage(box, chalk_texture(20, 20, 'deep', .6, 'rounded'))
         if self.isChecked():
-            x, y = box.x(), box.y()
-            # Uneven, hand-drawn strokes extend above and beyond the square.
-            pen = G.QPen(G.QColor('#f5f5f2'), 2.6, C.Qt.SolidLine,
-                         C.Qt.RoundCap, C.Qt.RoundJoin)
-            p.setPen(pen)
-            path = G.QPainterPath(C.QPointF(x+2, y+9))
-            path.cubicTo(x+5,y+11,x+7,y+15,x+9,y+17)
-            path.cubicTo(x+13,y+10,x+19,y+2,x+23,y-3)
-            p.drawPath(path)
-            p.setPen(G.QPen(G.QColor(255,255,252,175), 1.1,
-                           C.Qt.SolidLine, C.Qt.RoundCap))
-            p.drawPolyline(G.QPolygonF([C.QPointF(x+1,y+11),
-                C.QPointF(x+8,y+18), C.QPointF(x+16,y+6), C.QPointF(x+24,y-2)]))
+            p.setRenderHint(G.QPainter.SmoothPixmapTransform)
+            p.setOpacity(1 if self.isEnabled() else .4)
+            target=C.QRect(box.x()-3,box.y()-3,26,26)
+            p.drawPixmap(target,self.check_image)
+            p.setOpacity(1)
         p.setPen(G.QColor('#d3dfe6'))
         p.setFont(self.font())
         p.drawText(self.rect().adjusted(34,0,0,0), C.Qt.AlignVCenter, self.text())

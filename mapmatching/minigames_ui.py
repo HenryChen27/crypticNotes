@@ -4,8 +4,8 @@ import json
 import time
 from PySide6 import QtCore as C, QtWidgets as W, QtGui as G
 from .paths import DATA_ROOT
-from .theme import ChalkButton
-from .minigames import GameStore
+from .theme import ChalkButton, FoldSection
+from .minigames import GameStore, CollectionGameStore, read_collection, read_catalog, package_info, platform_key
 
 
 def game_profile(controls):
@@ -30,13 +30,43 @@ class DownloadTask(C.QThread):
             self.result.emit('下载未完成：' + str(error))
 
 
+class CatalogTask(C.QThread):
+    result=C.Signal(object,str)
+    def run(self):
+        try:
+            catalog=read_collection();catalog['_launcher']=package_info(read_catalog(),platform_key())
+            self.result.emit(catalog,'')
+        except Exception as error:self.result.emit(None,str(error))
+
+
 class GameControls(W.QWidget):
     def __init__(self, companion):
         super().__init__(companion)
         self.companion = companion
         self.store = GameStore(DATA_ROOT)
         from .local_minigames import local_games
-        self.stores=[self.store,*local_games(DATA_ROOT)]
+        self.local_stores=local_games(DATA_ROOT)
+        self.catalog_cache=DATA_ROOT/'out/minigames/catalog.json'
+        try:cached=json.loads(self.catalog_cache.read_text(encoding='utf-8'));specs=cached['games']
+        except (OSError,ValueError,KeyError):cached={};specs={}
+        remote=[CollectionGameStore(DATA_ROOT,spec) for spec in specs.values()]
+        for store in remote:store.launcher_info=cached.get('_launcher')
+        self.stores=remote or [self.store]
+        ids={store.game_id for store in self.stores}
+        self.stores += [store for store in self.local_stores if store.game_id not in ids]
+        ids={store.game_id for store in self.stores}
+        for metadata in (DATA_ROOT/'minigames').glob('*/package.json'):
+            try:
+                spec=json.loads(metadata.read_text(encoding='utf-8'));key=spec['id']
+                if key in ids or key in ('runtime','game-launcher'):continue
+                store=GameStore(DATA_ROOT,key);store.title=spec.get('name',key);store.withdrawn=True
+                if store.installed():self.stores.append(store);ids.add(key)
+            except (OSError,ValueError,KeyError):continue
+        self.store=self.stores[0]
+        self.preferences_path=DATA_ROOT/'out/minigames/preferences.json'
+        try:self.preferences=json.loads(self.preferences_path.read_text(encoding='utf-8'))
+        except (OSError,ValueError):self.preferences={}
+        self.catalog_task=None
         self.task = None
         self.process = C.QProcess(self)
         self.process.setProcessChannelMode(C.QProcess.MergedChannels)
@@ -58,20 +88,14 @@ class GameControls(W.QWidget):
         self.window_timer.timeout.connect(self.check_window_state)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.game_rows=[]
-        for index,store in enumerate(self.stores):
-            title=W.QLabel(getattr(store,'title','合成大水母'))
-            layout.addWidget(title)
-            row=W.QHBoxLayout()
-            download,launch,remove=ChalkButton('下载'),ChalkButton('启动'),ChalkButton('删除')
-            for button in (download,launch,remove):row.addWidget(button)
-            layout.addLayout(row)
-            if index<len(self.stores)-1:layout.addSpacing(10)
-            download.clicked.connect(lambda checked=False,i=index:self.row_action(i,'download'))
-            launch.clicked.connect(lambda checked=False,i=index:self.row_action(i,'launch'))
-            remove.clicked.connect(lambda checked=False,i=index:self.row_action(i,'delete'))
-            self.game_rows.append((title,download,launch,remove))
-        self.game_title,self.download,self.launch,self.remove=self.game_rows[0]
+        self.sync_button=ChalkButton('同步游戏列表 / 检查更新')
+        self.sync_button.clicked.connect(self.sync_catalog)
+        self.version_section=FoldSection('版本')
+        self.shortcut_section=FoldSection('快捷键')
+        for fold in (self.version_section,self.shortcut_section):fold.changed.connect(lambda:C.QTimer.singleShot(0,self.companion.resize_settings))
+        self.rows_widget=W.QWidget();self.rows_layout=W.QVBoxLayout(self.rows_widget)
+        self.rows_layout.setContentsMargins(0,0,0,0);layout.addWidget(self.rows_widget)
+        self.rebuild_rows()
         self.status=W.QLabel()
         self.status.setObjectName('muted');self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -82,7 +106,124 @@ class GameControls(W.QWidget):
         self.install_engine.clicked.connect(self.install_system_engine)
         layout.addWidget(self.install_engine)
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
+        from .theme import FrostCheckBox
+        self.sound=FrostCheckBox('小游戏声音')
+        self.sound.setChecked(self.preferences.get('sound',True));self.sound.toggled.connect(self.save_preferences)
+        layout.addWidget(self.sound)
+        self.detect=FrostCheckBox('第五人格画面明显变化时自动收起')
+        self.detect.setChecked(self.preferences.get('detect',True));self.detect.toggled.connect(self.save_preferences)
+        layout.addWidget(self.detect)
+        self.shortcut_buttons={};self.shortcut_rows={}
+        from .shortcut_row import ShortcutRow
+        for action,label in [('restore','显隐'),('mute','静音'),('close','关闭')]:
+            key=self.preferences.get(action+'_key','未设置')
+            row=ShortcutRow(label+'快捷键',key,lambda a=action:self.edit_shortcut(a))
+            row.toggle.setChecked(self.preferences.get(action+'_enabled',key!='未设置'))
+            row.toggle.toggled.connect(lambda enabled,a=action:self.set_shortcut_enabled(a,enabled))
+            self.shortcut_rows[action]=row;self.shortcut_buttons[action]=(row.edit,label)
+            self.shortcut_section.body.addWidget(row)
+        layout.addWidget(self.shortcut_section);layout.addWidget(self.version_section)
+        self.update_shortcut_labels()
         self.refresh()
+        C.QTimer.singleShot(1200,self.sync_catalog)
+
+    def rebuild_rows(self):
+        # Keep the sync control alive while rebuilding per-game version rows.
+        if hasattr(self,'sync_button'):self.version_section.body.removeWidget(self.sync_button);self.sync_button.setParent(self)
+        for target in (self.rows_layout,self.version_section.body):
+            while target.count():
+                item=target.takeAt(0)
+                if item.widget():item.widget().deleteLater()
+        self.game_rows=[];self.row_layouts=[];self.version_cards=[]
+        for index,store in enumerate(self.stores):
+            card=W.QWidget();box=W.QVBoxLayout(card);box.setContentsMargins(0,6,0,6)
+            row=W.QHBoxLayout();title=W.QLabel(getattr(store,'title','合成大水母'));row.addWidget(title,1)
+            download,launch,remove=[ChalkButton(t) for t in ('下载','启动','删除')]
+            row.addWidget(launch);box.addLayout(row);self.rows_layout.addWidget(card)
+            version=W.QWidget();vbox=W.QVBoxLayout(version);vbox.setContentsMargins(0,0,0,6)
+            vbox.addWidget(W.QLabel(getattr(store,'title','合成大水母')))
+            actions=W.QHBoxLayout();actions.addWidget(download,1);actions.addWidget(remove);vbox.addLayout(actions)
+            self.version_section.body.addWidget(version)
+            for button,action in ((download,'download'),(launch,'launch'),(remove,'delete')):
+                button.clicked.connect(lambda checked=False,i=index,a=action:self.row_action(i,a))
+            self.game_rows.append((title,download,launch,remove));self.row_layouts.append(row);self.version_cards.append((version,actions))
+        self.version_section.body.addWidget(self.sync_button)
+        index=self.stores.index(self.store) if self.store in self.stores else 0
+        self.game_title,self.download,self.launch,self.remove=self.game_rows[index]
+
+    def sync_catalog(self):
+        if getattr(self,"closing",False) or self.catalog_task or self.task:return
+        self.sync_button.setEnabled(False);self.sync_button.setText('正在同步…')
+        self.catalog_task=CatalogTask(self)
+        self.catalog_task.result.connect(self.catalog_received)
+        self.catalog_task.finished.connect(self.catalog_finished);self.catalog_task.start()
+
+    def catalog_received(self,catalog,error):
+        if not error:self.sync_catalog()
+        if error:
+            self.status.setText('同步失败，保留已有游戏：'+error);return
+        self.catalog_cache.parent.mkdir(parents=True,exist_ok=True)
+        temp=self.catalog_cache.with_suffix('.tmp');temp.write_text(json.dumps(catalog,ensure_ascii=False),encoding='utf-8');temp.replace(self.catalog_cache)
+        if self.running() or self.task:
+            self.status.setText('列表已同步，退出游戏后刷新显示');return
+        old_id=self.store.game_id
+        stores=[CollectionGameStore(DATA_ROOT,spec) for spec in catalog['games'].values()]
+        for store in stores:store.launcher_info=catalog.get('_launcher')
+        ids={store.game_id for store in stores}
+        for store in self.stores:
+            if store.game_id not in ids and store.installed():
+                store.withdrawn=True;stores.append(store)
+        ids={store.game_id for store in stores}
+        stores += [store for store in self.local_stores if store.game_id not in ids]
+        if not stores:return
+        self.stores=stores;self.store=next((x for x in stores if x.game_id==old_id),stores[0])
+        self.rebuild_rows();self.refresh();C.QTimer.singleShot(0,self.companion.resize_settings)
+
+    def catalog_finished(self):
+        task,self.catalog_task=self.catalog_task,None
+        task.deleteLater();self.sync_button.setEnabled(True);self.sync_button.setText('同步游戏列表 / 检查更新')
+
+    def save_preferences(self):
+        self.preferences.update(sound=self.sound.isChecked(),detect=self.detect.isChecked())
+        self.preferences_path.parent.mkdir(parents=True,exist_ok=True)
+        self.preferences_path.write_text(json.dumps(self.preferences),encoding='utf-8')
+        if self.running():self.send_window_command('sound-on' if self.sound.isChecked() else 'sound-off')
+        if not self.detect.isChecked():self.stop_scene_watch()
+        elif self.running():self.start_scene_watch()
+
+    def set_shortcut_enabled(self,action,enabled):
+        self.preferences[action+'_enabled']=enabled;self.save_preferences()
+
+    def update_shortcut_labels(self):
+        from .ui import hotkey_text
+        for action,(_,label) in self.shortcut_buttons.items():
+            self.shortcut_rows[action].set_key(label+'快捷键',hotkey_text(self.preferences.get(action+'_key','未设置')))
+
+    def edit_shortcut(self,action):
+        from .ui import HotkeyDialog,HOTKEYS
+        current=self.preferences.get(action+'_key','F8')
+        dialog=HotkeyDialog(current,self.companion)
+        if dialog.exec()!=W.QDialog.Accepted:return
+        key=dialog.selected
+        reserved={HOTKEYS[k] for k in (self.companion.hotkey,self.companion.close_hotkey,self.companion.hide_hotkey)}
+        if HOTKEYS[key] in reserved or any(HOTKEYS.get(self.preferences.get(a+'_key'))==HOTKEYS[key] for a in self.shortcut_buttons if a!=action):
+            self.status.setText('快捷键已被使用，请选择其他按键');return
+        self.preferences[action+'_key']=key;self.preferences[action+'_enabled']=True
+        self.shortcut_rows[action].toggle.setChecked(True);self.update_shortcut_labels();self.save_preferences()
+
+    def shortcut_keys(self):
+        from .ui import HOTKEYS
+        return {HOTKEYS[k] for a in self.shortcut_buttons if self.preferences.get(a+'_enabled',True) and (k:=self.preferences.get(a+'_key')) in HOTKEYS}
+
+    def handle_shortcuts(self,edges):
+        if not self.running():return
+        from .ui import HOTKEYS
+        for action in self.shortcut_buttons:
+            if not self.preferences.get(action+'_enabled',True):continue
+            if HOTKEYS.get(self.preferences.get(action+'_key')) not in edges:continue
+            if action=='restore':self.send_window_command('show' if self.game_hidden else 'hide')
+            elif action=='mute':self.sound.setChecked(not self.sound.isChecked())
+            elif action=='close':self.send_window_command('safe-close')
 
     def row_action(self,index,action):
         if self.task:
@@ -93,7 +234,9 @@ class GameControls(W.QWidget):
             return
         self.select_game(index)
         if action=='launch':self.launch_game()
-        elif action=='download':self.download_game()
+        elif action=='download':
+            if self.store.installed() and not hasattr(self.store,'spec') and not getattr(self.store,'local',False):self.sync_catalog()
+            else:self.download_game()
         elif action=='delete':self.delete_game()
 
     def select_game(self,index):
@@ -138,6 +281,7 @@ class GameControls(W.QWidget):
         if watcher is not None:watcher.stop();watcher.deleteLater()
 
     def start_scene_watch(self):
+        if not self.preferences.get('detect',True):return
         if sys.platform!='win32' or self.scene_watcher is not None or not self.running() or self.game_hidden:return
         from .game_scene_watch import find_game_window,WindowSceneWatch
         hwnd=find_game_window(getattr(self.companion,'last_external_target',None))
@@ -188,14 +332,24 @@ class GameControls(W.QWidget):
         installed = self.store.installed()
         local=getattr(self.store,'local',False)
         switching=getattr(self,'pending_game_index',None) is not None
-        for store,(_,download,launch,remove) in zip(self.stores,self.game_rows):
+        for index,(store,(_,download,launch,remove)) in enumerate(zip(self.stores,self.game_rows)):
             present=store.installed();source=getattr(store,'local',False);selected=store is self.store
             legacy=present and not store.native()
-            download.setEnabled(not source and not self.running() and (not busy or selected))
-            download.setText('本地源码' if source else '取消下载' if busy and selected else '升级轻量版' if legacy else '更新游戏' if present else '下载')
+            available=getattr(store,'update_available',lambda:True)()
+            download.setEnabled(not source and not getattr(store,'withdrawn',False) and not self.running() and (not busy or selected) and (not present or available or (busy and selected)))
+            download.setText('本地源码' if source else '已下架' if getattr(store,'withdrawn',False) else '取消下载' if busy and selected else '升级轻量版' if legacy else '更新' if present and available else '已是最新版' if present else '下载')
             launch.setEnabled(present and not busy and not switching)
             launch.setText('回到游戏' if selected and self.running() else '启动')
             remove.setEnabled(not source and present and not busy and not self.running())
+            main=self.row_layouts[index];version,actions=self.version_cards[index]
+            if present:
+                main.removeWidget(download);actions.insertWidget(0,download,1)
+            else:
+                actions.removeWidget(download);main.addWidget(download)
+            launch.setVisible(present);remove.setVisible(present);version.setVisible(present)
+        any_installed=any(store.installed() for store in self.stores)
+        for widget in (self.sound,self.detect,self.shortcut_section,self.version_section):widget.setVisible(any_installed)
+        C.QTimer.singleShot(0,self.companion.resize_settings)
         if not busy:
             self.status.setText(('直接读取本地源码 · 存档独立保存' if installed else '本地源码或公共启动器不存在') if local else f'已下载 · {self.store.size()/1024/1024:.0f} MB' if installed else '按需下载，未启动时不占用游戏运行资源')
 
@@ -256,6 +410,7 @@ class GameControls(W.QWidget):
         arguments = ['--game-root', str(getattr(self.store,'game_root',self.store.folder/'game')), '--profile', str(profile)]
         if self.store.native():
             arguments += ['--title', getattr(self.store,'title','合成大水母')]
+        if not self.preferences.get('sound',True):arguments += ['--muted']
         self.process.start(str(self.store.entry()), arguments)
         self.window_timer.start()
         self.start_timer.start(45000)
@@ -277,6 +432,7 @@ class GameControls(W.QWidget):
             self.ready_timer.stop()
             self.refresh()
             self.status.setText('运行中 · 拖动顶部窄栏移动，右上角关闭')
+            self.send_window_command('sound-on' if self.sound.isChecked() else 'sound-off')
             self.start_scene_watch()
 
     def start_timeout(self):
@@ -310,6 +466,7 @@ class GameControls(W.QWidget):
             (directory/(self.store.game_id+'.log')).write_bytes(bytes(self.output))
             self.status.setText('小游戏已退出，错误日志已保存到 out/minigames')
 
+        if next_game is None:C.QTimer.singleShot(0,self.sync_catalog)
         if next_game is not None and code==0:
             self.select_game(next_game)
             C.QTimer.singleShot(0,self.launch_game)
@@ -345,7 +502,7 @@ class GameControls(W.QWidget):
         if getattr(self.store,'local',False):return
         if self.task or self.running():
             return
-        answer = W.QMessageBox.question(self.companion, '删除小游戏', '删除合成大水母包体？游戏偏好将保留。',
+        answer = W.QMessageBox.question(self.companion, '删除小游戏', '删除'+getattr(self.store,'title','小游戏')+'包体？存档和偏好将保留。',
             W.QMessageBox.Yes | W.QMessageBox.No, W.QMessageBox.No)
         if answer != W.QMessageBox.Yes:
             return
@@ -356,8 +513,11 @@ class GameControls(W.QWidget):
             self.status.setText('删除失败：' + str(error))
 
     def shutdown(self):
+        if getattr(self,"closing",False):return
+        self.closing=True;self.pending_game_index=None
         self.stop_scene_watch()
         self.ready_timer.stop()
+        if self.catalog_task:self.catalog_task.wait()
         if self.task:
             self.task.requestInterruption()
             # QThread cannot be destroyed while a network read is in flight.

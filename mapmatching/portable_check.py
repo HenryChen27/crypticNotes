@@ -3,6 +3,7 @@ import json
 import multiprocessing as mp
 from pathlib import Path
 import time
+import os
 import cv2
 import numpy as np
 from .paths import ROOT,DATA_ROOT
@@ -13,15 +14,22 @@ from .src.live import worker
 def run(output):
     from .ui import W,font_stack
     app=W.QApplication([]); fonts=font_stack()
-    references=load(ROOT/'maps')
+    library_root=Path(os.environ.get('JYSJ_SMOKE_MAP_ROOT',str(ROOT)))
+    if not (library_root/'maps/floors.json').is_file():
+        from .ui import Companion
+        ui=Companion();ui.module_tabs.setCurrentIndex(1)
+        assert not ui.matching_available() and ui.process is None
+        Path(output).write_text(json.dumps({'ok':True,'optional_matching':True,'fonts':fonts}),encoding='utf-8')
+        ui.shutdown();return
+    references=load(library_root/'maps')
     ref=next(r for r in references if r.map_id=='hard/北-T门')
-    original=read_image(ROOT/ref.source)
+    original=read_image(library_root/ref.source)
     x,y,X,Y=ref.regions[0]['bbox']
     scale=min(1000/(X-x),530/(Y-y))
     source=np.zeros_like(original);source[y:Y,x:X]=original[y:Y,x:X]
     screen=cv2.warpAffine(source,np.array([[scale,0,1100-scale*(x+X)/2],[0,scale,540-scale*(y+Y)/2]]),(1920,1080))
     parent,child=mp.Pipe()
-    process=mp.Process(target=worker,args=(child,str(ROOT),'hard',None))
+    process=mp.Process(target=worker,args=(child,str(library_root),'hard',None))
     process.start(); child.close()
     try:
         assert parent.poll(45),'worker startup timeout'

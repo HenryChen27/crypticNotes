@@ -66,7 +66,7 @@ class GamePackageTests(unittest.TestCase):
                 z.writestr('game/index.html',b'game')
             z.writestr('package.json',json.dumps(metadata))
         info = {'version':'2.0.0','size':archive.stat().st_size,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest(),
-                'url':'https://github.com/HenryChen27/Jellyfish/releases/download/desktop-v2.0.0/'+archive.name}
+                'url':'https://github.com/HenryChen27/mini_games/releases/download/desktop-v2.0.0/'+archive.name}
         return archive,info
 
     def test_shared_launcher_survives_game_delete_and_is_reused(self):
@@ -148,7 +148,7 @@ class GamePackageTests(unittest.TestCase):
         archive, checksum = self.bundle()
         with self.assertRaises(ValueError):
             self.store.install(archive, checksum, archive.stat().st_size+1)
-        info = {'url':'https://github.com/HenryChen27/Jellyfish/releases/download/v1/game.zip',
+        info = {'url':'https://github.com/HenryChen27/mini_games/releases/download/v1/game.zip',
                 'size':archive.stat().st_size, 'sha256':checksum}
         catalog = {'schema':1,'id':'jellyfish','packages':{platform_key():info}}
         with patch('mapmatching.minigames.read_catalog', return_value=catalog), \
@@ -160,7 +160,7 @@ class GamePackageTests(unittest.TestCase):
 
     def test_download_installs_verified_bundle(self):
         archive, checksum = self.bundle()
-        info = {'url':'https://github.com/HenryChen27/Jellyfish/releases/download/v1/game.zip',
+        info = {'url':'https://github.com/HenryChen27/mini_games/releases/download/v1/game.zip',
                 'size':archive.stat().st_size, 'sha256':checksum}
         catalog = {'schema':1,'id':'jellyfish','packages':{platform_key():info}}
         events = []

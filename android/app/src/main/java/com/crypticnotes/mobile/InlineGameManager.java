@@ -1,34 +1,27 @@
 package com.crypticnotes.mobile;
 import android.app.AlertDialog;
-import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
-import android.view.Gravity;
-import android.view.View;
+import android.content.*;
+import android.os.*;
+import android.view.*;
 import android.widget.*;
-/** Only package management; starting remains in the floating panel. */
+import org.json.JSONObject;
+/** Dynamic independent games, with management in the final version fold. */
 final class InlineGameManager extends LinearLayout {
-    Runnable stateChanged;
-    private final MiniGameStore store;
-    private final Theme.ChalkButton download,delete;
-    private final TextView status;
-    private boolean busy;
-    private final Handler main=new Handler(Looper.getMainLooper());
-    InlineGameManager(Context c){
-        super(c);store=new MiniGameStore(c);setOrientation(VERTICAL);
-        LinearLayout row=new LinearLayout(c);row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=Theme.muted(c,"合成大水母：");Theme.text(title,15,Theme.TEXT);row.addView(title,new LinearLayout.LayoutParams(0,-2,1));
-        download=new Theme.ChalkButton(c,"下载",true);delete=new Theme.ChalkButton(c,"删除");
-        row.addView(download,new LinearLayout.LayoutParams(Theme.px(c,90),Theme.px(c,46)));
-        LinearLayout.LayoutParams dp=new LinearLayout.LayoutParams(Theme.px(c,64),Theme.px(c,46));dp.leftMargin=Theme.px(c,8);row.addView(delete,dp);addView(row);
+    Runnable stateChanged;private boolean busy,syncing;private final Handler main=new Handler(Looper.getMainLooper());
+    private final LinearLayout rows,versions;private final TextView status;private final Theme.SectionHeading versionHeading;private final java.util.List<View> preferences=new java.util.ArrayList<>();
+    InlineGameManager(Context c){super(c);setOrientation(VERTICAL);rows=new LinearLayout(c);rows.setOrientation(VERTICAL);addView(rows);
         status=Theme.muted(c,"");addView(status);status.setVisibility(GONE);
-        download.setOnClickListener(v->{if(busy||MiniGameOverlayService.running)return;busy=true;refresh();status.setVisibility(VISIBLE);status.setText("正在下载…");
-            new Thread(()->{String error=null;try{store.download(text->main.post(()->status.setText(text)));}catch(Exception e){error=e.getMessage();}
-                final String result=error;main.post(()->{busy=false;if(result==null)c.getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",false).apply();refresh();status.setVisibility(result==null?GONE:VISIBLE);status.setText(result==null?"":result);});},"inline-game-download").start();
-        });
-        delete.setOnClickListener(v->{if(busy||MiniGameOverlayService.running)return;new AlertDialog.Builder(c).setMessage("删除游戏包？存档和成绩会保留。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{
-            try{store.delete();c.getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",false).apply();refresh();}catch(Exception e){status.setVisibility(VISIBLE);status.setText(e.getMessage());}
-        }).show();});refresh();
-    }
-    void refresh(){boolean installed=store.installed(),update=MiniGameUpdates.available(getContext());download.setText(busy?"下载中":installed?"更新":"下载");download.setEnabled(!busy&&!MiniGameOverlayService.running&&(!installed||update));delete.setEnabled(installed&&!busy&&!MiniGameOverlayService.running);ActionIcon.set(download,ActionIcon.GAME,installed&&update);if(stateChanged!=null)stateChanged.run();}
+        setting("小游戏声音","gameSound",true);setting("画面变化检测","gameSceneEnabled",true);
+        versionHeading=new Theme.SectionHeading(c,"版本");addView(versionHeading);versions=new LinearLayout(c);versions.setOrientation(VERTICAL);versions.setVisibility(GONE);addView(versions);versionHeading.setOnClickListener(v->{boolean open=versions.getVisibility()!=VISIBLE;versions.setVisibility(open?VISIBLE:GONE);versionHeading.setExpanded(open);});
+        refresh();sync();}
+    void setting(String label,String key,boolean fallback){LinearLayout row=new LinearLayout(getContext());row.setGravity(Gravity.CENTER_VERTICAL);row.addView(Theme.muted(getContext(),label),new LayoutParams(0,-2,1));Theme.ChalkChoice choice=new Theme.ChalkChoice(getContext(),new String[]{"开","关"});choice.setIndex(getContext().getSharedPreferences("mobile",0).getBoolean(key,fallback)?0:1);row.addView(choice,new LayoutParams(Theme.px(getContext(),120),Theme.px(getContext(),42)));choice.setListener(i->{getContext().getSharedPreferences("mobile",0).edit().putBoolean(key,i==0).apply();if(MiniGameOverlayService.current!=null)MiniGameOverlayService.current.applyHostSound();if(key.equals("gameSceneEnabled")&&i==1&&CaptureService.current!=null)CaptureService.current.releaseGameCapture();});preferences.add(row);addView(row);}
+    void sync(){if(syncing||busy)return;syncing=true;new Thread(()->{String error=null;try{JSONObject games=MiniGameStore.collection();getContext().getSharedPreferences("mobile",0).edit().putString("gameCatalog",games.toString()).apply();}catch(Exception e){error=e.getMessage();}String result=error;main.post(()->{syncing=false;refresh();if(result!=null){status.setText("同步未完成，保留本地游戏："+result);status.setVisibility(VISIBLE);}});},"game-catalog").start();}
+    void refresh(){rows.removeAllViews();versions.removeAllViews();JSONObject catalog=GameCatalog.cached(getContext());
+        for(String id:GameCatalog.ids(getContext())){MiniGameStore store=new MiniGameStore(getContext(),id);boolean installed=store.installed();JSONObject spec=catalog.optJSONObject(id);boolean update=installed&&spec!=null&&!spec.optString("sha256").equals(store.hash());
+            LinearLayout row=new LinearLayout(getContext());row.setGravity(Gravity.CENTER_VERTICAL);row.addView(Theme.muted(getContext(),store.title()),new LayoutParams(0,-2,1));Theme.ChalkButton open=new Theme.ChalkButton(getContext(),installed?"打开":"下载");row.addView(open,new LayoutParams(Theme.px(getContext(),76),Theme.px(getContext(),44)));open.setEnabled(!busy);open.setOnClickListener(v->{if(installed)launch(id);else download(store);});rows.addView(row);
+            if(installed){LinearLayout line=new LinearLayout(getContext());line.setGravity(Gravity.CENTER_VERTICAL);line.addView(Theme.muted(getContext(),store.title()+" "+store.version()),new LayoutParams(0,-2,1));Theme.ChalkButton check=new Theme.ChalkButton(getContext(),spec==null?"检查更新":update?"更新":"已是最新版"),delete=new Theme.ChalkButton(getContext(),"删除");line.addView(check);line.addView(delete);check.setEnabled(!busy&&(update||spec==null));check.setOnClickListener(v->{if(spec==null)sync();else download(store);});delete.setEnabled(!busy&&!MiniGameOverlayService.running);delete.setOnClickListener(v->new AlertDialog.Builder(getContext()).setMessage("删除游戏包？存档和偏好会保留。").setNegativeButton("取消",null).setPositiveButton("删除",(d,w)->{try{store.delete();refresh();}catch(Exception e){status.setText(e.getMessage());status.setVisibility(VISIBLE);}}).show());versions.addView(line);}
+        }
+        Theme.ChalkButton sync=new Theme.ChalkButton(getContext(),syncing?"正在检查…":"同步列表 / 检查更新");sync.setEnabled(!syncing&&!busy);sync.setOnClickListener(v->sync());versions.addView(sync);boolean any=false;for(String id:GameCatalog.ids(getContext()))if(new MiniGameStore(getContext(),id).installed())any=true;for(View v:preferences)v.setVisibility(any?VISIBLE:GONE);versionHeading.setVisibility(any?VISIBLE:GONE);if(!any)versions.setVisibility(GONE);if(stateChanged!=null)stateChanged.run();}
+    private void launch(String id){Context c=getContext();if(c instanceof MainActivity)((MainActivity)c).startGame(id);else c.startActivity(new Intent(c,MainActivity.class).putExtra("launch_game",id).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));}
+    private void download(MiniGameStore store){if(busy||MiniGameOverlayService.running){Toast.makeText(getContext(),"请先关闭小游戏再更新",Toast.LENGTH_SHORT).show();return;}busy=true;refresh();status.setVisibility(VISIBLE);status.setText("正在下载…");new Thread(()->{String error=null;try{store.download(text->main.post(()->status.setText(text)));}catch(Exception e){error=e.getMessage();}String result=error;main.post(()->{busy=false;status.setText(result==null?"下载完成":result);refresh();sync();});},"game-download").start();}
 }

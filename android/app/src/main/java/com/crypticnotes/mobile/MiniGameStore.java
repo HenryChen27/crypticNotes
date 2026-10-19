@@ -10,10 +10,16 @@ import java.util.zip.*;
 
 /** Optional universal resource pack. Saves live outside the removable game. */
 final class MiniGameStore {
-    static final String CATALOG="https://github.com/HenryChen27/Jellyfish/releases/latest/download/native-desktop-games.json";
-    final File root, game;
+    static final String CATALOG="https://github.com/HenryChen27/mini_games/releases/latest/download/native-desktop-games.json";
+    static final String COLLECTION=CATALOG.substring(0,CATALOG.lastIndexOf('/')+1)+"games.json";
+    final File root, game;final String id;
     interface Progress { void update(String text); }
-    MiniGameStore(Context c){root=new File(c.getFilesDir(),"minigames");game=new File(root,"jellyfish");}
+    MiniGameStore(Context c){this(c,"jellyfish");}
+    MiniGameStore(Context c,String gameId){if(gameId==null||!gameId.matches("[a-z0-9][a-z0-9-]*")||gameId.equals("runtime"))throw new IllegalArgumentException("无效游戏名称");id=gameId;root=new File(c.getFilesDir(),"minigames");game=new File(root,id);}
+    static JSONObject collection()throws Exception{HttpURLConnection c=connect(COLLECTION);try(InputStream in=c.getInputStream()){JSONObject value=new JSONObject(new String(bytes(in,128*1024),java.nio.charset.StandardCharsets.UTF_8));if(value.optInt("schema")!=1||value.optJSONObject("games")==null)throw new IOException("无效小游戏列表");return value.getJSONObject("games");}finally{c.disconnect();}}
+    String title(){return id.equals("jellyfish")?"合成大水母":id.equals("minesweeper")?"蚀骨赠礼":id;}
+    String hash(){try{return new JSONObject(read(new File(game,"package.json"))).optString("downloadSha256","");}catch(Exception e){return "";}}
+
     boolean installed(){return new File(game,"game/index.html").isFile();}
     String version(){try{return new JSONObject(read(new File(game,"package.json"))).optString("version","");}catch(Exception e){return "";}}
     static byte[] bytes(InputStream in,int limit)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>limit)throw new IOException("文件过大");out.write(buf,0,n);}return out.toByteArray();}
@@ -24,20 +30,18 @@ final class MiniGameStore {
         if(c.getResponseCode()!=200){c.disconnect();throw new IOException("下载失败，请稍后重试");}return c;
     }
     JSONObject catalogInfo()throws Exception{
-        JSONObject catalog;
-        HttpURLConnection c=connect(CATALOG);
-        try(InputStream in=c.getInputStream()){byte[] raw=bytes(in,128*1024);catalog=new JSONObject(new String(raw,java.nio.charset.StandardCharsets.UTF_8));}finally{c.disconnect();}
-        if(catalog.optInt("schema")!=2||!"jellyfish".equals(catalog.optString("id")))throw new IOException("无效游戏清单");
-        JSONObject info=catalog.getJSONObject("game");String url=info.getString("url"),sha=info.getString("sha256");long size=info.getLong("size");
-        if(!url.startsWith("https://github.com/HenryChen27/Jellyfish/releases/download/")||!sha.matches("[0-9a-f]{64}")||size<=0||size>600L*1024*1024)throw new IOException("无效游戏包");
+        JSONObject info=collection().optJSONObject(id);
+        if(info==null||!id.equals(info.optString("id"))||!"system-webview".equals(info.optString("runtime"))||!"game/index.html".equals(info.optString("entry")))throw new IOException("游戏暂未上架");
+        String url=info.getString("url"),sha=info.getString("sha256");long size=info.getLong("size");
+        if(!url.startsWith("https://github.com/HenryChen27/mini_games/releases/download/")||!sha.matches("[0-9a-f]{64}")||size<=0||size>600L*1024*1024)throw new IOException("无效游戏包");
         return info;
     }
     void download(Progress progress)throws Exception{
         root.mkdirs();progress.update("正在检查游戏更新…");
         JSONObject info=catalogInfo();String url=info.getString("url"),sha=info.getString("sha256"),version=info.getString("version");long size=info.getLong("size");
         HttpURLConnection c;
-        if(installed()&&version.equals(version())){progress.update("游戏已是最新版");return;}
-        File zip=new File(root,"download.zip"),stage=new File(root,".install-"+UUID.randomUUID()),backup=new File(root,".previous-jellyfish");
+        if(installed()&&sha.equals(hash())){progress.update("游戏已是最新版");return;}
+        File zip=new File(root,id+"-download.zip"),stage=new File(root,".install-"+UUID.randomUUID()),backup=new File(root,".previous-"+id);
         try {
             MessageDigest digest=MessageDigest.getInstance("SHA-256");long count=0;c=connect(url);
             try(InputStream in=c.getInputStream();OutputStream out=new FileOutputStream(zip)){
@@ -56,7 +60,8 @@ final class MiniGameStore {
                 }
             }
             JSONObject meta=new JSONObject(read(new File(stage,"package.json")));
-            if(!"jellyfish".equals(meta.optString("id"))||!"system-webview".equals(meta.optString("runtime"))||!new File(stage,"game/index.html").isFile())throw new IOException("游戏包结构不正确");
+            if(!id.equals(meta.optString("id"))||!"system-webview".equals(meta.optString("runtime"))||!new File(stage,"game/index.html").isFile())throw new IOException("游戏包结构不正确");
+            meta.put("downloadSha256",sha);try(OutputStream out=new FileOutputStream(new File(stage,"package.json"))){out.write(meta.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
             remove(backup);if(game.exists()&&!game.renameTo(backup))throw new IOException("旧游戏无法替换");
             if(!stage.renameTo(game)){if(backup.exists())backup.renameTo(game);throw new IOException("游戏安装失败");}remove(backup);progress.update("游戏已安装");
         }finally{zip.delete();remove(stage);}

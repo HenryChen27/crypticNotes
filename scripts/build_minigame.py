@@ -75,7 +75,7 @@ def main():
     catalog_path = destination.parent/'desktop-games.json'
     catalog = json.loads(catalog_path.read_text(encoding='utf-8')) if catalog_path.exists() else {'schema': 1, 'id': 'jellyfish', 'packages': {}}
     catalog['packages'][key] = {'version': args.version, 'size': bundle.stat().st_size, 'sha256': checksum,
-        'url': f'https://github.com/HenryChen27/Jellyfish/releases/download/{args.tag}/{bundle.name}'}
+        'url': f'https://github.com/HenryChen27/mini_games/releases/download/{args.tag}/{bundle.name}'}
     catalog_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding='utf-8')
     print('Game package:', bundle)
     print('Download catalog:', catalog_path)

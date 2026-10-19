@@ -22,6 +22,7 @@ class GameWindow : Form {
     bool muted;
     bool wasMinimized;
     DateTime? autoCloseAt;
+    bool masterMuted=false;
     void ReadWindowCommands(){
         try{
             string path=Path.Combine(profile,"window-command.json");
@@ -31,6 +32,9 @@ class GameWindow : Form {
                     var command=new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<System.Collections.Generic.Dictionary<string,object>>(text);
                     lastCommand=text;string action=Convert.ToString(command["action"]);
                     if(action=="show")RestoreGame();
+                    else if(action=="sound-off"){masterMuted=true;SetMuted(true);}
+                    else if(action=="sound-on"){masterMuted=false;SetMuted(WindowState==FormWindowState.Minimized);}
+                    else if(action=="hide"){visibleState=WindowState;WindowState=FormWindowState.Minimized;}
                     else if(action=="safe-close"){autoCloseAt=null;Close();}
                     else if(action=="auto-hide"&&WindowState!=FormWindowState.Minimized){
                         visibleState=WindowState;autoCloseAt=DateTime.UtcNow.AddSeconds(5);WindowState=FormWindowState.Minimized;
@@ -40,7 +44,7 @@ class GameWindow : Form {
         }catch(Exception){}
         if(autoCloseAt.HasValue&&DateTime.UtcNow>=autoCloseAt.Value&&WindowState==FormWindowState.Minimized&&!closing){autoCloseAt=null;Close();}
     }
-    void SetMuted(bool value){muted=value;if(view.CoreWebView2!=null)view.CoreWebView2.IsMuted=value;if(soundControl!=null){soundControl.Muted=value;soundControl.Invalidate();}}
+    void SetMuted(bool value){value=value||masterMuted;muted=value;if(view.CoreWebView2!=null)view.CoreWebView2.IsMuted=value;if(soundControl!=null){soundControl.Muted=value;soundControl.Invalidate();}}
     FrameBar titleBar;
     bool ProbeControls(){
         sizeControl.PerformClick();bool expanded=WindowState==FormWindowState.Maximized&&sizeControl.Inward;
@@ -76,6 +80,7 @@ class GameWindow : Form {
         soundControl.Click+=(s,e)=>SetMuted(!muted);
         hideControl=hide;
         hide.Click+=(s,e)=>{visibleState=WindowState;WindowState=FormWindowState.Minimized;};
+        masterMuted=Array.IndexOf(Environment.GetCommandLineArgs(),"--muted")>=0;muted=masterMuted;
         ShowInTaskbar=true;
         Resize+=(s,e)=>{bool minimized=WindowState==FormWindowState.Minimized;if(!minimized){visibleState=WindowState;autoCloseAt=null;}if(minimized!=wasMinimized){wasMinimized=minimized;SetMuted(minimized);}PublishState();};
         tray=new NotifyIcon {Icon=Icon,Text=title,Visible=true};

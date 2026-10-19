@@ -23,6 +23,8 @@ def main():
     env['PYTHONPATH']=os.pathsep.join([str(ROOT),*extras])
     subprocess.run([sys.executable,'-m','mapmatching','build-index',
                     '--index',str(ROOT/'maps')],cwd=ROOT,env=env,check=True)
+    from build_matching_module import build
+    build()
     args=[sys.executable,'-m','PyInstaller','--clean','--noconfirm','--onedir','--windowed',
           '--contents-directory','.','--name','IdentityVMapAssistant','--paths',str(ROOT),
           '--hidden-import','mapmatching.portable_check','--collect-all','windows_capture',
@@ -33,16 +35,8 @@ def main():
     for module in ('torch','tensorflow','matplotlib','pandas','IPython','pytest','notebook','tkinter',
                    'PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtWebEngineQuick'):
         args+=['--exclude-module',module]
-    # 整个 `maps/` 一起打包，**连 index.json 和 evidence/ 也带上**：它们是派生物，
-    # 但重建一次要 1~3 分钟，让用户第一次启动就干等是不可接受的（旧版也是把
-    # `reference/index` 打进包的）。原图、登记表、特征、软删除状态因此同进同出，
-    # 不会出现「有图没特征」或「有特征没登记」这种半截状态。
-    #
-    # 逐个子项列出来而不是整目录 `maps/`，是为了只排除 `_overview/`：
-    # 那三张一图流总览共 137 MB，从不进索引，进包只会让安装包白白大三倍。
-    data=[ROOT/'mapmatching/assets', ROOT/'docs/images',
-          *(ROOT/'maps'/name for name in ('hard','nightmare','_unindexed','evidence',
-                                          'floors.json','index.json','disabled.json','README.md')),
+    # Official maps are delivered by the independently managed matching module.
+    data=[ROOT/'mapmatching/assets',ROOT/'mapmatching/correct.png', ROOT/'docs/images',
           ROOT/'scripts/run.cmd',ROOT/'scripts/create_shortcut.ps1',ROOT/'README.md']
     data.extend(p for p in (ROOT/'mapmatching/appearance/skins').rglob('*')
                 if p.is_file() and p.suffix.lower() in ('.png','.jpg','.webp','.json'))

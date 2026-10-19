@@ -13,7 +13,7 @@ import zipfile
 import uuid
 from pathlib import Path, PurePosixPath
 
-CATALOG_URL = 'https://github.com/HenryChen27/Jellyfish/releases/latest/download/native-desktop-games.json'
+CATALOG_URL = 'https://github.com/HenryChen27/mini_games/releases/latest/download/native-desktop-games.json'
 GAME_ID = 'jellyfish'
 MAX_DOWNLOAD = 600 * 1024 * 1024
 MAX_EXTRACTED = 1400 * 1024 * 1024
@@ -39,6 +39,26 @@ def read_catalog(url=CATALOG_URL, game_id=GAME_ID):
     return catalog
 
 
+COLLECTION_URL = CATALOG_URL.rsplit('/',1)[0] + '/games.json'
+
+def read_collection():
+    request=urllib.request.Request(COLLECTION_URL,headers={'User-Agent':'CrypticNotes-games'})
+    with urllib.request.urlopen(request,timeout=30) as response:
+        raw=response.read(128*1024+1)
+    if len(raw)>128*1024:raise ValueError('小游戏清单过大')
+    catalog=json.loads(raw)
+    if catalog.get('schema')!=1 or not isinstance(catalog.get('games'),dict):
+        raise ValueError('小游戏合集清单格式不正确')
+    games=catalog['games']
+    if len(games)>100:raise ValueError('小游戏数量异常')
+    for key,info in games.items():
+        if not key or key=='runtime' or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in key):
+            raise ValueError('小游戏名称不正确')
+        if info.get('id')!=key or info.get('runtime')!='system-webview' or info.get('entry')!='game/index.html':
+            raise ValueError('不支持的小游戏格式')
+        package_info({'schema':2,'game':info})
+    return catalog
+
 def package_info(catalog, key=None):
     info = catalog.get('packages', {}).get(key or platform_key())
     if catalog.get('schema') == 2:
@@ -46,7 +66,7 @@ def package_info(catalog, key=None):
     if not info:
         raise ValueError('该系统的小游戏包尚未上架')
     url = info.get('url', '')
-    if not url.startswith('https://github.com/HenryChen27/Jellyfish/releases/download/'):
+    if not url.startswith('https://github.com/HenryChen27/mini_games/releases/download/'):
         raise ValueError('小游戏下载地址不正确')
     checksum = info.get('sha256', '')
     if len(checksum) != 64 or any(c not in '0123456789abcdef' for c in checksum):
@@ -256,6 +276,9 @@ class LauncherStore(GameStore):
         return self.root / 'runtime'
 
     def entry(self):
+        from .paths import FROZEN
+        development=self.root.parent/'out/minigames-dev/runtime/GameLauncher.exe'
+        if not FROZEN and sys.platform=='win32' and development.is_file():return development
         return self.folder / ('GameLauncher.app/Contents/MacOS/GameLauncher' if sys.platform == 'darwin'
                               else 'GameLauncher.exe')
 
@@ -290,6 +313,38 @@ class LauncherStore(GameStore):
             return False
 
     def validate_package(self, staging, metadata):
-        relative = self.entry().relative_to(self.folder)
+        relative = Path('GameLauncher.app/Contents/MacOS/GameLauncher' if sys.platform=='darwin' else 'GameLauncher.exe')
         if metadata.get('id') != 'game-launcher' or metadata.get('platform') != platform_key() or not (staging/relative).is_file():
             raise ValueError('公共小游戏启动器结构或系统不正确')
+
+
+class CollectionGameStore(GameStore):
+    """Collection metadata, existing per-game install/save identity unchanged."""
+    def __init__(self,data_root,spec):
+        super().__init__(data_root,spec['id'])
+        self.spec=spec
+        self.title=spec.get('name',spec['id'])
+        if self.game_id=='minesweeper':self.title='蚀骨赠礼'
+
+    def update_available(self):
+        info=getattr(self,'launcher_info',None)
+        if info:
+            launcher=LauncherStore(self.root.parent)
+            if not launcher.installed() or not launcher.matches_download(info):return True
+        try:
+            meta=json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+            return meta.get('downloadSha256')!=self.spec['sha256']
+        except (OSError,ValueError):return True
+
+    def download(self,progress,cancelled=lambda:False):
+        catalog=read_collection()
+        spec=catalog['games'].get(self.game_id)
+        if spec is None:raise ValueError('游戏已下架，已安装内容仍可使用')
+        self.spec=spec
+        launcher=LauncherStore(self.root.parent)
+        info=package_info(read_catalog(),platform_key())
+        if not launcher.installed() or not launcher.matches_download(info):
+            launcher.download_package(info,lambda value,text:progress(value//10,'正在安装公共小游戏启动器…'),cancelled)
+        if self.installed() and not self.update_available():
+            progress(100,'游戏已是最新版');return
+        self.download_package(package_info({'schema':2,'game':spec}),lambda value,text:progress(10+value*90//100,text),cancelled)

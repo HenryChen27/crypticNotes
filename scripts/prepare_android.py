@@ -19,16 +19,7 @@ if font.exists():
     (target/'assets/fonts').mkdir(parents=True,exist_ok=True)
     shutil.copy2(font,target/'assets/fonts'/font.name)
 maps=target/'assets/maps'
-maps.mkdir(parents=True,exist_ok=True)
-for name in ('floors.json','index.json'):
-    shutil.copy2(ROOT/'maps'/name,maps/name)
-entries=json.loads((ROOT/'maps/floors.json').read_text(encoding='utf-8'))['references']
-for entry in entries:
-    source=ROOT/entry['source']
-    destination=target/'assets'/entry['source']
-    destination.parent.mkdir(parents=True,exist_ok=True)
-    shutil.copy2(source,destination)
-shutil.copytree(ROOT/'maps/evidence',maps/'evidence',dirs_exist_ok=True)
-from mapmatching.src.map_update import stamp
-stamp(maps)
-print('Staged',len(entries),'maps and unchanged matching modules')
+if maps.exists():
+    if not maps.resolve().is_relative_to(target.resolve()):raise RuntimeError('Unexpected generated maps path')
+    shutil.rmtree(maps)
+print('Staged matching code and UI assets; official maps are an optional download')

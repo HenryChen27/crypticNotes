@@ -9,11 +9,11 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <application android:label="加页手记地图助手" android:allowBackup="false" android:icon="@drawable/app_logo"
+    <application android:label="加页手记" android:allowBackup="false" android:icon="@drawable/app_logo"
         android:theme="@android:style/Theme.Material.NoActionBar" android:supportsRtl="true">
         <provider android:name=".UpdateProvider" android:authorities="${applicationId}.updates"
             android:exported="false" android:grantUriPermissions="true" />
-        <activity android:name=".MainActivity" android:exported="true">
+        <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity>
         <activity android:name=".MapLibraryActivity" android:exported="false"
@@ -24,7 +24,7 @@
         </service>
         <activity android:name=".AudioPermissionActivity" android:exported="false"
             android:theme="@android:style/Theme.Material.Dialog.NoActionBar" />
-        <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="mediaProjection" />
+        <service android:name=".CaptureService" android:exported="false" android:foregroundServiceType="mediaProjection|specialUse"><property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-started floating game controls without screen capture" /></service>
         <service android:name=".UpdateService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".TapRelayService" android:label="加页手记点击转交"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true">

@@ -108,7 +108,7 @@ class Keys:
         self.raw_mouse = False
 
     def raw_edge(self,key,released):
-        if key not in (self.toggle_key,self.hide_key,self.close_key):return
+        if key not in (self.toggle_key,self.hide_key,self.close_key,*getattr(self,"extra_keys",())):return
         if released:
             self.raw_down.discard(key)
             self.poll_seen.discard(key)
@@ -123,7 +123,7 @@ class Keys:
         return self.raw_mouse if key in MOUSE_VKS else self.raw_keyboard
 
     def edges(self):
-        watched = (self.toggle_key,self.hide_key,self.close_key)
+        watched = (self.toggle_key,self.hide_key,self.close_key,*getattr(self,"extra_keys",()))
         pressed = {key for key in watched if user32.GetAsyncKeyState(key) & 0x8000}
         rising = (pressed - self.down) | self.pending_edges
         self.pending_edges.clear()

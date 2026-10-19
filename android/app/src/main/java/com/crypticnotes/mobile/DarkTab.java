@@ -6,6 +6,6 @@ import android.widget.TextView;
 /** Quiet dark navigation tab, distinct from action buttons. */
 final class DarkTab extends TextView {
     DarkTab(Context c,String label){super(c);setText(label);Theme.text(this,14,Theme.TEXT);setGravity(Gravity.CENTER);setPadding(Theme.px(c,9),0,Theme.px(c,9),0);setClickable(true);select(false);}
-    void select(boolean selected){GradientDrawable bg=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{selected?0xe5a6bcc8:0x60304453,selected?0xe592aab8:0x602b4050});bg.setCornerRadius(Theme.px(getContext(),1));setBackground(bg);setAlpha(selected?1f:.75f);setSelected(selected);setTextColor(selected?Theme.INK:Theme.TEXT);if(getText().toString().equals("设置"))ActionIcon.set(this,ActionIcon.GEAR,false);else ActionIcon.set(this,ActionIcon.GAME,MiniGameUpdates.available(getContext()));}
+    void select(boolean selected){setBackground(selected?new Theme.ChalkDrawable(getContext(),Theme.Chalk.BRIGHT,.7f,"rect",true,true):null);setAlpha(1f);setSelected(selected);setTextColor(selected?Theme.INK:Theme.TEXT);ActionIcon.set(this,getText().toString().equals("小游戏")?ActionIcon.GAME:ActionIcon.MAP,getText().toString().equals("小游戏")&&MiniGameUpdates.available(getContext()));}
     @Override public boolean performClick(){TouchFeedback.click(this);return super.performClick();}
 }

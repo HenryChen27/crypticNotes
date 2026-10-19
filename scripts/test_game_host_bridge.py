@@ -27,6 +27,12 @@ with sync_playwright() as p:
     result=page.evaluate('messages.pop()')
     assert result['saved'] is False and 'json' not in result,result
     assert page.evaluate('window.__jellyfishHostFrozen') is False
-    assert (ROOT/'android/app/src/main/assets/safe-exit.js').read_bytes()==(ROOT/'scripts/game_launcher/safe-exit.js').read_bytes()
+    # Desktop now supports collection games; Android is migrated separately.
+    page.evaluate("delete window.JellyfishGame;window.MinesweeperGame={prepareToClose:async()=>({ok:true,readyToClose:true})};localStorage.setItem('bone-gift-state','mines-save');__jellyfishHostSave(7)")
+    result=page.evaluate('messages.pop()')
+    assert result['saved'] is True and 'jellyfish.local.bone-gift-state' in result['json'],result
+    page.evaluate("window.MinesweeperGame={prepareToClose:async()=>({ok:false,readyToClose:false,error:'not_saved'})};__jellyfishHostSave(8)")
+    result=page.evaluate('messages.pop()')
+    assert result['saved'] is False and 'json' not in result,result
     browser.close()
 print('Host bridge passed: awaited save, prevented early close, filtered storage, retained failure.')

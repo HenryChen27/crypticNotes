@@ -15,7 +15,7 @@ import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
 WEBVIEW_VERSION='1.0.3405.78'
-GAME_VERSION='2.4.4'
+GAME_VERSION='2.5.3'
 
 
 def bundle(folder, target):
@@ -28,7 +28,7 @@ def bundle(folder, target):
                 z.writestr(info,path.read_bytes())
     return {'version':GAME_VERSION,'size':target.stat().st_size,
         'sha256':hashlib.sha256(target.read_bytes()).hexdigest(),
-        'url':'https://github.com/HenryChen27/Jellyfish/releases/download/desktop-v'+GAME_VERSION+'/'+target.name}
+        'url':'https://github.com/HenryChen27/mini_games/releases/download/desktop-v'+GAME_VERSION+'/'+target.name}
 
 
 def main():

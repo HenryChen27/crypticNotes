@@ -841,6 +841,10 @@ class DraggableGear(GearButton):
         super().enterEvent(event)
 
     def mousePressEvent(self,event):
+        if event.button()==C.Qt.RightButton:
+            self.click_timer.stop()
+            self.exit_timer.stop();self.exit_zone.hide()
+            event.accept();W.QApplication.instance().quit();return
         if event.button()==C.Qt.LeftButton:
             if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<30:
                 self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
@@ -930,6 +934,8 @@ class Companion(W.QWidget):
             self.settings = json.loads(self.settings_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):
             pass
+        self.last_module=self.settings.get('last_module','notes')
+        if self.last_module not in ('notes','games'):self.last_module='notes'
         self.font_mode = self.settings.get('font_mode','game')
         self.apply_font(self.font_mode)
         self.hotkey, self.hide_hotkey = resolve_hotkeys(self.settings)
@@ -952,20 +958,40 @@ class Companion(W.QWidget):
         self.panel.setObjectName('panel')
         self.panel.setFixedWidth(374)
         box = W.QVBoxLayout(self.panel)
-        box.setContentsMargins(20,18,20,18)
+        box.setContentsMargins(0,0,0,0)
+        box.setSpacing(0)
+        box.setAlignment(C.Qt.AlignTop)
+        from .module_navigation import ModuleNavigation
+        self.module_tabs=ModuleNavigation()
+        box.addWidget(self.module_tabs)
+        self.module_tabs.currentIndexChanged.connect(self.switch_module)
+        content=W.QWidget()
+        self.panel_content=content
+        box.addWidget(content)
+        box=W.QVBoxLayout(content)
+        box.setContentsMargins(20,12,20,18)
         box.setSpacing(10)
         box.setAlignment(C.Qt.AlignTop)
-        title = W.QLabel('加页手记')
-        title.setObjectName('title')
-        box.addWidget(title)
+        from .module_ui import MatchingControls
+        self.matching_controls=MatchingControls(self)
         self.setting_sections = [FoldSection(name, i == 0) for i, name in
-                                 enumerate(('游戏设置', '使用偏好', '地图库', '小游戏', '问题排查'))]
+                                 enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '问题排查'))]
+        self.general_section=FoldSection('界面设置',True)
+        self.map_shortcuts=FoldSection('快捷键')
+        self.version_section=FoldSection('版本')
+        self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])
+        self.version_section.body.addWidget(self.matching_controls)
+        self.matching_controls.changed.connect(self.refresh_matching_module)
+        for i in (3,5):self.setting_sections[i].hide()
+        self.setting_sections[3].header.hide()
+        self.setting_sections[3].header.setChecked(True)
         groups = W.QWidget()
         group_layout = W.QVBoxLayout(groups)
         group_layout.setContentsMargins(0, 0, 0, 0)
         group_layout.setSpacing(8)
         group_layout.setAlignment(C.Qt.AlignTop)
-        for section in self.setting_sections:
+        for index in (0,1,2,3,5,6,4,7):
+            section=self.setting_sections[index]
             group_layout.addWidget(section)
             section.changed.connect(lambda: C.QTimer.singleShot(0, self.resize_settings))
         self.settings_scroll = W.QScrollArea()
@@ -978,7 +1004,7 @@ class Companion(W.QWidget):
         self.settings_scroll.setStyleSheet('QScrollArea, QScrollArea > QWidget > QWidget {background:transparent;}')
         self.settings_scroll.setWidget(groups)
         box.addWidget(self.settings_scroll)
-        game, preferences, library, minigames, debug = [s.body for s in self.setting_sections]
+        game, preferences, library, minigames, debug = [s.body for s in self.setting_sections[:5]]
         from .minigames_ui import GameControls
         self.minigames = GameControls(self)
         minigames.addWidget(self.minigames)
@@ -1031,7 +1057,7 @@ class Companion(W.QWidget):
         self.delay.valueChanged.connect(lambda value: self.delay_label.setText(f'展开等待    {value} ms'))
         self.delay_label.setText(f'展开等待    {self.delay.value()} ms')
         self.enabled = ChalkToggle()
-        self.enabled.setChecked(True)
+        self.enabled.setChecked(self.settings.get('open_key_enabled',True))
         self.status = W.QLabel('待机')
         self.status.setWordWrap(True)
         self.status.setObjectName('muted')
@@ -1054,42 +1080,20 @@ class Companion(W.QWidget):
         hide.clicked.connect(self.close_map)
         buttons.addWidget(retry)
         buttons.addWidget(hide)
-        hide_button_pencil=EditButton()
-        hide_button_pencil.clicked.connect(self.edit_hide_hotkey)
-        hide_button_pencil.setToolTip('修改隐藏叠图快捷键')
-        buttons.addWidget(hide_button_pencil)
         game.addLayout(buttons)
         preferences.addWidget(self.delay_label)
         preferences.addWidget(self.delay)
-        hotkeys=W.QHBoxLayout()
-        self.hotkey_label=W.QLabel(f'启用快捷键({hotkey_text(self.hotkey)})')
-        hotkeys.addWidget(self.hotkey_label)
-        pencil=EditButton()
-        pencil.clicked.connect(self.edit_hotkey)
-        hotkeys.addWidget(pencil)
-        hotkeys.addWidget(self.enabled,1)
-        preferences.addLayout(hotkeys)
-        closekeys=W.QHBoxLayout()
-        self.close_hotkey_label=W.QLabel(f'关闭地图快捷键({hotkey_text(self.close_hotkey)})')
-        closekeys.addWidget(self.close_hotkey_label)
-        close_pencil=EditButton()
-        close_pencil.clicked.connect(self.edit_close_hotkey)
-        closekeys.addWidget(close_pencil)
-        closekeys.addStretch()
-        preferences.addLayout(closekeys)
-        hidekeys=W.QHBoxLayout()
-        self.hide_hotkey_label=W.QLabel(f'隐藏叠图({hotkey_text(self.hide_hotkey)})')
-        hidekeys.addWidget(self.hide_hotkey_label)
-        hide_pencil=EditButton()
-        hide_pencil.clicked.connect(self.edit_hide_hotkey)
-        hidekeys.addWidget(hide_pencil)
-        preferences.addLayout(hidekeys)
-        # The shortcut editor lives beside the hide button; keep the legacy
-        # row out of the panel while retaining its label for compatibility.
-        for _widget in (self.hide_hotkey_label, hide_pencil):
-            _widget.hide()
-        hidekeys.setContentsMargins(0, 0, 0, 0)
-        hidekeys.setSpacing(0)
+        from .shortcut_row import ShortcutRow
+        self.close_key_enabled=ChalkToggle();self.close_key_enabled.setChecked(self.settings.get('close_key_enabled',True))
+        self.hide_key_enabled=ChalkToggle();self.hide_key_enabled.setChecked(self.settings.get('hide_key_enabled',True))
+        self.map_key_rows=[
+            ShortcutRow('开启地图快捷键',hotkey_text(self.hotkey),self.edit_hotkey,self.enabled),
+            ShortcutRow('关闭地图快捷键',hotkey_text(self.close_hotkey),self.edit_close_hotkey,self.close_key_enabled),
+            ShortcutRow('隐藏叠图快捷键',hotkey_text(self.hide_hotkey),self.edit_hide_hotkey,self.hide_key_enabled)]
+        self.hotkey_label,self.close_hotkey_label,self.hide_hotkey_label=[row.label for row in self.map_key_rows]
+        for row in self.map_key_rows:
+            self.map_shortcuts.body.addWidget(row)
+            row.toggle.toggled.connect(lambda _:self.update_map_keys())
         # Status has not been inserted yet; indexOf returned -1 here, which
         # Qt interpreted as stretching every row, including the title.
         pet_row = W.QHBoxLayout()
@@ -1140,12 +1144,19 @@ class Companion(W.QWidget):
         quit_button.setStyleSheet('background:transparent;color:#9fb3c2;border:none;padding:2px;')
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
-        preferences.addLayout(pet_row)
-        preferences.addLayout(font_row)
+        self.general_section.body.addLayout(font_row)
+        size_row=W.QHBoxLayout();size_row.addWidget(W.QLabel('字号'),1)
+        self.font_size=W.QSpinBox();self.font_size.setRange(12,22);self.font_size.setSuffix(' px')
+        self.font_size.setStyleSheet('QSpinBox {background:rgba(17,33,46,180);color:#dbe5ec;border:1px solid rgba(160,185,204,65);padding:3px 6px;}')
+        self.font_size.setValue(int(self.settings.get('font_size',16)))
+        self.font_size.valueChanged.connect(lambda _:self.font_changed())
+        size_row.addWidget(self.font_size);self.general_section.body.addLayout(size_row)
+        self.general_section.body.addLayout(pet_row)
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
-        preferences.addWidget(update_button)
+        self.general_section.body.addWidget(update_button)
+        self.update_map_keys(False)
         layout.addWidget(self.panel)
         self.panel.hide()
         self.toast = SpeechBubble()
@@ -1200,12 +1211,13 @@ class Companion(W.QWidget):
             self.tray.show()
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
         # Prepare the filtered index while the gear is idle, before the first G.
-        C.QTimer.singleShot(0,self.start_worker)
+        self.module_tabs.setCurrentIndex(1 if self.last_module=='games' else 0)
+        C.QTimer.singleShot(0,self.refresh_matching_module)
 
         from .update_notice import watch_once
         def update_notice(available):
             self.update_button.set_update_available(available)
-            self.setting_sections[1].header.set_update_available(available)
+            self.general_section.header.set_update_available(available)
             self.update_button.setToolTip('发现新版本，点击更新' if available else '')
         watch_once(self, ROOT, update_notice)
 
@@ -1223,13 +1235,57 @@ class Companion(W.QWidget):
             self.toggle_panel()
         return super().event(event)
 
+    def matching_available(self):
+        controls=getattr(self,'matching_controls',None)
+        return controls is None or (controls.task is None and controls.store.enabled())
+
+    def update_map_keys(self,persist=True):
+        self.keys.toggle_key=HOTKEYS[self.hotkey] if self.enabled.isChecked() else 0
+        self.keys.close_key=HOTKEYS[self.close_hotkey] if self.close_key_enabled.isChecked() else 0
+        self.keys.hide_key=HOTKEYS[self.hide_hotkey] if self.hide_key_enabled.isChecked() else 0
+        for row,label,key in zip(self.map_key_rows,('开启地图快捷键','关闭地图快捷键','隐藏叠图快捷键'),(self.hotkey,self.close_hotkey,self.hide_hotkey)):
+            row.set_key(label,hotkey_text(key))
+        if persist:self.save()
+
+    def refresh_matching_module(self):
+        available=self.matching_available()
+        for i in (0,1,2,4,6):self.setting_sections[i].setEnabled(available)
+        self.cached_candidate=None;self.confirmed_candidate=None
+        self.switch_module(self.module_tabs.currentIndex())
+        if available:self.start_worker()
+
+    def switch_module(self,index):
+        if index in (0,1):self.last_module='games' if index==1 else 'notes'
+        available=self.matching_controls.store.enabled()
+        if hasattr(self,'status'):self.status.setVisible(index==0 and available)
+        for i,section in enumerate(self.setting_sections):
+            section.setVisible(i in ({0,1,2,4,6,7} if index==0 and available else {7} if index==0 else {3} if index==1 else {5}))
+        self.version_section.header.setVisible(available)
+        if not available:self.version_section.header.setChecked(True)
+        self.settings_scroll.verticalScrollBar().setValue(0)
+        self.resize_settings()
+        if index==1:self.minigames.sync_catalog()
+
     def resize_settings(self):
-        for section in self.setting_sections:
-            section.body.invalidate()
-            section.body.activate()
-            section.layout().invalidate()
-            section.layout().activate()
-            section.setFixedHeight(section.sizeHint().height())
+        # A previous fixed height must never feed back into the next sizeHint.
+        # Measure nested folds from the inside out, using their actual contents.
+        for section in reversed(self.panel.findChildren(FoldSection)):
+            section.setMinimumHeight(0);section.setMaximumHeight(16777215)
+            # Nested QWidget layouts cache their own sizeHint as well. Flush
+            # those wrappers after measuring inner folds, before the outer fold.
+            for widget in reversed(section.content.findChildren(W.QWidget)):
+                if widget.layout() is not None:
+                    widget.layout().invalidate();widget.layout().activate()
+                widget.updateGeometry()
+            section.body.invalidate();section.body.activate()
+            head=0 if section.header.isHidden() else section.header.height()
+            body=0
+            if not section.content.isHidden():
+                width=max(1,section.width())
+                body=section.body.heightForWidth(width) if section.body.hasHeightForWidth() else section.body.sizeHint().height()
+            section.setFixedHeight(head+max(0,body))
+            section.updateGeometry()
+            section.layout().invalidate();section.layout().activate()
         self.settings_scroll.widget().layout().invalidate()
         self.settings_scroll.widget().layout().activate()
         wanted = self.settings_scroll.widget().sizeHint().height()
@@ -1239,6 +1295,8 @@ class Companion(W.QWidget):
         overhead = self.gear.height()+8+6+36+30+60
         available = area.bottom()-max(area.top(), self.y())-overhead
         self.settings_scroll.setFixedHeight(min(wanted, max(100, available)))
+        self.panel_content.layout().invalidate()
+        self.panel_content.layout().activate()
         self.panel.layout().invalidate()
         self.panel.layout().activate()
         self.panel.setFixedHeight(self.panel.layout().sizeHint().height())
@@ -1251,8 +1309,6 @@ class Companion(W.QWidget):
         self.toast.hide()
         right = self.geometry().right()
         if not self.panel.isVisible():
-            for index, section in enumerate(self.setting_sections):
-                section.header.setChecked(index == 0)
             self.settings_scroll.verticalScrollBar().setValue(0)
         self.panel.setVisible(not self.panel.isVisible())
         self.resize_settings()
@@ -1315,10 +1371,11 @@ class Companion(W.QWidget):
         return ('hard',None) if self.difficulty.currentIndex() == 0 else ('nightmare','solo' if self.party.currentIndex() == 0 else 'duo')
 
     def save(self):
+        if hasattr(self,"map_key_rows"):self.update_map_keys(False)
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(last_module=self.last_module,difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1482,7 +1539,7 @@ class Companion(W.QWidget):
         # 登记表都在里面（见 mapstore）。旧版把自建图写进 LocalAppData 是因为
         # 内置图只读、两者本来就是两棵树；现在没有内置/自建之分，只留一棵，
         # 免得「管理界面改的那份」和「匹配实际读的那份」不是同一份。
-        dialog=MapImportDialog(ROOT,*self.context(),self)
+        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self)
         if dialog.exec()==W.QDialog.Accepted:
             self.cached_candidate=None
             self.stop_worker()
@@ -1500,7 +1557,7 @@ class Companion(W.QWidget):
         # 可能持有句柄 —— Windows 上 os.replace / rmtree 撞上未关闭的句柄会 WinError 32。
         # 代价是关框后重建一次 worker（约 1 秒），和切难度同量级。
         self.stop_worker()
-        dialog=MapManageDialog(ROOT,*self.context(),self)
+        dialog=MapManageDialog(self.matching_controls.store.root(),*self.context(),self)
         dialog.exec()
         # 看 changed 而不是 exec() 的返回值：用户完全可能改完再点「关闭」，
         # 那时 exec() 返回 Rejected，但库确实变了。
@@ -1573,11 +1630,12 @@ class Companion(W.QWidget):
         valid_family = isinstance(mode,str) and mode.startswith('family:') and mode[7:] in G.QFontDatabase.families()
         self.font_mode = mode if mode in ('game','system') or valid_family else 'game'
         families=font_stack(self.font_mode)
-        font=G.QFont(); font.setFamilies(families); font.setPixelSize(16)
+        font=G.QFont(); font.setFamilies(families); font.setPixelSize(self.font_size.value() if hasattr(self,'font_size') else int(self.settings.get('font_size',16)))
         app=W.QApplication.instance()
         if app is not None:
             app.setFont(font)
-        self.setStyleSheet(STYLE.replace('__FONT__',css_font(self.font_mode)).replace('__ARROW__',ARROW))
+        size=self.font_size.value() if hasattr(self,'font_size') else int(self.settings.get('font_size',16))
+        self.setStyleSheet(STYLE.replace('__FONT__',css_font(self.font_mode)).replace('__ARROW__',ARROW).replace('font-size: 16px;',f'font-size: {size}px;'))
         if hasattr(self,'toast'):
             self.toast.setStyleSheet('QLabel {color:#dbe5ec;background:transparent;border:0;'
                                      'font-size:13px;font-family:'+css_font(self.font_mode)+';}')
@@ -1692,6 +1750,8 @@ class Companion(W.QWidget):
                 {'force_floor':force_floor} if force_floor is not None else {})))
 
     def open_map(self, reason="map_hotkey", force_floor=None, target_override=None):
+        if not Companion.matching_available(self):
+            self.notify("请先下载加页手记地图识别模块");return
         games=getattr(self,'minigames',None)
         if games is not None and games.running():return
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
@@ -1845,10 +1905,11 @@ class Companion(W.QWidget):
         return native.monitor_rect(self.target)
 
     def start_worker(self):
+        if not Companion.matching_available(self):return
         if self.process is None:
             parent,child = mp.Pipe()
             self.connection = parent
-            self.process = mp.Process(target=worker,args=(child,str(ROOT),*self.context()),daemon=True)
+            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context()),daemon=True)
             self.process.start()
             self.worker_deadline = time.monotonic() + 60
             child.close()
@@ -2145,12 +2206,14 @@ class Companion(W.QWidget):
         # capture/template work off the UI thread so it cannot lose more keys.
         if sys.platform == 'win32' and hasattr(self,'visibility_watch'):
             self.visibility_watch()
+        if hasattr(self,"minigames"):self.keys.extra_keys=self.minigames.shortcut_keys()
         edges = self.keys.edges()
         if edges:
             trace('shortcut_edge',keys=sorted(edges),enabled=self.enabled.isChecked(),
                   modal=W.QApplication.activeModalWidget() is not None)
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
+        if hasattr(self,"minigames"):self.minigames.handle_shortcuts(edges)
         foreground = win32gui.GetForegroundWindow()
         if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'report'):
             self.keyboard.report(foreground)
@@ -2171,13 +2234,13 @@ class Companion(W.QWidget):
                 self.target = foreground
         if getattr(self.keys,'close_key',0x1B) in edges:
             self.close_map(background=True)
-        elif self.enabled.isChecked():
-            if self.keys.hide_key in edges:
+        else:
+            if getattr(self.keys,'hide_key',0) and self.keys.hide_key in edges:
                 if self.state.opened:
                     self.close_map(background=True)
                 elif self.is_game(foreground) or self.demo_window is not None:
                     self.open_map('hide_hotkey_restore')
-            elif self.keys.toggle_key in edges and self.is_game(foreground):
+            elif getattr(self.keys,'toggle_key',0) and self.enabled.isChecked() and self.keys.toggle_key in edges and self.is_game(foreground):
                 # A game can close its map through multiple inputs. Never invert
                 # a guessed boolean: inspect the screen after this key instead.
                 # Static local screenshots still need a genuine overlay toggle.
@@ -2365,6 +2428,8 @@ class Companion(W.QWidget):
         if getattr(self, '_shutdown_done', False):
             return
         self._shutdown_done = True
+        for control in (getattr(self,'minigames',None),getattr(self,'matching_controls',None)):
+            if control is not None:control.shutdown()
         tray = getattr(self, 'tray', None)
         if tray is not None:
             tray.hide()

@@ -46,15 +46,16 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     var saveDeadline:DispatchWorkItem?
     var commands:Timer?
     var lastCommand=""
+    var masterMuted=CommandLine.arguments.contains("--muted")
     var fullButton:WindowControl!
-    func publishState(_ hidden:Bool){view?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
+    func publishState(_ hidden:Bool){view?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden || masterMuted))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
     func applicationDidFinishLaunching(_ notification:Notification){
         let config=WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
         config.mediaTypesRequiringUserActionForPlayback=[]
         config.userContentController.add(self,name:"game")
         let hostAudio=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("host-audio.js")
-        if let source=try? String(contentsOf:hostAudio,encoding:.utf8){config.userContentController.addUserScript(WKUserScript(source:source,injectionTime:.atDocumentStart,forMainFrameOnly:true))}
+        if let source=try? String(contentsOf:hostAudio,encoding:.utf8){config.userContentController.addUserScript(WKUserScript(source:source+";window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(masterMuted))",injectionTime:.atDocumentStart,forMainFrameOnly:true))}
         let bridge=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("safe-exit.js")
         if let source=try? String(contentsOf:bridge,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"window.__jellyfishHostPost=m=>webkit.messageHandlers.game.postMessage(m);"+source,injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -102,7 +103,16 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         commands=Timer.scheduledTimer(withTimeInterval:0.2,repeats:true){[weak self] _ in
             guard let self=self,let text=try? String(contentsOf:profile.appendingPathComponent("window-command.json"),encoding:.utf8),text != self.lastCommand else{return}
             self.lastCommand=text
-            if let data=text.data(using:.utf8),let message=try? JSONSerialization.jsonObject(with:data) as? [String:Any],message["action"] as? String=="show"{self.showWindow()}
+            if let data=text.data(using:.utf8),let message=try? JSONSerialization.jsonObject(with:data) as? [String:Any],let action=message["action"] as? String {
+                switch action {
+                case "show":self.showWindow()
+                case "hide":self.hideWindow()
+                case "safe-close":self.close()
+                case "sound-off":self.masterMuted=true;self.publishState(self.window.isMiniaturized)
+                case "sound-on":self.masterMuted=false;self.publishState(self.window.isMiniaturized)
+                default:break
+                }
+            }
         }
     }
     @objc func close(){window.close()}

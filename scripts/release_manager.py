@@ -37,7 +37,7 @@ def validate_android_signing():
 
 PACKAGES = {
     'android': ['IdentityVMapAssistant-Android-arm64.apk'],
-    'windows': ['IdentityVMapAssistant-Windows-x64.zip'],
+    'windows': ['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','matching-module.json'],
     'mac': ['IdentityVMapAssistant-macOS-arm64.zip', 'IdentityVMapAssistant-macOS-x64.zip'],
 }
 
@@ -55,7 +55,7 @@ def input_fingerprint(platform, root=None):
         patterns += ['mapmatching/**', 'requirements*.txt', 'scripts/dist_extras.py',
                      'scripts/run.cmd', 'scripts/create_shortcut.ps1', 'maps/disabled.json',
                      'maps/_unindexed/**', 'docs/images/**', 'README.md', '*.cmd', 'maps/README.md']
-        patterns += (['scripts/build_windows.py', 'scripts/finalize_release.py',
+        patterns += (['scripts/build_windows.py', 'scripts/build_matching_module.py', 'scripts/finalize_release.py',
                       'scripts/update-client.ps1', 'scripts/更新.cmd'] if platform == 'windows' else
                      ['scripts/build_macos.py', 'release/crypticNotes/.github/workflows/macos.yml'])
     files = sorted({p for pattern in patterns for p in root.glob(pattern) if p.is_file()
@@ -175,11 +175,11 @@ def sync_sources(github):
         if not source.is_file(): raise RuntimeError('Tracked source missing: '+name)
         target=checkout/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(source,target)
     # Include this entry point even before it has been committed locally.
-    extra=['scripts/release_manager.py','scripts/release-menu.cmd','docs/releasing.md']
+    extra=['scripts/release_manager.py','scripts/release-menu.cmd','docs/releasing.md','.github/workflows/native-games.yml','.github/workflows/minigames.yml']
     if (ROOT/'macos-version.json').exists():extra.append('macos-version.json')
     for name in extra:
         target=checkout/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,target)
-    run(['git','add','mapmatching','android','maps','scripts','docs','games','README.md'],checkout)
+    run(['git','add','mapmatching','android','maps','scripts','docs','games','README.md','.github/workflows/native-games.yml','.github/workflows/minigames.yml'],checkout)
     if (checkout/'macos-version.json').exists():run(['git','add','macos-version.json'],checkout)
     if run(['git','diff','--cached','--name-only'],checkout,capture=True).strip():
         run(['git','commit','-m','Release: synchronize reviewed source and map library'],checkout)
@@ -247,7 +247,7 @@ def publish(github,state,directory):
         staged.append((name,result['id']))
         print('Verified upload:',name,flush=True)
     # All uploads complete before replacing anything. Manifests are switched last.
-    for name,ident in sorted(staged,key=lambda x:x[0].endswith('-update.json')):
+    for name,ident in sorted(staged,key=lambda x:x[0].endswith(('-update.json','-module.json'))):
         for old in github.api('/releases/'+str(release['id']))['assets']:
             if old['name']==name:github.api('/releases/assets/'+str(old['id']),method='DELETE')
         github.api('/releases/assets/'+str(ident),{'name':name},'PATCH')
@@ -325,12 +325,16 @@ def main():
         p.write_text(json.dumps(version,indent=2),encoding='utf-8');state['macos_version']=version
     if github:branch,sha=sync_sources(github);state['source_commit']=sha
     wanted=set()
+    if 'windows' not in platforms:
+        run([sys.executable,'scripts/build_matching_module.py'])
+        for n in ('IdentityVMapAssistant-Matching.zip','matching-module.json'):
+            shutil.copy2(ROOT/'release'/n,directory/n);wanted.add(n)
     if 'windows' in platforms:
         run([sys.executable,'scripts/build_windows.py'])
         report=directory/'windows-smoke.json'
-        run([ROOT/'dist/IdentityVMapAssistant/IdentityVMapAssistant.exe','--self-test',report])
+        run([ROOT/'dist/IdentityVMapAssistant/IdentityVMapAssistant.exe','--self-test',report],env={**os.environ,'JYSJ_SMOKE_MAP_ROOT':str(ROOT)})
         if not json.loads(report.read_text(encoding='utf-8')).get('ok'):raise RuntimeError('Windows smoke failed')
-        wanted.update(['IdentityVMapAssistant-Windows-x64.zip','windows-update.json','SHA256SUMS.txt'])
+        wanted.update(['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','matching-module.json','windows-update.json','SHA256SUMS.txt'])
         shutil.copy2(ROOT/'scripts/update-client.ps1',directory/'update-client.ps1')
         for n in wanted:shutil.copy2(ROOT/'release'/n,directory/n)
         wanted.add('update-client.ps1')

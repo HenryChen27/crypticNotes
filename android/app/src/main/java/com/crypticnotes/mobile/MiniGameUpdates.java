@@ -14,9 +14,9 @@ final class MiniGameUpdates {
             listeners.add(callback);if(checking)return;checking=true;
         }
         new Thread(()->{try{
-            MiniGameStore store=new MiniGameStore(c);
-            String latest=store.catalogInfo().getString("version");
-            c.getSharedPreferences("mobile",0).edit().putBoolean("gameUpdateAvailable",store.installed()&&!latest.equals(store.version())).apply();
+            org.json.JSONObject catalog=MiniGameStore.collection();boolean update=false;
+            java.util.Iterator<String> ids=catalog.keys();while(ids.hasNext()){String id=ids.next();MiniGameStore store=new MiniGameStore(c,id);if(store.installed()&&!catalog.getJSONObject(id).optString("sha256").equals(store.hash()))update=true;}
+            c.getSharedPreferences("mobile",0).edit().putString("gameCatalog",catalog.toString()).putBoolean("gameUpdateAvailable",update).apply();
             checkedAt=android.os.SystemClock.elapsedRealtime();
         }catch(Exception ignored){}finally{
             java.util.ArrayList<Runnable> ready;

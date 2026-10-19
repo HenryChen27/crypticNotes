@@ -292,7 +292,7 @@ class Keys:
         self.raw_keyboard=False; self.raw_mouse=False
 
     def raw_edge(self, key, released):
-        if key not in (self.toggle_key,self.hide_key,self.close_key):return
+        if key not in (self.toggle_key,self.hide_key,self.close_key,*getattr(self,"extra_keys",())):return
         if released:
             self.down.discard(key)
         elif key not in self.down:
@@ -301,7 +301,7 @@ class Keys:
 
     def edges(self):
         from mapmatching.macos_input import pressed_virtual_keys
-        watched=(self.toggle_key,self.hide_key,self.close_key)
+        watched=(self.toggle_key,self.hide_key,self.close_key,*getattr(self,"extra_keys",()))
         pressed={key for key in watched if pressed_virtual_keys(key)}
         rising=(pressed-self.down)|self.pending_edges
         self.pending_edges.clear()

@@ -58,6 +58,7 @@ public final class Theme {
 
     /** Bundled desktop font, staged from mapmatching/assets/fonts by prepare_android.py. */
     public static Typeface typeface(Context context) {
+        if(context.getSharedPreferences("mobile",0).getBoolean("fontSystem",false))return Typeface.SANS_SERIF;
         if (typeface == null) {
             try {
                 typeface = Typeface.createFromAsset(context.getAssets(), "fonts/DFPOP1-W5.ttf");
@@ -69,7 +70,7 @@ public final class Theme {
     }
 
     public static <T extends TextView> T text(T view, float sizeDp, int color) {
-        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, sizeDp);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_DIP, sizeDp*view.getContext().getSharedPreferences("mobile",0).getInt("fontSize",16)/16f);
         view.setTextColor(color);
         view.setTypeface(typeface(view.getContext()));
         return view;

@@ -44,17 +44,20 @@ public class MiniGameOverlayService extends Service {
     private final Runnable applyLayout=()->{layoutQueued=false;if(shell!=null&&shell.isAttachedToWindow())windows.updateViewLayout(shell,params);};
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
     private final Runnable saveTimeout=()->closeFailed("保存超时");
+    static String activeGameId="jellyfish";
     @Override public IBinder onBind(Intent intent){return null;}
+    void applyHostSound(){if(web!=null)web.evaluateJavascript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted("+(!getSharedPreferences("mobile",0).getBoolean("gameSound",true)||hidden)+")",null);}
     void runOnUiThread(Runnable action){new android.os.Handler(android.os.Looper.getMainLooper()).post(action);}
     @Override public int onStartCommand(Intent intent,int flags,int id){if(intent!=null){if("show".equals(intent.getAction()))showGame();else if("auto-hide".equals(intent.getAction())&&!hidden){hideGame();handler.postDelayed(autoClose,5000);}}return START_NOT_STICKY;}
     @Override public void onCreate(){
         super.onCreate();
+        activeGameId=getSharedPreferences("mobile",0).getString("active_game","jellyfish");
         current=this;running=true;hidden=false;
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("mini-game","小游戏",NotificationManager.IMPORTANCE_LOW));
-        startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("合成大水母正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setContentIntent(PendingIntent.getForegroundService(this,0,new Intent(this,MiniGameOverlayService.class).setAction("show"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).setOngoing(true).build());
-        MiniGameStore store=new MiniGameStore(this);if(!store.installed()||!Settings.canDrawOverlays(this)){stopSelf();return;}
-        root=new File(store.game,"game");File folder=new File(getFilesDir(),"minigame-saves/jellyfish");folder.mkdirs();save=new AtomicFile(new File(folder,"local-storage.json"));
+        startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("小游戏正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setContentIntent(PendingIntent.getForegroundService(this,0,new Intent(this,MiniGameOverlayService.class).setAction("show"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).setOngoing(true).build());
+        MiniGameStore store=new MiniGameStore(this,activeGameId);if(!store.installed()||!Settings.canDrawOverlays(this)){stopSelf();return;}
+        root=new File(store.game,"game");File folder=new File(getFilesDir(),"minigame-saves/"+activeGameId);folder.mkdirs();save=new AtomicFile(new File(folder,"local-storage.json"));
         web=new WebView(this);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
         shell=new GameWindowChrome(this,web,new GameWindowChrome.Host(){
@@ -108,7 +111,7 @@ public class MiniGameOverlayService extends Service {
                     return new WebResourceResponse(mime==null?"application/octet-stream":mime,null,new FileInputStream(f));
                 }catch(Exception e){return blocked();}
             }
-            @Override public void onPageFinished(WebView view,String url){setHostMuted(hidden);}
+            @Override public void onPageFinished(WebView view,String url){applyHostSound();setHostMuted(hidden);}
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error){if(request.isForMainFrame())Toast.makeText(MiniGameOverlayService.this,"游戏加载失败："+error.getDescription(),Toast.LENGTH_LONG).show();}
         });web.loadUrl("https://minigame.local/index.html");
         screenReceiver=new android.content.BroadcastReceiver(){public void onReceive(android.content.Context c,Intent i){
@@ -183,7 +186,7 @@ public class MiniGameOverlayService extends Service {
         windows.addView(shell,params);windowRegistered=true;
         android.util.Log.i("CrypticNotes","Mini-game window registered");
     }
-    void setHostMuted(boolean mute){if(web!=null)web.evaluateJavascript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted("+mute+")",null);}
+    void setHostMuted(boolean mute){mute=mute||!getSharedPreferences("mobile",0).getBoolean("gameSound",true);if(web!=null)web.evaluateJavascript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted("+mute+")",null);}
     void clampPosition(){android.util.DisplayMetrics m=new android.util.DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);params.x=Math.max(0,Math.min(m.widthPixels-params.width,params.x));params.y=Math.max(0,Math.min(m.heightPixels-params.height,params.y));}
     @Override public void onConfigurationChanged(Configuration c){
         super.onConfigurationChanged(c);
