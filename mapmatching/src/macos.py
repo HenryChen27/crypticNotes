@@ -199,7 +199,10 @@ def keep_floating(window, level=None):
                 panel.setBecomesKeyOnlyIfNeeded_(True)
         panel.setHidesOnDeactivate_(False)
         panel.setCanHide_(False)
-        panel.setLevel_(_appkit('NSScreenSaverWindowLevel', 1000) if level is None else level)
+        base_level = _appkit('NSScreenSaverWindowLevel', 1000)
+        if level is None:
+            level = base_level + (1 if isinstance(widget, W.QDialog) else 0)
+        panel.setLevel_(level)
         panel.setCollectionBehavior_(
             _appkit('NSWindowCollectionBehaviorCanJoinAllSpaces', 1 << 0) |
             _appkit('NSWindowCollectionBehaviorStationary', 1 << 4) |
@@ -232,13 +235,16 @@ def install_window_policy(app):
                         try:
                             if not watched.isVisible():
                                 return
-                            keep_floating(int(watched.winId()),1001)
                             watched.raise_()
                             if isinstance(watched,W.QDialog):
                                 watched.activateWindow()
+                            # Qt may reset the native level while activating a dialog.
+                            keep_floating(int(watched.winId()), _appkit('NSScreenSaverWindowLevel',1000)+1)
                         except RuntimeError:
                             pass  # A transient popup may already have been deleted.
                     C.QTimer.singleShot(0,promote)
+                    C.QTimer.singleShot(120,promote)
+                    C.QTimer.singleShot(350,promote)
             return False
 
     app._mac_window_policy=WindowPolicy(app)
