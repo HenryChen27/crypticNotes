@@ -20,7 +20,8 @@ class PetTests(unittest.TestCase):
         button.pet.play('heart')
         self.assertFalse(button.matching)
         self.assertEqual(button.pet.mood,'matching')
-        self.assertTrue(button.match_timer.isActive())
+        self.assertFalse(button.match_timer.isActive())
+        self.assertTrue(button.pet.timer.isActive())
         frame=button.grab().toImage()
         self.assertFalse(frame.isNull())
         button.set_game_background(False)
@@ -76,6 +77,7 @@ class PetTests(unittest.TestCase):
         button.pet.enable(False)
         button.set_matching(True)
         self.assertTrue(button.match_timer.isActive())
+        self.assertFalse(button.pet.timer.isActive())
         button.set_matching(False)
 
     @classmethod

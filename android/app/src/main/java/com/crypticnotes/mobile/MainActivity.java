@@ -160,6 +160,10 @@ public class MainActivity extends Activity {
         });
 
         LinearLayout more = fold("辅助设置", false);
+        Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
+        powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
+        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","降低检查频率；小游戏采用更小动画缓存并最多请求60Hz，重开小游戏生效。手动识别不受等待限制。"),powerSaving),matchWrap());
+        powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
         Theme.ChalkChoice feedback = new Theme.ChalkChoice(this,new String[]{"关","开"});
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
         more.addView(choiceRow(fieldLabel("轻触反馈"),feedback),matchWrap());

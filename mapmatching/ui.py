@@ -789,7 +789,7 @@ class DraggableGear(GearButton):
         self.matching=active
         if active:
             self.match_clock.start()
-            self.match_timer.start()
+            if not self.pet.enabled:self.match_timer.start()
             self.pet.play('matching')
         else:
             if not self.game_background:self.match_timer.stop()
@@ -805,7 +805,8 @@ class DraggableGear(GearButton):
             self.window.adjustSize();self.window.layout().invalidate();self.window.layout().activate()
             self.window.place_gear(anchor-C.QPoint(self.width()//2,self.height()//2))
         if active:
-            self.match_clock.start();self.match_timer.start();self.pet.play('matching')
+            self.match_clock.start();self.pet.play('matching')
+            if not self.pet.enabled:self.match_timer.start()
         else:
             if not self.matching:self.match_timer.stop();self.pet.play('idle')
         self.update()
@@ -1112,6 +1113,11 @@ class Companion(W.QWidget):
         library.addWidget(import_button)
         debug.addWidget(local)
         records_row = W.QHBoxLayout()
+        self.power_saving=FrostCheckBox('省电模式')
+        self.power_saving.setChecked(self.settings.get('power_saving',False))
+        self.power_saving.setToolTip('降低状态检查和布偶动画频率；地图关闭检测最多稍慢，不改变匹配分辨率和判定')
+        self.power_saving.toggled.connect(lambda _:self.save())
+        debug.addWidget(self.power_saving)
         self.record_failures = FrostCheckBox('记录识别案例')
         self.record_failures.setChecked(self.settings.get('record_failures', True))
         self.record_failures.setToolTip('保存成功与失败截图及诊断数据，每个分类各保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
@@ -1312,7 +1318,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1661,6 +1667,9 @@ class Companion(W.QWidget):
             self.notify(f'无法启动更新：{exc}')
 
     def retry(self, force_floor=None):
+        if sys.platform=='win32':
+            from .window_map_capture import allow_capture_retry
+            allow_capture_retry()
         games=getattr(self,'minigames',None)
         if games is not None and games.running():
             if games.game_hidden:games.restore_game()
@@ -1757,6 +1766,8 @@ class Companion(W.QWidget):
                             try:
                                 attempt = (token, time.monotonic(), WindowSnapshot(hwnd))
                                 self._window_snapshot = attempt
+                            except PermissionError:
+                                raise
                             except Exception as exc:
                                 trace('window_capture_fallback', error=str(exc))
                                 attempt = None
@@ -1764,6 +1775,7 @@ class Companion(W.QWidget):
                             snapshot = attempt[2]
                             if snapshot.result is not None:
                                 pixels, self.rect_at_capture = snapshot.result
+                                snapshot.stop()
                                 self._capture_window_hwnd = hwnd
                                 self._window_snapshot = None
                                 trace('window_frame_ready', hwnd=hwnd, shape=list(pixels.shape), rect=self.rect_at_capture)
@@ -1773,6 +1785,8 @@ class Companion(W.QWidget):
                             else:
                                 snapshot.stop()
                                 self._window_snapshot = None
+                                from .window_map_capture import capture_denied
+                                if capture_denied(snapshot.error or ''):raise PermissionError('截图授权未完成，请允许权限后点击重新识别')
                                 trace('window_capture_fallback', error=snapshot.error or 'timeout')
                 if pixels is None:
                     self._capture_window_hwnd = None
@@ -1805,7 +1819,9 @@ class Companion(W.QWidget):
             self.force_floor = None
         except Exception as error:
             self.close_map(silent=True)
-            self.notify('截屏失败：'+str(error))
+            trace('capture_error',error=str(error),error_type=type(error).__name__)
+            self.notify('截图授权未完成，已停止识图；允许权限后点重新识别' if isinstance(error,PermissionError)
+                        else '截图失败，已停止本次识图；请重试或查看诊断日志')
         finally:
             waiting = getattr(self, '_window_snapshot', None)
             self._capturing = bool(waiting and waiting[0] == token)
@@ -2069,7 +2085,7 @@ class Companion(W.QWidget):
                 or getattr(self,'_capture_hidden',False) or getattr(self,'_capturing',False)
                 or W.QApplication.activeModalWidget() is not None):
             return
-        self.visibility_next=now+.8
+        self.visibility_next=now+(1.6 if hasattr(self,'power_saving') and self.power_saving.isChecked() else .8)
         self.visibility_running=True
         token=self.state.generation
         rect=self.capture_rect()
@@ -2115,9 +2131,11 @@ class Companion(W.QWidget):
             launch()
 
     def tick(self):
+        saving=hasattr(self,'power_saving') and self.power_saving.isChecked()
+        if hasattr(self,'timer'):self.timer.setInterval(40 if saving else 20)
         # Capture cancellation must never leave only a tray icon behind.
         if not self.state.opened and not getattr(self,'_shutdown_done',False):
-            self.restore_capture_companion()
+            if getattr(self,'_capture_hidden',False):self.restore_capture_companion()
             if getattr(self,'_visibility_hidden',False):
                 self._visibility_hidden=False
                 show_floating(self)
@@ -2380,6 +2398,8 @@ def main():
     # Windows DPI awareness must precede Qt; Cocoa initialization must not.
     if sys.platform != 'darwin':
         native.dpi_aware()
+    from .src.ui_trace import enable_crash_logging
+    enable_crash_logging('desktop')
     app = W.QApplication(sys.argv[:1])
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.

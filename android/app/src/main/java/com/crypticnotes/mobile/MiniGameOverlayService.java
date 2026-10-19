@@ -95,7 +95,7 @@ public class MiniGameOverlayService extends Service {
                     if(f.getName().equals("index.html")){
                         String page=MiniGameStore.read(f),saved="{}";
                         try(InputStream in=save.openRead()){saved=new String(MiniGameStore.bytes(in,1024*1024),StandardCharsets.UTF_8);}catch(IOException ignored){}
-                        String script="<style>*{-webkit-tap-highlight-color:transparent}html,body{overscroll-behavior:none}canvas{-webkit-user-select:none;user-select:none}</style><script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
+                        String script="<script>window.__crypticPowerSaving="+getSharedPreferences("mobile",0).getBoolean("power_saving",false)+";</script><style>*{-webkit-tap-highlight-color:transparent}html,body{overscroll-behavior:none}canvas{-webkit-user-select:none;user-select:none}</style><script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
                         try(InputStream audio=getAssets().open("host-audio.js")){script+="<script>"+new String(MiniGameStore.bytes(audio,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream performance=getAssets().open("host-performance.js")){script+="<script>"+new String(MiniGameStore.bytes(performance,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         try(InputStream animation=getAssets().open("host-animation-cache.js")){script+="<script>"+new String(MiniGameStore.bytes(animation,64*1024),StandardCharsets.UTF_8)+"</script>";}
@@ -192,6 +192,7 @@ public class MiniGameOverlayService extends Service {
     private void requestHighRefreshRate(){
         Display display=windows.getDefaultDisplay();Display.Mode current=display.getMode();float rate=display.getRefreshRate();
         for(Display.Mode mode:display.getSupportedModes())if(mode.getPhysicalWidth()==current.getPhysicalWidth()&&mode.getPhysicalHeight()==current.getPhysicalHeight())rate=Math.max(rate,mode.getRefreshRate());
+        if(getSharedPreferences("mobile",0).getBoolean("power_saving",false))rate=Math.min(rate,60f);
         params.preferredRefreshRate=rate;
         if(android.os.Build.VERSION.SDK_INT>=35)web.setRequestedFrameRate(rate);
         if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);

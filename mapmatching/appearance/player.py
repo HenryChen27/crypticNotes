@@ -45,6 +45,10 @@ class PetAnimation:
 
     def enable(self, enabled):
         self.enabled = bool(enabled and not self.pixmap.isNull())
+        extra=getattr(self.button,'match_timer',None)
+        if extra is not None:
+            if self.enabled:extra.stop()
+            elif getattr(self.button,'matching',False) or getattr(self.button,'game_background',False):extra.start()
         self.timer.stop()
         if self.enabled:
             self.mood = 'matching' if getattr(self.button,'matching',False) or getattr(self.button,'game_background',False) else 'idle'
@@ -75,6 +79,10 @@ class PetAnimation:
                 self.mood = 'idle'
             self.clock.restart()
             self.timer.setInterval(33 if self.mood == 'matching' else 50)
+        window=getattr(self.button,'window',None)
+        choice=getattr(window,'power_saving',None)
+        saving=choice is not None and choice.isChecked()
+        self.timer.setInterval((66 if self.mood=='matching' else 100) if saving else (33 if self.mood=='matching' else 50))
         if self.button.isVisible():
             self.button.update()
 

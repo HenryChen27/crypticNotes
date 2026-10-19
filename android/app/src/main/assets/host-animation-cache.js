@@ -2,7 +2,7 @@
 (()=>{
   function install(){
     if(typeof JellyfishAnimation==='undefined')return;
-    const original=JellyfishAnimation.draw,cache=new WeakMap(),steps=48,maxSide=160;
+    const original=JellyfishAnimation.draw,cache=new WeakMap(),steps=window.__crypticPowerSaving?24:48,maxSide=window.__crypticPowerSaving?128:160;
     JellyfishAnimation.draw=function(ctx,item,profile,time=performance.now()){
       if(item.level===1||item.level===2){
         ctx.drawImage(item.sprite,-item.w/2,-item.h/2,item.w,item.h);return;

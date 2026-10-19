@@ -307,8 +307,12 @@ def worker(connection, root, difficulty, mode):
     import time
     from .matcher import MapMatcher
     from .reference import read_image
+    from .ui_trace import enable_crash_logging
+    enable_crash_logging('matcher')
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
+    from functools import lru_cache
+    read_source=lru_cache(maxsize=1)(read_image)
     root = Path(root)
     recorder = None
     options = {}
@@ -386,12 +390,12 @@ def worker(connection, root, difficulty, mode):
             if centered_offer is not None:
                 ref=next((r for r in matcher.references if r.map_id == candidate.map_id),None)
                 if ref is not None:
-                    layer=centered_floor_layer(pixels.shape,read_image(root/ref.source),ref,candidate.floor,
+                    layer=centered_floor_layer(pixels.shape,read_source(root/ref.source),ref,candidate.floor,
                                                scale=options['confirmed_candidate'].pose.scale)
                 result.diagnostics['manual_centered'] = True
             elif candidate is not None:
                 ref = next(r for r in matcher.references if r.map_id == candidate.map_id)
-                layer = raw_layer(pixels.shape, read_image(root/ref.source), ref, candidate,
+                layer = raw_layer(pixels.shape, read_source(root/ref.source), ref, candidate,
                                   result.diagnostics.get('excluded_panel_boxes',[]),
                                   full_view=result.diagnostics.get('full_view',False))
             # Centering is allowed ONLY after this request's explicit consent,

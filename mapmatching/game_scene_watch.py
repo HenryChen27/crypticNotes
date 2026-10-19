@@ -60,6 +60,8 @@ class WindowSceneWatch(C.QObject):
     def __init__(self,hwnd,parent=None):
         super().__init__(parent);self.hwnd=int(hwnd);self.detector=SceneDetector();self.control=None;self.active=False;self.last_frame=0
     def start(self):
+        from .window_map_capture import ensure_capture_allowed
+        ensure_capture_allowed()
         from windows_capture import WindowsCapture
         import win32gui
         self.active=True
@@ -80,10 +82,20 @@ class WindowSceneWatch(C.QObject):
             if self.active:self.failed.emit('第五人格窗口已关闭，画面检测已停止')
         self.capture=capture
         try:self.control=capture.start_free_threaded()
-        except Exception:self.active=False;raise
+        except Exception:
+            self.active=False
+            capture.frame_handler=None;capture.closed_handler=None;capture.capture=None
+            self.capture=None
+            raise
     def stop(self):
         self.active=False
-        if self.control is not None:
-            try:self.control.stop()
-            except Exception:pass
-            self.control=None
+        control=self.control;self.control=None
+        capture=getattr(self,'capture',None);self.capture=None
+        if control is not None:
+            import threading
+            def release():
+                try:control.stop();control.wait()
+                except Exception:return
+                if capture is not None:
+                    capture.frame_handler=None;capture.closed_handler=None;capture.capture=None
+            threading.Thread(target=release,daemon=True,name='scene-capture-release').start()

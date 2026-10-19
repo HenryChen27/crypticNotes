@@ -2,10 +2,14 @@
 import sys
 import json
 import time
-from PySide6 import QtCore as C, QtWidgets as W
+from PySide6 import QtCore as C, QtWidgets as W, QtGui as G
 from .paths import DATA_ROOT
 from .theme import ChalkButton
 from .minigames import GameStore
+
+
+def game_profile(controls):
+    return DATA_ROOT/'minigame-saves'/getattr(getattr(controls,'store',None),'game_id','jellyfish')
 
 
 class DownloadTask(C.QThread):
@@ -31,6 +35,8 @@ class GameControls(W.QWidget):
         super().__init__(companion)
         self.companion = companion
         self.store = GameStore(DATA_ROOT)
+        from .local_minigames import local_games
+        self.stores=[self.store,*local_games(DATA_ROOT)]
         self.task = None
         self.process = C.QProcess(self)
         self.process.setProcessChannelMode(C.QProcess.MergedChannels)
@@ -52,31 +58,64 @@ class GameControls(W.QWidget):
         self.window_timer.timeout.connect(self.check_window_state)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(W.QLabel('合成大水母'))
-        self.status = W.QLabel()
-        self.status.setObjectName('muted')
-        self.status.setWordWrap(True)
+        self.game_rows=[]
+        for index,store in enumerate(self.stores):
+            title=W.QLabel(getattr(store,'title','合成大水母'))
+            layout.addWidget(title)
+            row=W.QHBoxLayout()
+            download,launch,remove=ChalkButton('下载'),ChalkButton('启动'),ChalkButton('删除')
+            for button in (download,launch,remove):row.addWidget(button)
+            layout.addLayout(row)
+            if index<len(self.stores)-1:layout.addSpacing(10)
+            download.clicked.connect(lambda checked=False,i=index:self.row_action(i,'download'))
+            launch.clicked.connect(lambda checked=False,i=index:self.row_action(i,'launch'))
+            remove.clicked.connect(lambda checked=False,i=index:self.row_action(i,'delete'))
+            self.game_rows.append((title,download,launch,remove))
+        self.game_title,self.download,self.launch,self.remove=self.game_rows[0]
+        self.status=W.QLabel()
+        self.status.setObjectName('muted');self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.progress = W.QProgressBar()
-        self.progress.setRange(0, 100)
-        self.progress.hide()
+        self.progress=W.QProgressBar();self.progress.setRange(0,100);self.progress.hide()
         layout.addWidget(self.progress)
-        row = W.QHBoxLayout()
-        self.download = ChalkButton('下载')
-        self.launch = ChalkButton('启动')
-        self.remove = ChalkButton('删除')
-        for button in (self.download, self.launch, self.remove):
-            row.addWidget(button)
-        layout.addLayout(row)
         self.install_engine = ChalkButton('安装系统游戏运行组件')
         self.install_engine.hide()
         self.install_engine.clicked.connect(self.install_system_engine)
         layout.addWidget(self.install_engine)
-        self.download.clicked.connect(self.download_game)
-        self.launch.clicked.connect(self.launch_game)
-        self.remove.clicked.connect(self.delete_game)
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
         self.refresh()
+
+    def row_action(self,index,action):
+        if self.task:
+            if action=='download' and self.store is self.stores[index]:self.download_game()
+            return
+        if self.running() and self.store is not self.stores[index]:
+            if action=='launch':self.select_game(index)
+            return
+        self.select_game(index)
+        if action=='launch':self.launch_game()
+        elif action=='download':self.download_game()
+        elif action=='delete':self.delete_game()
+
+    def select_game(self,index):
+        if self.task:return
+        if self.running():
+            if self.store is self.stores[index]:return
+            self.pending_game_index=index
+            self.status.setText('正在保存并关闭上一款小游戏…')
+            self.send_window_command('safe-close')
+            C.QTimer.singleShot(15000,self.cancel_game_switch)
+            return
+        self.store=self.stores[index]
+        self.game_title,self.download,self.launch,self.remove=self.game_rows[index]
+        self.game_title.setText(getattr(self.store,'title','合成大水母'))
+        self.companion.gear.game_icon=G.QPixmap(str(getattr(self.store,'icon',DATA_ROOT/'mapmatching/assets/minigames/fish5.png')))
+        self.refresh()
+
+    def cancel_game_switch(self):
+        if getattr(self,'pending_game_index',None) is None or not self.running():return
+        self.pending_game_index=None
+        self.refresh()
+        self.status.setText('上一款小游戏尚未安全退出，请处理保存提示后重试')
 
     def running(self):
         return self.process.state() != C.QProcess.NotRunning
@@ -85,7 +124,7 @@ class GameControls(W.QWidget):
         hidden=self.game_hidden if self.running() else False
         if self.running():
             try:
-                hidden=bool(json.loads((DATA_ROOT/'minigame-saves/jellyfish/window-state.json').read_text()).get('hidden'))
+                hidden=bool(json.loads((game_profile(self)/'window-state.json').read_text()).get('hidden'))
             except (OSError,ValueError):
                 pass
         if hidden!=self.game_hidden:
@@ -123,7 +162,7 @@ class GameControls(W.QWidget):
         self.companion.notify('游戏画面明显变化，小游戏已收起；5秒内恢复可继续')
 
     def send_window_command(self,action):
-        folder=DATA_ROOT/'minigame-saves/jellyfish';target=folder/'window-command.json';temp=folder/'window-command.tmp'
+        folder=game_profile(self);target=folder/'window-command.json';temp=folder/'window-command.tmp'
         temp.write_text(json.dumps({'action':action,'id':time.time_ns()}),encoding='utf-8');temp.replace(target)
 
     def restore_game(self):
@@ -147,16 +186,21 @@ class GameControls(W.QWidget):
     def refresh(self):
         busy = self.task is not None
         installed = self.store.installed()
-        legacy = installed and not self.store.native()
-        self.download.setEnabled(not self.running())
-        self.download.setText('取消下载' if busy else '升级轻量版' if legacy else '更新游戏' if installed else '下载')
-        self.launch.setEnabled(installed and not busy)
-        self.launch.setText('回到游戏' if self.running() else '启动')
-        self.remove.setEnabled(installed and not busy and not self.running())
+        local=getattr(self.store,'local',False)
+        switching=getattr(self,'pending_game_index',None) is not None
+        for store,(_,download,launch,remove) in zip(self.stores,self.game_rows):
+            present=store.installed();source=getattr(store,'local',False);selected=store is self.store
+            legacy=present and not store.native()
+            download.setEnabled(not source and not self.running() and (not busy or selected))
+            download.setText('本地源码' if source else '取消下载' if busy and selected else '升级轻量版' if legacy else '更新游戏' if present else '下载')
+            launch.setEnabled(present and not busy and not switching)
+            launch.setText('回到游戏' if selected and self.running() else '启动')
+            remove.setEnabled(not source and present and not busy and not self.running())
         if not busy:
-            self.status.setText(f'已下载 · {self.store.size()/1024/1024:.0f} MB' if installed else '按需下载，未启动时不占用游戏运行资源')
+            self.status.setText(('直接读取本地源码 · 存档独立保存' if installed else '本地源码或公共启动器不存在') if local else f'已下载 · {self.store.size()/1024/1024:.0f} MB' if installed else '按需下载，未启动时不占用游戏运行资源')
 
     def download_game(self):
+        if getattr(self.store,'local',False):return
         if self.task:
             self.task.requestInterruption()
             self.download.setEnabled(False)
@@ -202,16 +246,16 @@ class GameControls(W.QWidget):
             self.companion.toggle_panel()
         self.ready = False
         self.output.clear()
-        profile = DATA_ROOT/'minigame-saves/jellyfish'
+        profile = game_profile(self)
         profile.mkdir(parents=True, exist_ok=True)
         for name in ('window-state.json','window-command.json'):
             (profile/name).unlink(missing_ok=True)
         self.ready_file = profile/'ready'
         self.ready_file.unlink(missing_ok=True)
         self.process.setWorkingDirectory(str(self.store.folder))
-        arguments = ['--game-root', str(self.store.folder/'game'), '--profile', str(profile)]
+        arguments = ['--game-root', str(getattr(self.store,'game_root',self.store.folder/'game')), '--profile', str(profile)]
         if self.store.native():
-            arguments += ['--title', '合成大水母']
+            arguments += ['--title', getattr(self.store,'title','合成大水母')]
         self.process.start(str(self.store.entry()), arguments)
         self.window_timer.start()
         self.start_timer.start(45000)
@@ -226,6 +270,9 @@ class GameControls(W.QWidget):
     def check_ready(self):
         if self.ready_file.exists() and not self.ready:
             self.ready = True
+            if sys.platform=='win32' and getattr(self.store,'window_icon',None):
+                from .local_minigames import set_window_icon
+                self._native_game_icon=set_window_icon(int(self.process.processId()),self.store.window_icon)
             self.start_timer.stop()
             self.ready_timer.stop()
             self.refresh()
@@ -245,6 +292,8 @@ class GameControls(W.QWidget):
         self.status.setText('小游戏无法启动，请删除后重新下载')
 
     def game_finished(self, code, status):
+        next_game=getattr(self,'pending_game_index',None)
+        self.pending_game_index=None
         self.stop_scene_watch()
         self.window_timer.stop()
         self.game_hidden=False
@@ -258,8 +307,12 @@ class GameControls(W.QWidget):
         elif code:
             directory = DATA_ROOT/'out/minigames'
             directory.mkdir(parents=True, exist_ok=True)
-            (directory/'jellyfish.log').write_bytes(bytes(self.output))
+            (directory/(self.store.game_id+'.log')).write_bytes(bytes(self.output))
             self.status.setText('小游戏已退出，错误日志已保存到 out/minigames')
+
+        if next_game is not None and code==0:
+            self.select_game(next_game)
+            C.QTimer.singleShot(0,self.launch_game)
 
     def install_system_engine(self):
         if self.task:
@@ -289,6 +342,7 @@ class GameControls(W.QWidget):
             self.status.setText('系统运行组件已安装，可以启动小游戏')
 
     def delete_game(self):
+        if getattr(self.store,'local',False):return
         if self.task or self.running():
             return
         answer = W.QMessageBox.question(self.companion, '删除小游戏', '删除合成大水母包体？游戏偏好将保留。',

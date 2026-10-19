@@ -888,14 +888,15 @@ public class CaptureService extends Service {
 
     /** Bilinear 160x90 reduction, used only when the plane layout is unexpected. */
     private static int[] signature(Bitmap bitmap) {
-        int[] pixels = new int[160 * 90];
-        for (int y = 0; y < 90; y++)
-            for (int x = 0; x < 160; x++)
-                pixels[y * 160 + x] = bitmap.getPixel(x * bitmap.getWidth() / 160, y * bitmap.getHeight() / 90);
+        Bitmap small=Bitmap.createScaledBitmap(bitmap,160,90,false);
+        int[] pixels=new int[160*90];
+        small.getPixels(pixels,0,160,0,0,160,90);
+        if(small!=bitmap)small.recycle();
         return pixels;
     }
 
     private void clearOverlay() {
+        reusableGatePixels=null;lastAttemptPixels=null;
         dismissManualPrompt();pendingForceFloor=0;manualOfferSuppressed=false;
         generation++;
         overlayLayer = null;
@@ -915,7 +916,7 @@ public class CaptureService extends Service {
         if (destroyed) return;
         main.removeCallbacks(poll);
         pollScheduled = true;
-        main.postDelayed(poll, delayMs);
+        main.postDelayed(poll, powerSaving() && delayMs>=WATCH_MS ? delayMs*2 : delayMs);
     }
 
     private void setStatus(int newState, String text) {
@@ -1036,6 +1037,7 @@ public class CaptureService extends Service {
         if (checking) { repoll(100); return; }
         if (manualRetry && !busy) {
             manualRetry = false;
+            forceNextMatch = true;
             gateOnly = false;
             blink();
             return;
@@ -1166,6 +1168,15 @@ public class CaptureService extends Service {
         final boolean verifyOnly = gateOnly;
         gateOnly = false;
         lastGateAt = SystemClock.elapsedRealtime();
+        long reuseNow=lastGateAt;
+        boolean gateUnchanged=verifyOnly && reuseNow-actualGateAt<4000 && FrameReuse.same(reusableGatePixels,framePixels,true);
+        boolean repeatMatch=!verifyOnly && !forceNextMatch && pendingForceFloor==0 && reuseNow-lastAttemptAt<(powerSaving()?6000:2000) && FrameReuse.same(lastAttemptPixels,framePixels,false);
+        if(gateUnchanged || repeatMatch){
+            bitmap.recycle();
+            if(badge!=null)badge.setVisibility(View.VISIBLE);
+            repoll(WATCH_MS);return;
+        }
+        forceNextMatch=false;
         final int token = generation;
         checking = true;
         checkingSince = SystemClock.elapsedRealtime();
@@ -1204,6 +1215,8 @@ public class CaptureService extends Service {
                         repoll(WATCH_MS);
                         return;
                     }
+                    reusableGatePixels=framePixels;
+                    actualGateAt=SystemClock.elapsedRealtime();
                     missStreak = 0;
                     if (!mapPanelOpen) {
                         mapPanelOpen = true;
@@ -1266,6 +1279,10 @@ public class CaptureService extends Service {
      *                    result that arrives after the player has moved on can
      *                    be dropped instead of flashed at the wrong position.
      */
+    private int[] reusableGatePixels,lastAttemptPixels;
+    private long actualGateAt,lastAttemptAt;
+    private boolean forceNextMatch;
+    private boolean powerSaving(){return getSharedPreferences("mobile",0).getBoolean("power_saving",false);}
     private boolean mapPanelOpen = false;
     private volatile int memoryEpoch = 0;
 
@@ -1274,6 +1291,8 @@ public class CaptureService extends Service {
         busySince = SystemClock.elapsedRealtime();
         lastMatch = busySince;
         matchPixels = framePixels;
+        lastAttemptPixels=framePixels;
+        lastAttemptAt=busySince;
         final int token = generation;
         final int requestEpoch = memoryEpoch;
         final int forceFloor=pendingForceFloor;
