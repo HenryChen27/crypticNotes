@@ -18,6 +18,8 @@ final class MiniGameStore {
     MiniGameStore(Context c,String gameId){if(gameId==null||!gameId.matches("[a-z0-9][a-z0-9-]*")||gameId.equals("runtime"))throw new IllegalArgumentException("无效游戏名称");id=gameId;root=new File(c.getFilesDir(),"minigames");game=new File(root,id);}
     static JSONObject collection()throws Exception{HttpURLConnection c=connect(COLLECTION);try(InputStream in=c.getInputStream()){JSONObject value=new JSONObject(new String(bytes(in,128*1024),java.nio.charset.StandardCharsets.UTF_8));if(value.optInt("schema")!=1||value.optJSONObject("games")==null)throw new IOException("无效小游戏列表");return value.getJSONObject("games");}finally{c.disconnect();}}
     String title(){return id.equals("jellyfish")?"合成大水母":id.equals("minesweeper")?"蚀骨赠礼":id;}
+    long size(){return folderSize(game);}
+    private static long folderSize(File file){if(file.isFile())return file.length();long total=0;File[] files=file.listFiles();if(files!=null)for(File f:files)total+=folderSize(f);return total;}
     String hash(){try{return new JSONObject(read(new File(game,"package.json"))).optString("downloadSha256","");}catch(Exception e){return "";}}
 
     boolean installed(){return new File(game,"game/index.html").isFile();}
@@ -61,7 +63,7 @@ final class MiniGameStore {
             }
             JSONObject meta=new JSONObject(read(new File(stage,"package.json")));
             if(!id.equals(meta.optString("id"))||!"system-webview".equals(meta.optString("runtime"))||!new File(stage,"game/index.html").isFile())throw new IOException("游戏包结构不正确");
-            meta.put("downloadSha256",sha);try(OutputStream out=new FileOutputStream(new File(stage,"package.json"))){out.write(meta.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+            meta.put("downloadSha256",sha);meta.put("downloadSize",size);try(OutputStream out=new FileOutputStream(new File(stage,"package.json"))){out.write(meta.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
             remove(backup);if(game.exists()&&!game.renameTo(backup))throw new IOException("旧游戏无法替换");
             if(!stage.renameTo(game)){if(backup.exists())backup.renameTo(game);throw new IOException("游戏安装失败");}remove(backup);progress.update("游戏已安装");
         }finally{zip.delete();remove(stage);}

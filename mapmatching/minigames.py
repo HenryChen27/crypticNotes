@@ -108,7 +108,13 @@ class GameStore:
         return self.folder / 'Jellyfish/Jellyfish.exe'
 
     def size(self):
-        return sum(p.stat().st_size for p in self.folder.rglob('*') if p.is_file()) if self.folder.exists() else 0
+        if not self.folder.exists():return 0
+        metadata=self.folder/'package.json'
+        stamp=(self.folder.stat().st_mtime_ns, metadata.stat().st_mtime_ns if metadata.exists() else 0)
+        cached=getattr(self,'_size_cache',None)
+        if cached is None or cached[0]!=stamp:
+            self._size_cache=(stamp,sum(p.stat().st_size for p in self.folder.rglob('*') if p.is_file()))
+        return self._size_cache[1]
 
     def native(self):
         try:

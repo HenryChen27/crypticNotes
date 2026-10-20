@@ -77,12 +77,12 @@ public class MiniGameOverlayService extends Service {
         });
         windows=(WindowManager)getSystemService(WINDOW_SERVICE);
         params=new WindowManager.LayoutParams(1,1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_FULLSCREEN | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,android.graphics.PixelFormat.TRANSLUCENT);
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS | WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED,android.graphics.PixelFormat.TRANSLUCENT);
         params.gravity=Gravity.TOP|Gravity.LEFT;if(android.os.Build.VERSION.SDK_INT>=28)params.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;resize();registerWindow();
         requestHighRefreshRate();
         WebSettings s=web.getSettings();s.setJavaScriptEnabled(true);s.setDomStorageEnabled(true);s.setAllowFileAccess(false);s.setAllowContentAccess(false);s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);s.setMediaPlaybackRequiresUserGesture(false);s.setSupportMultipleWindows(false);
         web.addJavascriptInterface(new Bridge(),"NativeGame");
-        web.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_BACK){if(event.getAction()==KeyEvent.ACTION_UP)hideGame();return true;}return false;});
+        web.setOnKeyListener((v,key,event)->{if(key==KeyEvent.KEYCODE_BACK){if(event.getAction()==KeyEvent.ACTION_UP){if(fullScreen)toggleFullscreen();else hideGame();}return true;}return false;});
         web.setWebChromeClient(new WebChromeClient(){
             @Override public boolean onJsConfirm(WebView view,String url,String message,JsResult result){
                 AlertDialog dialog=new AlertDialog.Builder(MiniGameOverlayService.this).setMessage(message).setPositiveButton("确定",(d,w)->result.confirm()).setNegativeButton("取消",(d,w)->result.cancel()).setOnCancelListener(d->result.cancel()).create();
@@ -157,6 +157,8 @@ public class MiniGameOverlayService extends Service {
     void toggleFullscreen(){
         if(!fullScreen){restoredBounds=new android.graphics.Rect(params.x,params.y,params.x+params.width,params.y+params.height);customWidth=params.width;}
         fullScreen=!fullScreen;
+        if(fullScreen)params.flags|=WindowManager.LayoutParams.FLAG_FULLSCREEN;else params.flags&=~WindowManager.LayoutParams.FLAG_FULLSCREEN;
+        if(android.os.Build.VERSION.SDK_INT>=30)params.setFitInsetsTypes(fullScreen?0:WindowInsets.Type.statusBars());
         params.screenOrientation=fullScreen
             ?android.content.pm.ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             :android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;

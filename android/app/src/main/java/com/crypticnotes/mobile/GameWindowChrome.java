@@ -8,7 +8,10 @@ import android.widget.*;
 final class GameWindowChrome extends FrameLayout {
     interface Host {boolean fullscreen();void move(int dx,int dy);void scale(int delta,boolean left);void finishResize();void beginSwipe();void previewSwipe(float delta);void endSwipe(int action);void minimize();void toggleFull();void close();}
     private final Host host;
-    private final View bottom,left,right;
+    private final View bottom,left,right,dots;
+    private float edgeX,edgeY;
+    private boolean edgeCandidate,edgeIntercepted;
+    private android.window.OnBackInvokedCallback backCallback;
     private final LinearLayout menu;
     private final int slop;
     private final View game;
@@ -19,7 +22,7 @@ final class GameWindowChrome extends FrameLayout {
         super(c);this.host=host;this.game=game;slop=ViewConfiguration.get(c).getScaledTouchSlop();addView(game,new LayoutParams(-1,-1));
         snapshot=new ImageView(c);snapshot.setScaleType(ImageView.ScaleType.FIT_XY);addView(snapshot,new LayoutParams(-1,-1));snapshot.setVisibility(GONE);
         setClipToOutline(true);setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View v,Outline outline){outline.setRoundRect(0,0,getWidth(),getHeight(),host.fullscreen()?0:dp(12));}});
-        View dots=new Mark(c,0);dots.setContentDescription("点击窗口菜单，滑动移动");LayoutParams dotParams=new LayoutParams(dp(64),dp(34),Gravity.TOP|Gravity.CENTER_HORIZONTAL);dotParams.topMargin=dp(2);addView(dots,dotParams);
+        dots=new Mark(c,0);dots.setContentDescription("点击窗口菜单，滑动移动");LayoutParams dotParams=new LayoutParams(dp(64),dp(34),Gravity.TOP|Gravity.CENTER_HORIZONTAL);dotParams.topMargin=dp(2);addView(dots,dotParams);
         dots.setOnTouchListener(new View.OnTouchListener(){float x,y,lastX,lastY;boolean dragging,moved;
             public boolean onTouch(View v,MotionEvent e){switch(e.getActionMasked()){
                 case MotionEvent.ACTION_DOWN:x=lastX=e.getRawX();y=lastY=e.getRawY();dragging=moved=false;return true;
@@ -43,6 +46,46 @@ final class GameWindowChrome extends FrameLayout {
         resizeTouch(left,true);resizeTouch(right,false);
         menu=new LinearLayout(c);menu.setGravity(Gravity.CENTER);GradientDrawable bg=new GradientDrawable();bg.setColor(0xd922303e);bg.setCornerRadius(dp(9));menu.setBackground(bg);menu.setElevation(dp(5));LayoutParams mp=new LayoutParams(-2,dp(42),Gravity.TOP|Gravity.CENTER_HORIZONTAL);mp.topMargin=dp(36);addView(menu,mp);menu.setVisibility(GONE);
         updateMode();
+    }
+    @Override public WindowInsets onApplyWindowInsets(WindowInsets insets){
+        post(this::positionMenuSafely);return super.onApplyWindowInsets(insets);
+    }
+    @Override protected void onSizeChanged(int w,int h,int oldw,int oldh){super.onSizeChanged(w,h,oldw,oldh);post(this::positionMenuSafely);}
+    private void positionMenuSafely(){
+        if(dots==null||menu==null)return;
+        int top=0;
+        LayoutParams d=(LayoutParams)dots.getLayoutParams(),m=(LayoutParams)menu.getLayoutParams();
+        int margin=top+dp(2);if(d.topMargin!=margin){d.topMargin=margin;dots.setLayoutParams(d);}
+        if(m.topMargin!=top+dp(36)){m.topMargin=top+dp(36);menu.setLayoutParams(m);}
+    }
+    @Override protected void onAttachedToWindow(){super.onAttachedToWindow();requestApplyInsets();post(this::applyFullscreenBars);post(this::positionMenuSafely);
+        if(android.os.Build.VERSION.SDK_INT>=33&&findOnBackInvokedDispatcher()!=null){backCallback=()->{if(host.fullscreen()){dismissMenu();host.toggleFull();}else host.minimize();};findOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,backCallback);}
+    }
+    private void applyFullscreenBars(){
+        boolean full=host.fullscreen();
+        int flags=SYSTEM_UI_FLAG_LAYOUT_STABLE;
+        if(full)flags|=SYSTEM_UI_FLAG_FULLSCREEN|SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
+        setSystemUiVisibility(flags);
+        if(android.os.Build.VERSION.SDK_INT>=30&&getWindowInsetsController()!=null){
+            android.view.WindowInsetsController controller=getWindowInsetsController();
+            if(full){controller.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);controller.hide(WindowInsets.Type.statusBars());}
+            else controller.show(WindowInsets.Type.statusBars());
+        }
+    }
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)post(this::applyFullscreenBars);}
+    @Override protected void onDetachedFromWindow(){
+        if(android.os.Build.VERSION.SDK_INT>=33&&backCallback!=null&&findOnBackInvokedDispatcher()!=null)findOnBackInvokedDispatcher().unregisterOnBackInvokedCallback(backCallback);
+        backCallback=null;super.onDetachedFromWindow();
+    }
+    @Override public boolean onInterceptTouchEvent(MotionEvent e){
+        if(e.getActionMasked()==MotionEvent.ACTION_DOWN){edgeX=e.getX();edgeY=e.getY();edgeCandidate=host.fullscreen()&&(edgeX<=dp(24)||edgeX>=getWidth()-dp(24));edgeIntercepted=false;}
+        if(edgeCandidate&&e.getActionMasked()==MotionEvent.ACTION_MOVE){float dx=e.getX()-edgeX,dy=e.getY()-edgeY;boolean inward=edgeX<getWidth()/2f?dx>0:dx<0;
+            if(inward&&Math.abs(dx)>=dp(48)&&Math.abs(dx)>Math.abs(dy)*1.5f){edgeIntercepted=true;return true;}}
+        return super.onInterceptTouchEvent(e);
+    }
+    @Override public boolean onTouchEvent(MotionEvent e){
+        if(edgeIntercepted){if(e.getActionMasked()==MotionEvent.ACTION_UP){edgeIntercepted=edgeCandidate=false;TouchFeedback.click(this);dismissMenu();if(host.fullscreen())host.toggleFull();}else if(e.getActionMasked()==MotionEvent.ACTION_CANCEL)edgeIntercepted=edgeCandidate=false;return true;}
+        return super.onTouchEvent(e);
     }
     private int dp(float n){return Theme.px(getContext(),n);}
     private void resizeTouch(View view,boolean left){view.setContentDescription("拖动等比例缩放");view.setOnTouchListener(new View.OnTouchListener(){float x,y;public boolean onTouch(View v,MotionEvent e){
@@ -71,7 +114,7 @@ final class GameWindowChrome extends FrameLayout {
         for(int y=0;y<h;y++)for(int x=0;x<w;x++){int r=0,g=0,b=0;for(int k=-4;k<=4;k++){int v=tmp[Math.max(0,Math.min(h-1,y+k))*w+x];r+=(v>>16)&255;g+=(v>>8)&255;b+=v&255;}out[y*w+x]=0xff000000|((r/9)<<16)|((g/9)<<8)|(b/9);}
         bitmap.setPixels(out,0,w,0,0,w,h);
     }
-    void updateMode(){boolean full=host.fullscreen();bottom.setVisibility(full?GONE:VISIBLE);left.setVisibility(full?GONE:VISIBLE);right.setVisibility(full?GONE:VISIBLE);menu.setVisibility(GONE);invalidateOutline();}
+    void updateMode(){boolean full=host.fullscreen();bottom.setVisibility(full?GONE:VISIBLE);left.setVisibility(full?GONE:VISIBLE);right.setVisibility(full?GONE:VISIBLE);menu.setVisibility(GONE);invalidateOutline();post(this::applyFullscreenBars);post(this::positionMenuSafely);}
     void dismissMenu(){menu.setVisibility(GONE);}
     private void toggleMenu(){if(menu.getVisibility()==VISIBLE){dismissMenu();return;}menu.removeAllViews();addOption(0,"最小化",host::minimize);addOption(1,host.fullscreen()?"恢复小窗":"全屏",host::toggleFull);addOption(2,"保存并关闭",host::close);menu.setVisibility(VISIBLE);}
     private void addOption(int kind,String description,Runnable action){View option=new Mark(getContext(),kind+4);option.setContentDescription(description);option.setOnClickListener(v->{TouchFeedback.click(v);dismissMenu();action.run();});menu.addView(option,new LinearLayout.LayoutParams(dp(44),-1));}

@@ -134,14 +134,14 @@ class GameControls(W.QWidget):
             while target.count():
                 item=target.takeAt(0)
                 if item.widget():item.widget().deleteLater()
-        self.game_rows=[];self.row_layouts=[];self.version_cards=[]
+        self.game_rows=[];self.row_layouts=[];self.version_cards=[];self.size_labels=[]
         for index,store in enumerate(self.stores):
             card=W.QWidget();box=W.QVBoxLayout(card);box.setContentsMargins(0,6,0,6)
             row=W.QHBoxLayout();title=W.QLabel(getattr(store,'title','合成大水母'));row.addWidget(title,1)
             download,launch,remove=[ChalkButton(t) for t in ('下载','启动','删除')]
             row.addWidget(launch);box.addLayout(row);self.rows_layout.addWidget(card)
             version=W.QWidget();vbox=W.QVBoxLayout(version);vbox.setContentsMargins(0,0,0,6)
-            vbox.addWidget(W.QLabel(getattr(store,'title','合成大水母')))
+            size_label=W.QLabel();size_label.setWordWrap(True);vbox.addWidget(size_label);self.size_labels.append(size_label)
             actions=W.QHBoxLayout();actions.addWidget(download,1);actions.addWidget(remove);vbox.addLayout(actions)
             self.version_section.body.addWidget(version)
             for button,action in ((download,'download'),(launch,'launch'),(remove,'delete')):
@@ -334,6 +334,12 @@ class GameControls(W.QWidget):
         switching=getattr(self,'pending_game_index',None) is not None
         for index,(store,(_,download,launch,remove)) in enumerate(zip(self.stores,self.game_rows)):
             present=store.installed();source=getattr(store,'local',False);selected=store is self.store
+            installed_size=store.size() if present else 0
+            download_size=getattr(store,'spec',{}).get('size',0)
+            sizes=([f'已安装 {installed_size/1048576:.1f} MB'] if present else [])+([f'下载 {download_size/1048576:.1f} MB'] if download_size else [])
+            size_text=' · '.join(sizes) or '大小待同步'
+            title=self.game_rows[index][0];title.setText(getattr(store,'title','小游戏')+'\n'+size_text)
+            self.size_labels[index].setText(getattr(store,'title','小游戏')+' · '+size_text)
             legacy=present and not store.native()
             available=getattr(store,'update_available',lambda:True)()
             download.setEnabled(not source and not getattr(store,'withdrawn',False) and not self.running() and (not busy or selected) and (not present or available or (busy and selected)))

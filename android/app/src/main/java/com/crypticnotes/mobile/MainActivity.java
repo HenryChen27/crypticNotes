@@ -66,9 +66,6 @@ public class MainActivity extends Activity {
             return insets.consumeSystemWindowInsets();
         });
 
-        TextView title = new TextView(this);
-        title.setText("加页手记");
-        content.addView(Theme.text(title, 25, Theme.TITLE));
         TextView subtitle = new TextView(this);
         subtitle.setText("Android 预览版 · 截图只在本机处理，不上传");
         content.addView(Theme.muted(this, subtitle.getText().toString()));
@@ -176,14 +173,14 @@ public class MainActivity extends Activity {
         LinearLayout more = fold("辅助设置", false);
         Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
         powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
-        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","降低检查频率；小游戏采用更小动画缓存并最多请求60Hz，重开小游戏生效。手动识别不受等待限制。"),powerSaving),matchWrap());
+        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","降低检查频率；小游戏采用更小动画缓存并最多请求60Hz，重开小游戏生效。手动识别不受等待限制。"),powerSaving,120),matchWrap());
         powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
         Theme.ChalkChoice feedback = new Theme.ChalkChoice(this,new String[]{"关","开"});
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
-        more.addView(choiceRow(fieldLabel("轻触反馈"),feedback),matchWrap());
+        more.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
         feedback.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("touch_feedback",i==1).apply());
         more.addView(Theme.helpLabel(this, "点击触发", "可选功能，需要无障碍手势授权。仅转交地图入口范围的触摸；关闭后仍可通过画面自动检测地图。"));
-        final Theme.ChalkToggle tapMode = new Theme.ChalkToggle(this, "启用", 140);
+        final Theme.ChalkToggle tapMode = new Theme.ChalkToggle(this, "启用", 120);
         tapMode.setChecked(getSharedPreferences("mobile", 0).getBoolean("tap_mode", false));
         more.addView(tapMode, matchWrap());
         tapMode.setListener(checked -> {
@@ -361,12 +358,13 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
     }
 
-    private LinearLayout choiceRow(View label, View choice) {
+    private LinearLayout choiceRow(View label, View choice) { return choiceRow(label, choice, 0); }
+    private LinearLayout choiceRow(View label, View choice, int width) {
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(label, new LinearLayout.LayoutParams(Theme.px(this, 80), Theme.px(this, 46)));
+        row.addView(label, width>0 ? new LinearLayout.LayoutParams(0, Theme.px(this,46),1) : new LinearLayout.LayoutParams(Theme.px(this,80),Theme.px(this,46)));
         if(label instanceof TextView) ((TextView)label).setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(choice, new LinearLayout.LayoutParams(0, Theme.px(this, 46), 1));
+        row.addView(choice, width>0 ? new LinearLayout.LayoutParams(Theme.px(this,width),Theme.px(this,42)) : new LinearLayout.LayoutParams(0,Theme.px(this,46),1));
         return row;
     }
 
