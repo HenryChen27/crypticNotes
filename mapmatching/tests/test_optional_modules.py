@@ -37,6 +37,23 @@ class OptionalModulesTests(unittest.TestCase):
                 with patch('mapmatching.matching_module.urllib.request.urlopen',side_effect=[io.BytesIO(json.dumps(spec).encode()),io.BytesIO(raw)]),self.assertRaises(ValueError):store.download(lambda *a:None)
                 self.assertTrue(store.enabled())
 
+    def test_kitchen_title_does_not_fall_back_to_english_id(self):
+        from mapmatching.minigames import game_title,GameStore
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertEqual(game_title('mini-kitchen','mini-kitchen'),'邦邦小厨房')
+            self.assertEqual(GameStore(tmp,'mini-kitchen').title,'邦邦小厨房')
+            self.assertEqual(CollectionGameStore(tmp,{'id':'mini-kitchen','name':'Mini Kitchen'}).title,'邦邦小厨房')
+            self.assertEqual(game_title('new-game','新游戏'),'新游戏')
+
+    def test_library_version_reads_installed_module(self):
+        with tempfile.TemporaryDirectory() as tmp,patch('mapmatching.matching_module.DATA_ROOT',Path(tmp)):
+            store=MatchingModule();store.folder.mkdir(parents=True)
+            (store.folder/'maps').mkdir();(store.folder/'maps/floors.json').write_text('{"references":[]}')
+            (store.folder/'module.json').write_text(json.dumps({'sha256':'abc123456789'+'0'*52}))
+            self.assertEqual(store.version(),'库-abc123456789')
+            (store.folder/'module.json').write_text(json.dumps({'version':'1.2.3'}))
+            self.assertEqual(store.version(),'1.2.3')
+
     def test_collection_rejects_untrusted_package(self):
         spec={'id':'jellyfish','runtime':'system-webview','entry':'game/index.html','url':'https://evil.example/game.zip','size':1,'sha256':'a'*64}
         raw=json.dumps({'schema':1,'games':{'jellyfish':spec}}).encode()

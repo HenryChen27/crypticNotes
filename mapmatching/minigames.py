@@ -19,6 +19,10 @@ MAX_DOWNLOAD = 600 * 1024 * 1024
 MAX_EXTRACTED = 1400 * 1024 * 1024
 
 
+def game_title(game_id,name=None):
+    return {'jellyfish':'合成大水母','minesweeper':'蚀骨赠礼','mini-kitchen':'邦邦小厨房'}.get(game_id) or name or game_id
+
+
 def platform_key():
     if sys.platform == 'win32':
         return 'windows-x64'
@@ -81,6 +85,7 @@ class GameStore:
         if not game_id or any(c not in 'abcdefghijklmnopqrstuvwxyz0123456789-' for c in game_id) or game_id == 'runtime':
             raise ValueError('小游戏名称不正确')
         self.game_id = game_id
+        self.title = game_title(game_id)
         self.catalog_url = catalog_url
         self.root = Path(data_root) / 'minigames'
         self.root.mkdir(parents=True, exist_ok=True)
@@ -329,8 +334,7 @@ class CollectionGameStore(GameStore):
     def __init__(self,data_root,spec):
         super().__init__(data_root,spec['id'])
         self.spec=spec
-        self.title=spec.get('name',spec['id'])
-        if self.game_id=='minesweeper':self.title='蚀骨赠礼'
+        self.title=game_title(self.game_id,spec.get('name'))
 
     def update_available(self):
         info=getattr(self,'launcher_info',None)

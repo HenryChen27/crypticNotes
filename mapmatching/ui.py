@@ -972,11 +972,12 @@ class Companion(W.QWidget):
         box.setContentsMargins(20,12,20,18)
         box.setSpacing(10)
         box.setAlignment(C.Qt.AlignTop)
-        from .module_ui import MatchingControls
+        from .module_ui import MatchingControls,application_version
         self.matching_controls=MatchingControls(self)
         self.setting_sections = [FoldSection(name, i == 0) for i, name in
                                  enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '问题排查'))]
         self.general_section=FoldSection('界面设置',True)
+        self.general_section.body.addWidget(W.QLabel('主程序版本 '+application_version()))
         self.map_shortcuts=FoldSection('快捷键')
         self.version_section=FoldSection('版本')
         self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])

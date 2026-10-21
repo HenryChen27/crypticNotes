@@ -3,6 +3,23 @@ from .theme import ChalkButton
 from .matching_module import MatchingModule
 from .minigames_ui import DownloadTask
 
+def application_version():
+    import json,sys
+    from .paths import ROOT,FROZEN
+    if not FROZEN:return '本地源码'
+    if sys.platform=='darwin':
+        import plistlib
+        from pathlib import Path
+        try:
+            info=plistlib.loads((Path(sys.executable).resolve().parents[1]/'Info.plist').read_bytes())
+            return str(info.get('CFBundleShortVersionString','未知'))+' ('+str(info.get('CFBundleVersion',''))+')'
+        except (OSError,ValueError):return '未读取'
+    try:
+        spec=json.loads((ROOT/'windows-build.json').read_text(encoding='utf-8-sig'))
+        return str(spec.get('version') or spec.get('build','未知'))
+    except (OSError,ValueError):return '未读取'
+
+
 class ModuleCheck(C.QThread):
     result=C.Signal(bool,str)
     def __init__(self,store,parent):super().__init__(parent);self.store=store
@@ -17,11 +34,13 @@ class MatchingControls(W.QWidget):
         box=W.QVBoxLayout(self);box.setContentsMargins(0,0,0,0)
         row=W.QHBoxLayout();self.download=ChalkButton('');self.remove=ChalkButton('删除')
         row.addWidget(self.download,1);row.addWidget(self.remove);box.addLayout(row)
+        self.version_label=W.QLabel();self.version_label.setWordWrap(True);box.addWidget(self.version_label)
         self.status=W.QLabel();self.status.setWordWrap(True);self.status.hide();box.addWidget(self.status)
         self.download.clicked.connect(self.action);self.remove.clicked.connect(self.uninstall)
         self.refresh();W.QApplication.instance().aboutToQuit.connect(self.shutdown)
     def refresh(self):
         installed=self.store.enabled();busy=self.task is not None or self.check_task is not None
+        self.version_label.setText('地图库版本 '+self.store.version())
         self.download.setText('下载' if not installed else '正在检查…' if self.check_task else '更新' if self.available else '已是最新版' if self.available is False else '检查更新')
         self.download.setEnabled(not busy and (not installed or self.available is not False))
         self.remove.setVisible(installed);self.remove.setEnabled(not busy)

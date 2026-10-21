@@ -254,6 +254,7 @@ public class MainActivity extends Activity {
         inlineGames.stateChanged=()->gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
         games.addView(inlineGames,matchWrap());
         content=generalPage;
+        content.addView(Theme.muted(this,"主程序版本 "+BuildConfig.VERSION_NAME+"（"+BuildConfig.VERSION_CODE+"）"));
         LinearLayout appearance=fold("界面设置",true);
         Theme.ChalkChoice fontChoice=new Theme.ChalkChoice(this,new String[]{"游戏字体","系统字体"});fontChoice.setIndex(getSharedPreferences("mobile",0).getBoolean("fontSystem",false)?1:0);appearance.addView(choiceRow(fieldLabel("字体"),fontChoice));fontChoice.setListener(i->{getSharedPreferences("mobile",0).edit().putBoolean("fontSystem",i==1).apply();recreate();});
         SeekBar fontSize=new SeekBar(this);fontSize.setMax(10);fontSize.setProgress(getSharedPreferences("mobile",0).getInt("fontSize",16)-12);appearance.addView(Theme.muted(this,"字号（12～22）"));appearance.addView(fontSize);fontSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean user){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){getSharedPreferences("mobile",0).edit().putInt("fontSize",12+s.getProgress()).apply();recreate();}});

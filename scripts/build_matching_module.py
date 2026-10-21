@@ -19,6 +19,7 @@ def build():
             for p in sorted(maps.rglob('*')):
                 if p.is_file():z.write(p,p.relative_to(Path(temp)).as_posix())
     spec={'schema':1,'id':'mapmatching','asset':archive.name,'url':'https://github.com/HenryChen27/crypticNotes/releases/download/desktop-update-20260919-05738cf/'+archive.name,'size':archive.stat().st_size,'sha256':hashlib.sha256(archive.read_bytes()).hexdigest()}
+    spec['version']='库-'+spec['sha256'][:12]
     (out/'matching-module.json').write_text(json.dumps(spec,indent=2),encoding='utf-8')
     return archive
 if __name__=='__main__':print(build())

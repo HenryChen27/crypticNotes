@@ -13,13 +13,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-/**
- * Read-only view of the bundled map library.
- *
- * Reads `assets/maps/floors.json` — the same manifest the desktop client treats
- * as the source of truth — straight out of the APK, so the list is available
- * without starting screen capture. Nothing here writes to the library.
- */
+/** Read-only view of the installed optional map library. */
 final class MapCatalog {
     private MapCatalog() {}
 
@@ -38,17 +32,19 @@ final class MapCatalog {
         }
     }
 
-    private static List<Entry> cached;
+    /** Downloads/removals can replace the manifest without restarting the APK. */
+    static synchronized List<Entry> load(Context context) { return read(context); }
 
-    /** The manifest is fixed for the installed APK, so it is parsed once. */
-    static synchronized List<Entry> load(Context context) {
-        if (cached == null) cached = read(context);
-        return cached;
+    static InputStream open(Context context,String relative)throws IOException{
+        java.io.File root=new java.io.File(context.getFilesDir(),"maps").getCanonicalFile();
+        java.io.File file=new java.io.File(context.getFilesDir(),relative).getCanonicalFile();
+        if(!file.getPath().startsWith(root.getPath()+java.io.File.separator))throw new IOException("无效地图路径");
+        return new java.io.FileInputStream(file);
     }
 
     private static List<Entry> read(Context context) {
         List<Entry> entries = new ArrayList<>();
-        try (InputStream in = context.getAssets().open("maps/floors.json")) {
+        try (InputStream in = open(context,"maps/floors.json")) {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             byte[] block = new byte[65536];
             int read;
@@ -78,8 +74,8 @@ final class MapCatalog {
                 }
                 entries.add(entry);
             }
-        } catch (Exception ignored) {
-            // A missing or malformed manifest leaves the screen empty rather than crashing.
+        } catch (Exception error) {
+            android.util.Log.w("CrypticNotes","Installed map catalog could not be read",error);
         }
         return entries;
     }

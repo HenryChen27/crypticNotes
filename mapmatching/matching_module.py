@@ -16,6 +16,15 @@ class MatchingModule:
     def set_enabled(self,value):
         self.state.parent.mkdir(parents=True,exist_ok=True)
         temp=self.state.with_suffix('.tmp');temp.write_text(json.dumps({'enabled':value}),encoding='utf-8');temp.replace(self.state)
+    def version(self):
+        if not self.enabled():return '未安装'
+        try:
+            spec=json.loads((self.folder/'module.json').read_text(encoding='utf-8'))
+            return str(spec.get('version') or ('库-'+spec['sha256'][:12]))
+        except (OSError,ValueError,KeyError):
+            try:return '清单-'+hashlib.sha256((self.root()/'maps/floors.json').read_bytes()).hexdigest()[:12]
+            except OSError:return '未读取'
+
     def update_available(self):
         local=ROOT/'release/matching-module.json'
         if not FROZEN and local.is_file():spec=json.loads(local.read_text(encoding='utf-8'))

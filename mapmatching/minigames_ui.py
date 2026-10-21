@@ -5,7 +5,7 @@ import time
 from PySide6 import QtCore as C, QtWidgets as W, QtGui as G
 from .paths import DATA_ROOT
 from .theme import ChalkButton, FoldSection
-from .minigames import GameStore, CollectionGameStore, read_collection, read_catalog, package_info, platform_key
+from .minigames import GameStore, CollectionGameStore, read_collection, read_catalog, package_info, platform_key,game_title,LauncherStore
 
 
 def game_profile(controls):
@@ -59,7 +59,7 @@ class GameControls(W.QWidget):
             try:
                 spec=json.loads(metadata.read_text(encoding='utf-8'));key=spec['id']
                 if key in ids or key in ('runtime','game-launcher'):continue
-                store=GameStore(DATA_ROOT,key);store.title=spec.get('name',key);store.withdrawn=True
+                store=GameStore(DATA_ROOT,key);store.title=game_title(key,spec.get('name'));store.withdrawn=True
                 if store.installed():self.stores.append(store);ids.add(key)
             except (OSError,ValueError,KeyError):continue
         self.store=self.stores[0]
@@ -134,6 +134,7 @@ class GameControls(W.QWidget):
             while target.count():
                 item=target.takeAt(0)
                 if item.widget():item.widget().deleteLater()
+        self.launcher_version=W.QLabel();self.launcher_version.setWordWrap(True);self.version_section.body.addWidget(self.launcher_version)
         self.game_rows=[];self.row_layouts=[];self.version_cards=[];self.size_labels=[]
         for index,store in enumerate(self.stores):
             card=W.QWidget();box=W.QVBoxLayout(card);box.setContentsMargins(0,6,0,6)
@@ -332,12 +333,19 @@ class GameControls(W.QWidget):
         installed = self.store.installed()
         local=getattr(self.store,'local',False)
         switching=getattr(self,'pending_game_index',None) is not None
+        launcher=LauncherStore(DATA_ROOT)
+        self.launcher_version.setText('公共小游戏启动器版本 '+str(launcher.version() or '未安装'))
         for index,(store,(_,download,launch,remove)) in enumerate(zip(self.stores,self.game_rows)):
             present=store.installed();source=getattr(store,'local',False);selected=store is self.store
             installed_size=store.size() if present else 0
             download_size=getattr(store,'spec',{}).get('size',0)
             sizes=([f'已安装 {installed_size/1048576:.1f} MB'] if present else [])+([f'下载 {download_size/1048576:.1f} MB'] if download_size else [])
             size_text=' · '.join(sizes) or '大小待同步'
+            current=getattr(store,'version',lambda:None)() if present else None
+            latest=getattr(store,'spec',{}).get('version')
+            versions=('版本 '+str(current or '本地源码/旧版')) if present else '未安装'
+            if latest:versions+=' · 最新 '+str(latest)
+            size_text=versions+'\n'+size_text
             title=self.game_rows[index][0];title.setText(getattr(store,'title','小游戏')+'\n'+size_text)
             self.size_labels[index].setText(getattr(store,'title','小游戏')+' · '+size_text)
             legacy=present and not store.native()

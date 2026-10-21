@@ -30,15 +30,7 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * Read-only browser for the maps bundled in the APK.
- *
- * Deliberately read-only: the library ships inside the APK and is re-synced into
- * app storage on every capture start, so enabling/disabling or deleting here
- * would either be undone or silently lie. Importing a map needs the desktop
- * feature extractor, so it is not offered either. Editing the library stays a
- * desktop task.
- */
+/** Read-only browser for the independently installed map library. */
 public class MapLibraryActivity extends Activity {
     private static final String[][] FILTERS = {
             {"全部", ""}, {"困难", "hard"}, {"噩梦·单人", "nightmare/solo"}, {"噩梦·双人", "nightmare/duo"}};
@@ -88,7 +80,7 @@ public class MapLibraryActivity extends Activity {
         content.addView(back, backParams);
         back.setOnClickListener(v -> finish());
 
-        content.addView(Theme.helpLabel(this, "内置地图", "地图库为只读，新增地图请在电脑端录入后随安装包发布。"));
+        content.addView(Theme.helpLabel(this, "已安装地图", "显示独立下载的地图库。更新或重新下载请返回加页手记模块。"));
 
         content.addView(heading("筛选"));
         Theme.MistPanel filters = panel();
@@ -145,7 +137,7 @@ public class MapLibraryActivity extends Activity {
             empty.addView(Theme.muted(this, "没有符合条件的地图。"));
             list.addView(empty);
         }
-        summary.setText("内置 " + all.size() + " 张 · 当前显示 " + shown + " 张 · 只读");
+        summary.setText(all.isEmpty()?"未读到已安装地图，请返回加页手记检查下载是否完成":"已安装 " + all.size() + " 张 · 当前显示 " + shown + " 张 · 只读");
     }
 
     private View row(final MapCatalog.Entry entry) {
@@ -237,7 +229,7 @@ public class MapLibraryActivity extends Activity {
 
     /** Bounds pass first so a 1000×3000 map is never decoded at full size for a preview. */
     private Bitmap decodeAsset(String path, int maxDimension) {
-        try (InputStream probe = getAssets().open(path)) {
+        try (InputStream probe = MapCatalog.open(this,path)) {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             BitmapFactory.decodeStream(probe, null, bounds);
@@ -246,7 +238,7 @@ public class MapLibraryActivity extends Activity {
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inSampleSize = sample;
             options.inPreferredConfig = Bitmap.Config.RGB_565;
-            try (InputStream stream = getAssets().open(path)) {
+            try (InputStream stream = MapCatalog.open(this,path)) {
                 return BitmapFactory.decodeStream(stream, null, options);
             }
         } catch (IOException | OutOfMemoryError error) {

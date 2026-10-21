@@ -442,7 +442,9 @@ public class CaptureService extends Service {
                     MatchingModuleStore.python(this);
                     bridge = Python.getInstance().getModule("mobile_bridge");
                     preparationStatus("正在准备地图特征…");
-                    bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode);
+                    int mapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode).toInt();
+                    android.util.Log.i("CrypticNotes","Recognition library loaded: maps="+mapCount+", difficulty="+difficulty+", mode="+mode);
+                    if(mapCount==0)throw new IOException("当前难度或模式未加载到地图，请检查地图库下载是否完成");
                     main.post(() -> {
                         if (destroyed) return;
                         initializing = false;
@@ -1230,6 +1232,7 @@ public class CaptureService extends Service {
             if(badge!=null)badge.setVisibility(View.VISIBLE);
             repoll(WATCH_MS);return;
         }
+        final boolean explicitAttempt=forceNextMatch;
         forceNextMatch=false;
         final int token = generation;
         checking = true;
@@ -1250,6 +1253,7 @@ public class CaptureService extends Service {
                     try {
                         String inspection=bridge.callAttr("inspect", frame, excluded).toString();
                         visible = new JSONObject(inspection).getBoolean("visible");
+                        if(explicitAttempt)android.util.Log.i("CrypticNotes","Manual screenshot inspection: "+inspection+", source="+sourceWidth+"x"+sourceHeight);
                         if(new File(getFilesDir(),"recognition-diagnostic.flag").isFile()){
                             android.util.Log.i("CrypticNotes","Capture inspection: "+inspection+", excluded="+java.util.Arrays.toString(excluded)+", freshFrames="+freshCaptureCount);
                             File diagnostic=new File(getCacheDir(),"recognition-frame.png");
@@ -1279,7 +1283,10 @@ public class CaptureService extends Service {
                         mapPanelOpen = false;
                         clearOverlay();
                         lastMatch = 0;
-                        setStatus(S_IDLE, "等待地图");
+                        if(explicitAttempt){
+                            String message="共享画面未确认地图展开，请检查共享范围或系统屏幕共享防护";
+                            setStatus(S_FAILED,message);Toast.makeText(this,message,Toast.LENGTH_LONG).show();
+                        }else setStatus(S_IDLE,"等待地图");
                         repoll(WATCH_MS);
                         return;
                     }
