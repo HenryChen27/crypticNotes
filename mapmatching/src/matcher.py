@@ -93,11 +93,18 @@ class MapMatcher:
                 or any(region['floor'] == self.floor_hint for region in r.regions)]
         retrieved = retrieve(evidence, refs)
         ranked = time.perf_counter()
-        candidates = sorted([register(evidence, r) for r in retrieved[:10]], key=lambda c: -(c.explained or 0))
+        # Retrieval votes are coarse integer counts. Cutting through a tie
+        # makes atlas insertion order decide which maps can be verified.
+        shortlist = retrieved[:10]
+        if len(retrieved) > 10:
+            cutoff = retrieved[9].score
+            shortlist += [r for r in retrieved[10:] if r.score == cutoff]
+        candidates = sorted([register(evidence, r) for r in shortlist], key=lambda c: -(c.explained or 0))
         end = time.perf_counter()
         return MatchResult(candidates=candidates, diagnostics={**evidence.diagnostics,
                            'session_context': asdict(self.context),
                            'reference_count': len(self.references), 'full_view': full_view,
+                           'verified_candidates': len(shortlist), 'retrieved_candidates': len(retrieved),
                            'retrieval_top5': [{'map_id': r.reference.map_id, 'score': r.score} for r in retrieved[:5]],
                            'timing_ms': {'extraction': (extracted-start)*1000,
                                          'retrieval': (ranked-extracted)*1000,

@@ -311,7 +311,8 @@ public class CaptureService extends Service {
         overlayHidden = false;
         clearOverlay(); lastMatch = 0;
         manualRetry = true;
-        setStatus(S_IDLE, (busy || checking) ? "已收到，等待当前任务结束后重新识别" : "重新识别");
+        android.util.Log.i("CrypticNotes","Manual recognition queued: busy="+busy+", checking="+checking+", token="+generation);
+        setStatus(S_IDLE, (busy || checking) ? "已排队，当前识别结束后自动重试" : "重新识别");
         if (!applying) { ready = true; repoll(0); }
     }
     private float badgeDownX, badgeDownY; private int badgeStartX, badgeStartY;
@@ -417,7 +418,10 @@ public class CaptureService extends Service {
                     if(!visible) clearOverlay();
                 }
                 @Override public void onCapturedContentResize(int w,int h) {
+                    boolean changed=capturedWidth!=w || capturedHeight!=h;
                     capturedWidth=w; capturedHeight=h;
+                    android.util.Log.i("CrypticNotes","Captured content resized: "+w+"x"+h);
+                    if(changed && display!=null) resizeCapture();
                     if(!captureFitsScreen()) clearOverlay();
                 }
             }, main);
@@ -803,13 +807,22 @@ public class CaptureService extends Service {
         DisplayMetrics metrics = new DisplayMetrics();
         windows.getDefaultDisplay().getRealMetrics(metrics);
         width = metrics.widthPixels; height = metrics.heightPixels; density = metrics.densityDpi;
+        if(cleanCaptureFrame!=null){cleanCaptureFrame.recycle();cleanCaptureFrame=null;}
+        cleanCaptureReader=null;cleanCaptureSignature=null;
         ImageReader previous = reader;
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         if (display == null)
             display = projection.createVirtualDisplay("CrypticNotes", width, height, density,
                     DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, main);
-        else { display.resize(width, height, density); display.setSurface(reader.getSurface()); }
-        if (previous != null) previous.close();
+        else {
+            // Detach before resizing: the old portrait buffer must not remain
+            // attached while the projection switches to a landscape source.
+            display.setSurface(null);
+            display.resize(width, height, density);
+            display.setSurface(reader.getSurface());
+        }
+        android.util.Log.i("CrypticNotes","Capture surface configured: "+width+"x"+height+", source="+capturedWidth+"x"+capturedHeight);
+        if(previous!=null)previous.close();
         layoutBadge();
         refreshTapRegion();
     }
@@ -871,16 +884,18 @@ public class CaptureService extends Service {
      * pixel stride is fixed by the display -- which is what keeps every
      * threshold in {@link #difference} meaningful. Do not mix them.
      */
+    private final FrameReuse.Latest latestViewport = new FrameReuse.Latest();
     private int[] sampleViewport() {
         if(recorder!=null) recorder.requestPreview();
         try (Image image = reader.acquireLatestImage()) {
-            if (image == null) return null;
+            if (image == null) return latestViewport.forReader(reader);
             Image.Plane plane = image.getPlanes()[0];
             if (plane.getPixelStride() != 4) {
                 Bitmap fallback = grab();
                 if (fallback == null) return null;
                 int[] pixels = signature(fallback);
                 fallback.recycle();
+                latestViewport.remember(reader,pixels);
                 return pixels;
             }
             ByteBuffer buffer = plane.getBuffer().order(ByteOrder.nativeOrder());
@@ -892,9 +907,9 @@ public class CaptureService extends Service {
             if (w <= 0 || h <= 0) return null;
             int[] pixels = new int[160 * 90];
             for (int y = 0; y < 90; y++) {
-                int row = (y * h / 90) * rowStride;
+                int row = FrameReuse.sampleCoordinate(y,h,90) * rowStride;
                 for (int x = 0; x < 160; x++) {
-                    int offset = row + (x * w / 160) * 4;
+                    int offset = row + FrameReuse.sampleCoordinate(x,w,160) * 4;
                     if (offset < 0 || offset + 4 > capacity) continue;
                     // RGBA_8888 in memory reads little-endian as 0xAABBGGRR.
                     // Flip to ARGB so Color.red/green/blue stay truthful.
@@ -902,18 +917,21 @@ public class CaptureService extends Service {
                     pixels[y * 160 + x] = (v & 0xff00ff00) | ((v & 0xff) << 16) | ((v >> 16) & 0xff);
                 }
             }
+            latestViewport.remember(reader,pixels);
             return pixels;
         } catch (Exception e) {
             return null;
         }
     }
 
-    /** Bilinear 160x90 reduction, used only when the plane layout is unexpected. */
+    /** Same pixel centers as the direct ImageReader sampler. Never mix grids. */
     private static int[] signature(Bitmap bitmap) {
-        Bitmap small=Bitmap.createScaledBitmap(bitmap,160,90,false);
-        int[] pixels=new int[160*90];
-        small.getPixels(pixels,0,160,0,0,160,90);
-        if(small!=bitmap)small.recycle();
+        int w=bitmap.getWidth(),h=bitmap.getHeight();
+        int[] pixels=new int[160*90],row=new int[w];
+        for(int y=0;y<90;y++){
+            bitmap.getPixels(row,0,w,0,FrameReuse.sampleCoordinate(y,h,90),w,1);
+            for(int x=0;x<160;x++)pixels[y*160+x]=row[FrameReuse.sampleCoordinate(x,w,160)];
+        }
         return pixels;
     }
 
@@ -1080,6 +1098,12 @@ public class CaptureService extends Service {
         // A match that never returned would otherwise hold `busy` forever and
         // freeze the overlay with nothing on screen to explain it.
 
+        if(busy){repoll(WATCH_MS);return;}
+        if(overlayLayer==null){
+            if(!throttled() && SystemClock.elapsedRealtime()-lastGateAt>=800){gateOnly=false;blink();}
+            else repoll(WATCH_MS);
+            return;
+        }
         int[] pixels = sampleViewport();
         if (pixels == null) { repoll(POLL_IDLE_MS); return; }
         // Map controls are outside the rendered map. Watch them even when the
@@ -1148,9 +1172,12 @@ public class CaptureService extends Service {
      * a post-hide composition into it.
      */
     private void blink() {
+        boolean wasVisible=overlay!=null&&overlay.getVisibility()==View.VISIBLE;
         invalidateSamples();
         showOverlay(false);
-        try (Image stale = reader.acquireLatestImage()) {} catch (Exception ignored) {}
+        // Only a visible overlay can have contaminated the queued frame.
+        // Draining a static single-app stream otherwise discards its only frame.
+        if(wasVisible)try (Image stale = reader.acquireLatestImage()) {} catch (Exception ignored) {}
         main.postDelayed(() -> { if(recorder!=null) recorder.requestPreview(); },60);
         main.postDelayed(this::capture, HIDE_MILLIS);
     }
@@ -1181,7 +1208,9 @@ public class CaptureService extends Service {
         Bitmap bitmap = grab();
         if (bitmap == null) { badge.setVisibility(View.VISIBLE); repoll(200); return; }
 
+        final int sourceWidth=bitmap.getWidth(),sourceHeight=bitmap.getHeight();
         final int[] framePixels = signature(bitmap);
+        latestViewport.remember(reader,framePixels);
         // Remove the permanent badge from evidence in the captured copy only.
         final float[] excluded = {Math.max(0, badgeParams.x - 6) / (float) width,
                 Math.max(0, badgeParams.y - 6) / (float) height,
@@ -1207,12 +1236,26 @@ public class CaptureService extends Service {
         checkingSince = SystemClock.elapsedRealtime();
         try {
             inspect.execute(() -> {
+                int viewedFloor=0;
+                if(!verifyOnly){
+                    try {
+                        byte[] header=encodeFloorHeader(bitmap);
+                        if(header!=null)viewedFloor=bridge.callAttr("read_floor_header",header,sourceWidth,sourceHeight).toInt();
+                    }catch(Exception error){android.util.Log.w("CrypticNotes","Floor header reading failed",error);}
+                }
+                final int detectedFloor=viewedFloor;
                 byte[] frame = encode(bitmap);      // takes ownership, off the main thread
                 boolean ok = false, visible = false;
                 if (frame != null) {
                     try {
-                        visible = new JSONObject(
-                                bridge.callAttr("inspect", frame, excluded).toString()).getBoolean("visible");
+                        String inspection=bridge.callAttr("inspect", frame, excluded).toString();
+                        visible = new JSONObject(inspection).getBoolean("visible");
+                        if(new File(getFilesDir(),"recognition-diagnostic.flag").isFile()){
+                            android.util.Log.i("CrypticNotes","Capture inspection: "+inspection+", excluded="+java.util.Arrays.toString(excluded)+", freshFrames="+freshCaptureCount);
+                            File diagnostic=new File(getCacheDir(),"recognition-frame.png");
+                            if(!diagnostic.exists())try(FileOutputStream saved=new FileOutputStream(diagnostic)){saved.write(frame);}
+                            try(FileOutputStream saved=new FileOutputStream(new File(getCacheDir(),"recognition-inspection.json"))){saved.write((inspection+"\n"+java.util.Arrays.toString(excluded)).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
+                        }
                         ok = true;
                     } catch (Exception ignored) {
                     }
@@ -1258,7 +1301,7 @@ public class CaptureService extends Service {
                     if (busy || throttled()) { repoll(WATCH_MS); return; }
                     // No wording for work in progress: the turning emblem says it.
                     setStatus(S_MATCHING, null);
-                    runMatch(bytes, framePixels);
+                    runMatch(bytes, framePixels, detectedFloor);
                     repoll(WATCH_MS);
                 });
             });
@@ -1275,6 +1318,15 @@ public class CaptureService extends Service {
      * PNG encode on the main thread is a long stall right where the next hide
      * window needs the main thread responsive.
      */
+    private static byte[] encodeFloorHeader(Bitmap bitmap){
+        int w=bitmap.getWidth(),left=(int)(.55*w),right=(int)(.94*w);
+        Bitmap header=Bitmap.createBitmap(bitmap,left,0,right-left,Math.max(1,bitmap.getHeight()/4));
+        try{
+            ByteArrayOutputStream output=new ByteArrayOutputStream();
+            return header.compress(Bitmap.CompressFormat.PNG,100,output)?output.toByteArray():null;
+        }finally{if(header!=bitmap)header.recycle();}
+    }
+
     private static byte[] encode(Bitmap bitmap) {
         try {
             Bitmap source = bitmap;
@@ -1311,7 +1363,7 @@ public class CaptureService extends Service {
     private boolean mapPanelOpen = false;
     private volatile int memoryEpoch = 0;
 
-    private void runMatch(byte[] frame, int[] framePixels) {
+    private void runMatch(byte[] frame, int[] framePixels, int viewedFloor) {
         busy = true;
         busySince = SystemClock.elapsedRealtime();
         lastMatch = busySince;
@@ -1320,6 +1372,7 @@ public class CaptureService extends Service {
         lastAttemptAt=busySince;
         final int token = generation;
         final int requestEpoch = memoryEpoch;
+        android.util.Log.i("CrypticNotes","Recognition started: token="+token+", frameBytes="+frame.length+", capture="+width+"x"+height+", viewedFloor="+viewedFloor);
         final int forceFloor=pendingForceFloor;
         pendingForceFloor=0; // Consent is consumed by exactly this request.
         compute.execute(() -> {
@@ -1331,7 +1384,7 @@ public class CaptureService extends Service {
                 // gated=True: capture() already confirmed the panel is open on
                 // this exact frame, so the adapter need not re-run the gate.
                 JSONObject result = new JSONObject(
-                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor).toString());
+                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor, viewedFloor).toString());
                 offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
                 if (ok) {
@@ -1353,9 +1406,13 @@ public class CaptureService extends Service {
             final JSONObject proposedOffer=offer;
             main.post(() -> {
                 busy = false;
+                // Every completion ends the busy animation, even when a stale
+                // request or a changed viewport suppresses presentation.
+                if(state==S_MATCHING)setStatus(S_IDLE,null);
                 // Closing only suppresses presentation. Reopening supersedes
                 // the previous identity proposal before it can update memory.
                 if (destroyed || token != generation || !mapPanelOpen || MiniGameOverlayService.running) {
+                    android.util.Log.i("CrypticNotes","Recognition presentation skipped: token="+token+", generation="+generation+", mapOpen="+mapPanelOpen+", destroyed="+destroyed);
                     if (decoded != null) decoded.recycle();
                     repoll(WATCH_MS);
                     return;
@@ -1365,6 +1422,7 @@ public class CaptureService extends Service {
                         setStatus(S_IDLE,null);collapseBadge();showManualPrompt(proposedOffer,token);
                         repoll(WATCH_MS);return;
                     }
+                    android.util.Log.w("CrypticNotes","No overlay bitmap: token="+token+", offer="+(proposedOffer!=null)+", text="+text);
                     if (overlayLayer == null) setStatus(S_FAILED, text);
                     repoll(WATCH_MS);
                     return;
@@ -1372,15 +1430,19 @@ public class CaptureService extends Service {
                 // Python took the better part of a second. If the viewport has
                 // moved on since, this fit is aligned to a frame the player
                 // already left; showing it would be a misaligned flash.
-                int[] now = sampleViewport();
+                Bitmap currentFrame=grab();
+                int[] now=currentFrame!=null?signature(currentFrame):latestViewport.forReader(reader);
+                if(currentFrame!=null)currentFrame.recycle();
                 if (matchPixels == null || now == null
                         || difference(matchPixels, now) >= REALIGN_LIMIT) {
+                    android.util.Log.i("CrypticNotes","Recognition viewport changed: token="+token+", previous="+(matchPixels!=null)+", current="+(now!=null));
                     decoded.recycle();
                     lastMatch = 0;
                     invalidateSamples();
                     repoll(WATCH_MS);
                     return;
                 }
+                android.util.Log.i("CrypticNotes","Overlay displayed: token="+token+", bitmap="+decoded.getWidth()+"x"+decoded.getHeight());
                 replaceLayer(decoded);
                 setStatus(S_MATCHED, text);
                 repoll(WATCH_MS);
@@ -1454,17 +1516,34 @@ public class CaptureService extends Service {
         }else traceSceneWatch((includeOverlay?"overlay pixels masked; ":"capture excludes overlay; ")+gameSceneDetector.status());
     }
 
+    private Bitmap cleanCaptureFrame;
+    private ImageReader cleanCaptureReader;
+    private int[] cleanCaptureSignature;
+    private long freshCaptureCount;
     private Bitmap grab() {
         if(recorder!=null) recorder.requestPreview();
         try (Image image = reader.acquireLatestImage()) {
-            if (image == null) return null;
+            if (image == null) {
+                if(cleanCaptureFrame!=null&&cleanCaptureReader==reader&&FrameReuse.same(cleanCaptureSignature,latestViewport.forReader(reader),false))
+                    return cleanCaptureFrame.copy(Bitmap.Config.ARGB_8888,true);
+                return null;
+            }
+            freshCaptureCount++;
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer bytes = plane.getBuffer();
+            bytes.rewind();
             int paddedWidth = plane.getRowStride() / plane.getPixelStride();
             Bitmap padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888);
             padded.copyPixelsFromBuffer(bytes);
             Bitmap full = Bitmap.createBitmap(padded, 0, 0, width, height);
             if (full != padded) padded.recycle();
+            int[] sampled=signature(full);
+            latestViewport.remember(reader,sampled);
+            if(overlay==null||overlay.getVisibility()!=View.VISIBLE){
+                if(cleanCaptureFrame!=null)cleanCaptureFrame.recycle();
+                cleanCaptureFrame=full.copy(Bitmap.Config.ARGB_8888,false);
+                cleanCaptureReader=reader;cleanCaptureSignature=sampled;
+            }
             return full;
         } catch (Exception e) {
             return null;
@@ -1838,6 +1917,7 @@ public class CaptureService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        if(cleanCaptureFrame!=null){cleanCaptureFrame.recycle();cleanCaptureFrame=null;}
         stopRecording();
         if (current == this) current = null;
         generation++;

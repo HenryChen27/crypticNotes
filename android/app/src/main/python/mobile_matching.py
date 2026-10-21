@@ -1,5 +1,6 @@
 """Conservative phone-only matching policy; desktop thresholds stay unchanged."""
 import time
+import cv2
 import numpy as np
 from mapmatching.src.matcher import MapMatcher, MatchResult
 from mapmatching.src.evidence import extract
@@ -9,7 +10,21 @@ from mapmatching.src.registration import register
 
 def selected_floor(pixels):
     from mapmatching.src.manual_alignment import manual_floor_reading
-    return manual_floor_reading(pixels)['floor']
+    reading=manual_floor_reading(pixels)
+    if reading['floor'] is not None or reading.get('reason')=='conflicting_tabs':return reading['floor']
+    # Area downsampling can erase a tiny phone digit at one threshold while
+    # its neighbor survives at another. Keep the existing shape/group gates,
+    # requiring two independent interpolation results to agree.
+    from mapmatching.src.floor_tabs import inspect_floor_tabs
+    h,w=pixels.shape[:2]
+    if w<=h:return None
+    gray=cv2.cvtColor(pixels[:,:,:3],cv2.COLOR_BGR2GRAY)
+    size=(min(w,1280),max(1,round(h*min(w,1280)/w)))
+    floors=[]
+    for interpolation in (cv2.INTER_LINEAR,cv2.INTER_CUBIC):
+        sample=cv2.cvtColor(cv2.resize(gray,size,interpolation=interpolation),cv2.COLOR_GRAY2BGR)
+        floors.append(inspect_floor_tabs(sample)['floor'])
+    return floors[0] if floors[0] is not None and floors[0]==floors[1] else None
 
 
 def reject_reason(candidates, known=False, floor_confirmed=False):

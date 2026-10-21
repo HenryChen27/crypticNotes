@@ -1,5 +1,17 @@
 package com.crypticnotes.mobile;
 final class FrameReuse {
+    static int sampleCoordinate(int cell,int size,int cells){
+        return Math.min(size-1,(int)(((2L*cell+1)*size)/(2L*cells)));
+    }
+    /** An idle ImageReader means unchanged content, not a missing screenshot.
+     * Reader identity prevents reusing pixels after projection reconfiguration. */
+    static final class Latest {
+        private Object source;
+        private int[] pixels;
+        void remember(Object reader,int[] value){if(reader!=null&&value!=null){source=reader;pixels=value;}}
+        int[] forReader(Object reader){return reader!=null&&reader==source?pixels:null;}
+    }
+
     static boolean same(int[] a,int[] b,boolean controlsOnly){
         if(a==null||b==null||a.length!=14400||b.length!=14400)return false;
         for(int y=0;y<90;y++)for(int x=0;x<160;x++){

@@ -61,6 +61,19 @@ def inspect(data, excluded=None):
     pixels=decode(data)
     return json.dumps(inspect_map_ui(pixels, excluded))
 
+def read_floor_header(data, width, height):
+    """Read native-resolution HUD independently of the reduced matching image."""
+    header=decode(data)
+    if header is None or width<=0 or height<=0 or width>8192 or height>8192:
+        return 0
+    left=int(.55*width)
+    if header.shape[0]>height or header.shape[1]>width-left:
+        return 0
+    pixels=np.zeros((height,width,3),np.uint8)
+    pixels[:header.shape[0],left:left+header.shape[1]]=header
+    return selected_floor(pixels) or 0
+
+
 def commit_match(token):
     global _cached, _confirmed, _pending_candidate
     if _pending_candidate is not None and _pending_candidate[0] == token:
@@ -74,7 +87,7 @@ def commit_match(token):
     return False
 
 
-def match(data, output, gated=False, remember=True, token=None, force_floor=0):
+def match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0):
     """Register the open map. `gated=True` when the caller already ran the
     map-panel gate on this exact frame, which saves a second decode and a
     second gate pass (~40-80ms) on the hot re-registration path."""
@@ -91,7 +104,7 @@ def match(data, output, gated=False, remember=True, token=None, force_floor=0):
     x,X=int(.41*w),int(.86*w)
     map_pixels=np.zeros_like(pixels)
     map_pixels[y:Y,x:X]=pixels[y:Y,x:X]
-    floor = selected_floor(pixels)
+    floor = int(viewed_floor) if viewed_floor in (-1,1,2) else selected_floor(pixels)
     if isinstance(_matcher, MultiplayerFallback):
         _matcher.primary.floor_hint = floor
         # Ensure the lazily created solo matcher gets this frame's floor too.
