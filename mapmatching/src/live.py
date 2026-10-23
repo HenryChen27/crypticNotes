@@ -77,7 +77,10 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
     from .map_style import floor_selection
     alpha = floor_selection(original.shape,region)*255
     if reference.map_id.startswith('zhanshi/'):
-        alpha[original[:,:,:3].max(axis=2)<25]=0
+        # Same black-pixel test, using OpenCV's vectorized implementation.
+        # A NumPy channel reduction on a 4K atlas dominated render time.
+        black=cv2.inRange(original[:,:,:3],(0,0,0),(24,24,24))
+        alpha=cv2.bitwise_and(alpha,cv2.bitwise_not(black))
     for x0,y0,x1,y1 in reference.exclusions:
         alpha[y0:y1,x0:x1] = 0
     source = cv2.cvtColor(original, cv2.COLOR_BGR2BGRA)

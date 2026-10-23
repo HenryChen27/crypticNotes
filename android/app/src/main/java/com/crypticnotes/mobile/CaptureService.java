@@ -54,7 +54,7 @@ public class CaptureService extends Service {
             +"\n界面="+width+"x"+height+", 共享源="+capturedWidth+"x"+capturedHeight
             +"\n有共享="+(projection!=null)+", 可见="+capturedVisible+", 比例符合="+captureFitsScreen()
             +"\n初始化="+initializing+", 就绪="+ready+", 小游戏模式="+gameOnly+", 隐藏叠图="+overlayHidden
-            +"\n采集模式=点击唤醒, 会话活动="+touchCapture.awake()+", 无障碍已连接="+(TapRelayService.current!=null)+", 正在录屏="+(recorder!=null)
+            +"\n采集模式=无触摸注入, 自动展开检测="+automaticMapProbe()+", 会话活动="+touchCapture.awake()+", 待机检查次数="+idleProbeChecks+", 正在录屏="+(recorder!=null)
             +"\n忙碌="+busy+", 检测中="+checking+", 排队="+manualRetry+", 状态="+state
             +"\n匹配耗时ms="+(busy?now-busySince:0)+", 检测耗时ms="+(checking?now-checkingSince:0)
             +"\n新帧数="+freshCaptureCount+", 距新帧ms="+(lastFreshFrameAt==0?-1:now-lastFreshFrameAt)
@@ -87,6 +87,7 @@ public class CaptureService extends Service {
     private void toggleRecording() {
         if(recorder!=null) { stopRecording(); return; }
         if(projection==null || display==null || reader==null || stoppingRecording) return;
+        idleProbe.cancel();display.resize(width,height,density);
         final SharedScreenRecorder[] session=new SharedScreenRecorder[1];
         final ImageReader recordingReader=reader;
         display.setSurface(null); // A Surface can have only one producer.
@@ -310,7 +311,6 @@ public class CaptureService extends Service {
     private int applyToken = 0;
     private View tapRegion; private RegionCalibrationView calibration;
     private RectF tapBounds;
-    private Path touchPath; private long touchStart;
     private WindowManager.LayoutParams badgeParams;
     private TextView badgeLabel; private ImageView badgeEmblem;
     /** Collapsed width, expanded width and height of the button, in pixels. */
@@ -361,13 +361,66 @@ public class CaptureService extends Service {
      */
     private static final long BADGE_HOLD_MS = 900;
 
+    private final IdleMapProbe idleProbe=new IdleMapProbe(main);
+    private boolean idleProbeScheduled,idleChecking;
+    private long idleProbeChecks;
+    private boolean automaticMapProbe(){return getSharedPreferences("mobile",0).getBoolean("automatic_map_probe",true);}
+    private void scheduleIdleProbe(){
+        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe() || idleProbeScheduled || idleChecking || idleProbe.active())return;
+        idleProbeScheduled=true;
+        main.postDelayed(idleProbeTick,powerSaving()?2000:1000);
+    }
+    private final Runnable idleProbeTick=()->{
+        idleProbeScheduled=false;
+        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe())return;
+        if(projection==null || display==null || !capturedVisible || width<=height || quickSettings!=null || calibration!=null || overlayHidden){scheduleIdleProbe();return;}
+        try{
+            if(recorder!=null){
+                // Reuse the recording preview; never resize its VirtualDisplay.
+                if(!recordingReady || stoppingRecording){scheduleIdleProbe();return;}
+                Bitmap frame=grab();
+                if(frame==null){scheduleIdleProbe();return;}
+                Bitmap small=Bitmap.createScaledBitmap(frame,480,Math.max(1,Math.round(frame.getHeight()*480f/frame.getWidth())),true);
+                if(small!=frame)frame.recycle();
+                inspectIdleFrame(small);
+            }else idleProbe.start(display,width,height,density,this::inspectIdleFrame);
+        }catch(Exception error){android.util.Log.w("CrypticNotes","Idle map probe failed",error);updateCaptureOutput();scheduleIdleProbe();}
+    };
+    private void inspectIdleFrame(Bitmap frame){
+        if(frame==null){scheduleIdleProbe();return;}
+        if(destroyed || !recognitionIdle()){frame.recycle();return;}
+        idleChecking=true;idleProbeChecks++;
+        final int token=generation;
+        final float[] excluded=badgeParams==null?null:new float[]{
+            Math.max(0,badgeParams.x-6)/(float)width,Math.max(0,badgeParams.y-6)/(float)height,
+            Math.min(width,badgeParams.x+badgeParams.width+6)/(float)width,
+            Math.min(height,badgeParams.y+badgeHeight+6)/(float)height};
+        try{inspect.execute(()->{
+            boolean visible=false;
+            try{
+                byte[] bytes=encode(frame);
+                if(bytes!=null)visible=new JSONObject(bridge.callAttr("inspect",bytes,excluded).toString()).optBoolean("visible");
+            }catch(Exception error){android.util.Log.w("CrypticNotes","Idle controls inspection failed",error);}
+            final boolean opened=visible;
+            main.post(()->{
+                idleChecking=false;
+                if(destroyed)return;
+                if(token==generation && recognitionIdle() && opened && automaticMapProbe()){
+                    clearOverlay();lastMatch=0;wakeRecognition();
+                    android.util.Log.i("CrypticNotes","Map controls detected by low-resolution pulse; full capture resumed");
+                }else scheduleIdleProbe();
+            });
+        });}catch(RejectedExecutionException error){idleChecking=false;frame.recycle();scheduleIdleProbe();}
+    }
     private final TouchCaptureSession touchCapture = new TouchCaptureSession();
     private boolean recognitionIdle(){return !gameOnly && !MiniGameOverlayService.running && !touchCapture.awake();}
     private void updateCaptureOutput(){
         if(display==null || reader==null || recorder!=null || stoppingRecording)return;
-        display.setSurface(recognitionIdle()?null:reader.getSurface());
+        if(recognitionIdle())display.setSurface(null);
+        else { idleProbe.cancel();display.resize(width,height,density);display.setSurface(reader.getSurface()); }
     }
     private void wakeRecognition(){
+        main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel();
         touchCapture.wake(SystemClock.elapsedRealtime());
         memoryEpoch++;mapPanelOpen=false;
         // Never re-use the last session's image while a fresh frame is pending.
@@ -386,7 +439,8 @@ public class CaptureService extends Service {
         cleanCaptureReader=null;cleanCaptureSignature=null;latestViewport.clear();
         main.removeCallbacks(poll);pollScheduled=false;
         updateCaptureOutput();setSpinning(false);
-        android.util.Log.i("CrypticNotes","Touch capture asleep; screenshot output detached unless recording");
+        android.util.Log.i("CrypticNotes","Recognition asleep; waiting for low-power map controls probe or manual action");
+        scheduleIdleProbe();
     }
     void onTapRelayChanged(){main.post(()->{if(!destroyed)refreshTapRegion();});}
     private boolean pollScheduled = false;
@@ -508,7 +562,7 @@ public class CaptureService extends Service {
                         setStatus(S_IDLE, applying ? "正在应用设置…" : "等待地图");
                         if (ready) {
                             sleepRecognition();
-                            setStatus(S_IDLE,TapRelayService.current==null?"请开启点击触发的无障碍权限；也可点重新识别":"点击地图区域开始识别");
+                            setStatus(S_IDLE,"等待地图 · 不接管触摸");
                         }
                     });
                 } catch (Exception e) {
@@ -862,6 +916,7 @@ public class CaptureService extends Service {
     }
 
     private void resizeCapture() {
+        idleProbe.close();
         if(recorder!=null) { pendingCaptureResize=true; stopRecording(); return; }
         clearOverlay();
         DisplayMetrics metrics = new DisplayMetrics();
@@ -1015,7 +1070,8 @@ public class CaptureService extends Service {
 
     /** The single place the loop is re-armed. Every path out of a step lands here. */
     private void repoll(int delayMs) {
-        if (destroyed || recognitionIdle()) return;
+        if (destroyed) return;
+        if(recognitionIdle()){scheduleIdleProbe();return;}
         main.removeCallbacks(poll);
         pollScheduled = true;
         main.postDelayed(poll, powerSaving() && delayMs>=WATCH_MS ? delayMs*2 : delayMs);
@@ -1655,43 +1711,8 @@ public class CaptureService extends Service {
     }
 
     private void refreshTapRegion() {
-        if (tapRegion != null) { windows.removeView(tapRegion); tapRegion = null; }
-        if (destroyed || width <= height || calibration != null
-                || gameOnly || MiniGameOverlayService.running
-                || TapRelayService.current == null) return;
-        tapBounds = readBounds();
-        tapRegion = new View(this);
-        WindowManager.LayoutParams p = params(Math.round(width * tapBounds.width()),
-                Math.round(height * tapBounds.height()), true);
-        p.x = Math.round(width * tapBounds.left); p.y = Math.round(height * tapBounds.top);
-        tapRegion.setOnTouchListener((v, e) -> {
-            if (e.getAction() == MotionEvent.ACTION_DOWN) {
-                touchStart = SystemClock.uptimeMillis();
-                touchPath = new Path();
-                touchPath.moveTo(e.getRawX(), e.getRawY());
-            } else if (e.getAction() == MotionEvent.ACTION_MOVE && touchPath != null) {
-                touchPath.lineTo(e.getRawX(), e.getRawY());
-            } else if (e.getAction() == MotionEvent.ACTION_UP && touchPath != null) {
-                Path path = new Path(touchPath);
-                touchPath = null;
-                long duration = SystemClock.uptimeMillis() - touchStart;
-                v.setVisibility(View.GONE);
-                clearOverlay();
-                lastMatch = 0;
-                main.postDelayed(() -> {
-                    TapRelayService relay = TapRelayService.current;
-                    if (relay != null) relay.relay(path, duration, () -> main.post(() -> {
-                        if (!destroyed) {
-                            wakeRecognition();
-                            main.postDelayed(()->{if(!destroyed)refreshTapRegion();},150);
-                        }
-                    }));
-                    else refreshTapRegion();
-                }, 70);
-            } else if (e.getAction() == MotionEvent.ACTION_CANCEL) touchPath = null;
-            return true;
-        });
-        windows.addView(tapRegion, p);
+        if(tapRegion!=null){windows.removeView(tapRegion);tapRegion=null;}
+        scheduleIdleProbe();
     }
 
     /**
@@ -1838,10 +1859,15 @@ public class CaptureService extends Service {
         });
         LinearLayout.LayoutParams lastParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
         lastParams.topMargin = Theme.px(this, 10);
-        Theme.ChalkButton region = button("地图区域设置", false);
+        Theme.ChalkButton region = button(automaticMapProbe()?"自动检测地图：开":"自动检测地图：关", false);
         LinearLayout.LayoutParams regionParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 42));
         regionParams.setMargins(pad, 0, pad, pad);
-        region.setOnClickListener(v -> { closeQuickSettings(); showCalibration(); });
+        region.setOnClickListener(v -> {
+            boolean enabled=!automaticMapProbe();
+            getSharedPreferences("mobile",0).edit().putBoolean("automatic_map_probe",enabled).apply();
+            region.setText(enabled?"自动检测地图：开":"自动检测地图：关");
+            if(enabled)scheduleIdleProbe();
+        });
         actions.setPadding(0,0,0,Theme.px(this,8));
         int actionIndex=panel.indexOfChild(routeRow)+1;
         panel.addView(actions,actionIndex,new LinearLayout.LayoutParams(-1,-2));
@@ -2008,6 +2034,7 @@ public class CaptureService extends Service {
 
     @Override public void onDestroy() {
         destroyed = true;
+        idleProbe.close();
         if(cleanCaptureFrame!=null){cleanCaptureFrame.recycle();cleanCaptureFrame=null;}
         stopRecording();
         if (current == this) current = null;

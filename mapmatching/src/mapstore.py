@@ -232,7 +232,7 @@ def build_index(maps, *, force: bool = False) -> None:
                                        remove_annotations=REMOVE_ANNOTATIONS, references=records))
 
 
-def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', map_ids=None) -> list:
+def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', map_ids=None, include_distance=True) -> list:
     from .reference import Reference      # 延迟导入：reference 在函数体里反向引用本模块
     maps = Path(maps)
     payload = _read_json(maps/'index.json', None)
@@ -262,7 +262,7 @@ def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', m
             evidence = Evidence(a['mask'], a['boundary'], a['corners'], a['descriptors'],
                                 a['radii'], record['factor'], None)
             result.append(Reference(entry['map_id'], entry['difficulty'], entry['mode'],
-                                    entry['source'], evidence, a['distance'],
+                                    entry['source'], evidence, a['distance'] if include_distance else None,
                                     entry.get('regions', []), entry.get('exclude_regions', []),
                                     entry.get('terrain_id'), entry.get('recognition_map_id')))
     return result

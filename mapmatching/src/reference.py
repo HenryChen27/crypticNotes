@@ -50,5 +50,5 @@ def build(maps: Path, remove_annotations: bool = True) -> None:
     mapstore.build_index(maps, force=True)
 
 
-def load(directory: Path, *, difficulty: str | None = None, mode: str | None = None, provider: str = 'lianghapi', map_ids=None) -> list[Reference]:
-    return mapstore.load_references(directory, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids)
+def load(directory: Path, *, difficulty: str | None = None, mode: str | None = None, provider: str = 'lianghapi', map_ids=None, include_distance=True) -> list[Reference]:
+    return mapstore.load_references(directory, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids, include_distance=include_distance)

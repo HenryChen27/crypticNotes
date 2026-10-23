@@ -36,7 +36,7 @@ class MapMatcher:
     def __init__(self, index: Path, *, difficulty: str, mode: str | None = None, provider: str = 'lianghapi', map_ids=None):
         self.floor_hint = None
         self.context = SessionContext(difficulty, mode, provider)
-        self.references = load(index, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids)
+        self.references = load(index, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids, include_distance=False)
         if not self.references:
             raise ValueError('当前地图库没有展十地图，请更新地图识别模块' if provider == 'zhanshi' else 'No references satisfy the supplied hints')
         self.floor_references = []
