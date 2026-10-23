@@ -1,3 +1,35 @@
+# 两套地图库
+
+默认使用凉哈皮。设置中的“地图版本”可切换为展十，展十提供噩梦全棺和速刷两种参考路线。
+
+```
+maps/
+├─ lianghapi/hard/                 凉哈皮困难原图
+├─ lianghapi/nightmare/solo/        凉哈皮单人路线
+├─ lianghapi/nightmare/duo/         凉哈皮多人路线
+├─ zhanshi/full/                   展十全棺原图（保留原分类和文件名）
+├─ zhanshi/speed/                  展十速刷原图
+├─ providers.json                  作者与路线目录，默认 lianghapi
+├─ floors.json                     地图登记、原图校验、楼层选区
+├─ evidence/                       可重建的识别特征
+└─ index.json                      可重建的特征索引
+```
+
+原图不改像素、不重新压缩。旧版 maps/hard、maps/nightmare 路径仍可读取，用户已有地图不要求迁移。
+没有 provider 字段的旧条目归属凉哈皮，旧 map_id 保持不变，人工标注答案不变。
+展十原始 zhanshi 文件夹保留不动，三张说明图片不参与识别。
+
+展十图按实际地形划分一楼、二楼、地下室，并用多边形隔开相邻楼层。识别特征排除高饱和路线、星标和灰色水印；显示仍使用原始彩色图。
+先用公共地形库确定地图身份，再在所选作者原图上独立计算缩放和位置；切换作者会清空当前识别记忆。
+两套图的对应关系来自完整三层轮廓比对，不读取实机数据集的人工作答。
+
+数据整理脚本、选区预览、对应关系和测评结果统一在 datasets/：
+- datasets/tools/import_zhanshi.py：复制展十原图、生成分区和索引、链接共同地形。
+- datasets/tools/link_zhanshi.py：用三层完整轮廓生成对应关系；分差不足时停止，不自动猜测。
+- datasets/evaluation/zhanshi-integration/floor-regions.jpg：逐图选区总览（绿=一楼、黄=二楼、蓝=地下室）。
+
+以下是旧版登记与管理规则，路径示例适用于旧库；新录入按作者子目录保存。
+
 # maps/ — 地图库
 
 所有和地图有关的东西都在这里，只有这一处。内置原图和手动录入的图**没有区别**：

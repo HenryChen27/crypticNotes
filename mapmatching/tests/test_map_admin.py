@@ -99,7 +99,7 @@ class RemovalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             register(root, '移除的')
-            source = root/'maps/nightmare/solo/移除的.png'
+            source = root/'maps/lianghapi/nightmare/solo/移除的.png'
             evidence = root/'maps/evidence'/mapstore.evidence_name('nightmare/solo/移除的')
             set_enabled(root, 'nightmare/solo/移除的', False)
             self.assertTrue(source.exists())

@@ -33,12 +33,12 @@ class MatchResult:
 
 
 class MapMatcher:
-    def __init__(self, index: Path, *, difficulty: str, mode: str | None = None):
+    def __init__(self, index: Path, *, difficulty: str, mode: str | None = None, provider: str = 'lianghapi', map_ids=None):
         self.floor_hint = None
-        self.context = SessionContext(difficulty, mode)
-        self.references = load(index, difficulty=difficulty, mode=mode)
+        self.context = SessionContext(difficulty, mode, provider)
+        self.references = load(index, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids)
         if not self.references:
-            raise ValueError('No references satisfy the supplied hints')
+            raise ValueError('当前地图库没有展十地图，请更新地图识别模块' if provider == 'zhanshi' else 'No references satisfy the supplied hints')
         self.floor_references = []
         for ref in self.references:
             for region in ref.regions:
@@ -46,8 +46,9 @@ class MapMatcher:
                 x,y,X,Y = np.array(region['bbox']) * ev.image_factor
                 inside = ((ev.corners[:,0]>=x)&(ev.corners[:,0]<X)&
                           (ev.corners[:,1]>=y)&(ev.corners[:,1]<Y))
-                yy,xx = np.indices(ev.boundary.shape)
-                keep = (xx>=x)&(xx<X)&(yy>=y)&(yy<Y)
+                from .map_style import floor_selection
+                keep = floor_selection(ev.mask.shape,region,ev.image_factor).astype(bool)
+                inside &= keep[np.clip(np.rint(ev.corners[:,1]).astype(int),0,keep.shape[0]-1),np.clip(np.rint(ev.corners[:,0]).astype(int),0,keep.shape[1]-1)]
                 boundary = (ev.boundary*keep).astype(np.uint8)
                 if not boundary.any() or inside.sum()<2:
                     continue
@@ -59,6 +60,12 @@ class MapMatcher:
 
     def match(self, screenshot: np.ndarray) -> MatchResult:
         from .live import presentation_candidate
+        from .phone_layout import phone_viewport
+        phone=phone_viewport(screenshot)
+        if phone is not None:
+            result=self._match_view(phone,full_view=True)
+            result.diagnostics['pipeline_view']='confirmed_phone_viewport'
+            return result
         initial = self._match_view(screenshot)
         if presentation_candidate(initial)[0] is not None:
             return initial
@@ -160,6 +167,13 @@ class MapMatcher:
                                'reference_count': 1, 'identity_search_performed': False,
                                'confidence_calibrated': False,
                                'timing_ms': {'total': (time.perf_counter()-start)*1000}})
+        from .phone_layout import phone_viewport
+        phone=phone_viewport(screenshot)
+        if phone is not None:
+            screenshot=phone
+            result=align(True)
+            result.diagnostics['pipeline_view']='cached_confirmed_phone_viewport'
+            return result
         initial = align(False)
         candidate = cached_alignment_candidate(initial)[0]
         if candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20:

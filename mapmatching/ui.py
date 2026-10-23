@@ -977,10 +977,10 @@ class Companion(W.QWidget):
         self.setting_sections = [FoldSection(name, i == 0) for i, name in
                                  enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '问题排查'))]
         self.general_section=FoldSection('界面设置',True)
-        self.general_section.body.addWidget(W.QLabel('主程序版本 '+application_version()))
         self.map_shortcuts=FoldSection('快捷键')
         self.version_section=FoldSection('版本')
         self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])
+        self.version_section.body.addWidget(W.QLabel('主程序（含识图程序） · '+application_version()))
         self.version_section.body.addWidget(self.matching_controls)
         self.matching_controls.changed.connect(self.refresh_matching_module)
         for i in (3,5):self.setting_sections[i].hide()
@@ -1009,14 +1009,29 @@ class Companion(W.QWidget):
         from .minigames_ui import GameControls
         self.minigames = GameControls(self)
         minigames.addWidget(self.minigames)
+        self.map_provider = ChalkChoice([('凉哈皮','lianghapi'),('展十','zhanshi')])
+        self.map_provider.setCurrentIndex(1 if self.settings.get('map_provider') == 'zhanshi' else 0)
+        author_row=W.QHBoxLayout()
+        author_label=W.QLabel('地图版本');author_label.setFixedWidth(62)
+        author_row.addWidget(author_label);author_row.addWidget(self.map_provider,1)
+        game.addLayout(author_row)
+        self.zhanshi_route = ChalkChoice([('全棺','full'),('速刷','speed')])
+        self.zhanshi_route.setCurrentIndex(1 if self.settings.get('zhanshi_route') == 'speed' else 0)
+        self.zhanshi_row=W.QWidget();route_layout=W.QHBoxLayout(self.zhanshi_row)
+        route_layout.setContentsMargins(0,0,0,0)
+        route_label=W.QLabel('参考路线');route_label.setFixedWidth(62)
+        route_layout.addWidget(route_label);route_layout.addWidget(self.zhanshi_route,1)
         self.difficulty = ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(1 if self.settings.get('difficulty') == 'nightmare' else 0)
-        difficulty_row=W.QHBoxLayout()
+        self.difficulty_row=W.QWidget()
+        difficulty_row=W.QHBoxLayout(self.difficulty_row)
+        difficulty_row.setContentsMargins(0,0,0,0)
         label=W.QLabel('难度')
         label.setFixedWidth(62)
         difficulty_row.addWidget(label)
         difficulty_row.addWidget(self.difficulty,1)
-        game.addLayout(difficulty_row)
+        game.addWidget(self.difficulty_row)
+        game.addWidget(self.zhanshi_row)
         self.party_row = W.QWidget()
         party_layout = W.QHBoxLayout(self.party_row)
         party_layout.setContentsMargins(0,0,0,0)
@@ -1156,7 +1171,7 @@ class Companion(W.QWidget):
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
-        self.general_section.body.addWidget(update_button)
+        self.version_section.body.insertWidget(1,update_button)
         self.update_map_keys(False)
         layout.addWidget(self.panel)
         self.panel.hide()
@@ -1168,12 +1183,14 @@ class Companion(W.QWidget):
         self.timer = C.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(20)
+        self.map_provider.currentIndexChanged.connect(self.context_changed)
+        self.zhanshi_route.currentIndexChanged.connect(self.context_changed)
         self.difficulty.currentIndexChanged.connect(self.context_changed)
         self.party.currentIndexChanged.connect(self.context_changed)
         self.opacity.valueChanged.connect(self.opacity_changed)
         self.enabled.toggled.connect(lambda enabled: self.close_map() if not enabled else None)
         self.opacity_changed()
-        self.party_row.setVisible(self.difficulty.currentIndex() == 1)
+        self.refresh_map_provider()
         self.resize_settings()
         self.adjustSize()
         if not self.restore_position():
@@ -1238,7 +1255,7 @@ class Companion(W.QWidget):
 
     def matching_available(self):
         controls=getattr(self,'matching_controls',None)
-        return controls is None or (controls.task is None and controls.store.enabled())
+        return controls is None or (controls.task is None and controls.store.author_enabled('zhanshi' if self.map_provider.currentIndex()==1 else 'lianghapi'))
 
     def update_map_keys(self,persist=True):
         self.keys.toggle_key=HOTKEYS[self.hotkey] if self.enabled.isChecked() else 0
@@ -1250,7 +1267,7 @@ class Companion(W.QWidget):
 
     def refresh_matching_module(self):
         available=self.matching_available()
-        for i in (0,1,2,4,6):self.setting_sections[i].setEnabled(available)
+        for i in (1,2,4,6):self.setting_sections[i].setEnabled(available)
         self.cached_candidate=None;self.confirmed_candidate=None
         self.switch_module(self.module_tabs.currentIndex())
         if available:self.start_worker()
@@ -1368,7 +1385,15 @@ class Companion(W.QWidget):
         self.place_gear(target)
         return True
 
+    def refresh_map_provider(self):
+        is_zhanshi = self.map_provider.currentIndex() == 1
+        self.difficulty_row.setVisible(True)
+        self.party_row.setVisible(not is_zhanshi and self.difficulty.currentIndex() == 1)
+        self.zhanshi_row.setVisible(is_zhanshi)
+
     def context(self):
+        if self.map_provider.currentIndex() == 1:
+            return ('hard' if self.difficulty.currentIndex()==0 else 'nightmare','full' if self.zhanshi_route.currentIndex() == 0 else 'speed')
         return ('hard',None) if self.difficulty.currentIndex() == 0 else ('nightmare','solo' if self.party.currentIndex() == 0 else 'duo')
 
     def save(self):
@@ -1376,7 +1401,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(last_module=self.last_module,difficulty=difficulty,mode=mode,opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1483,7 +1508,7 @@ class Companion(W.QWidget):
         self.cached_candidate = None
         self.close_map()
         self.stop_worker()
-        self.party_row.setVisible(self.difficulty.currentIndex() == 1)
+        self.refresh_map_provider()
         self.resize_settings()
         self.save()
         C.QTimer.singleShot(0,self.start_worker)
@@ -1540,7 +1565,7 @@ class Companion(W.QWidget):
         # 登记表都在里面（见 mapstore）。旧版把自建图写进 LocalAppData 是因为
         # 内置图只读、两者本来就是两棵树；现在没有内置/自建之分，只留一棵，
         # 免得「管理界面改的那份」和「匹配实际读的那份」不是同一份。
-        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self)
+        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self,provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi')
         if dialog.exec()==W.QDialog.Accepted:
             self.cached_candidate=None
             self.stop_worker()
@@ -1910,7 +1935,7 @@ class Companion(W.QWidget):
         if self.process is None:
             parent,child = mp.Pipe()
             self.connection = parent
-            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context()),daemon=True)
+            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context(),'zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi'),daemon=True)
             self.process.start()
             self.worker_deadline = time.monotonic() + 60
             child.close()

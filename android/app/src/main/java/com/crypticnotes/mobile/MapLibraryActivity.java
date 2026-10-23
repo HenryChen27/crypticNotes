@@ -33,7 +33,7 @@ import java.util.concurrent.Executors;
 /** Read-only browser for the independently installed map library. */
 public class MapLibraryActivity extends Activity {
     private static final String[][] FILTERS = {
-            {"全部", ""}, {"困难", "hard"}, {"噩梦·单人", "nightmare/solo"}, {"噩梦·双人", "nightmare/duo"}};
+            {"全部", ""}, {"困难", "hard"}, {"噩梦·单人", "nightmare/solo"}, {"噩梦·双人", "nightmare/duo"}, {"展十全棺","nightmare/full"}, {"展十速刷","nightmare/speed"}};
 
     private final List<MapCatalog.Entry> all = new ArrayList<>();
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -85,7 +85,7 @@ public class MapLibraryActivity extends Activity {
         content.addView(heading("筛选"));
         Theme.MistPanel filters = panel();
         content.addView(filters);
-        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, new String[]{"全部", "困难", "单人", "多人"});
+        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, new String[]{"全部", "困难", "单人", "多人", "全棺", "速刷"});
         filters.addView(filter, wrap());
         filter.setListener(index -> {
             filterIndex = index;

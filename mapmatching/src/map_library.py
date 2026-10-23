@@ -48,14 +48,15 @@ def validate_name(name):
     return name
 
 
-def _target_for(maps, source, name, difficulty, mode):
+def _target_for(maps, source, name, difficulty, mode, provider='lianghapi'):
     """`maps/<难度>[/<人数>]/<名字><后缀>`。后缀跟着源文件走，绝不重编码 ——
     `benchmarks/benchmark.py` 靠 `examples/N/*.jpg` 与条目的 sha256 精确配对，
     任何一次重编码都会让那 7 个样例静默变成 skipped。"""
     suffix=Path(source).suffix.lower()
     if suffix not in SUFFIXES:
         raise ValueError('只支持 PNG / JPG 格式的地图原图')
-    directory=maps/difficulty
+    if Path(source).resolve().is_relative_to(maps.resolve()):return Path(source).resolve()
+    directory=maps/provider/difficulty
     if mode:
         directory=directory/mode
     return directory/f'{name}{suffix}'
@@ -68,17 +69,18 @@ def _fingerprints(maps):
             {e['pixel_sha256'] for e in entries if e.get('pixel_sha256')})
 
 
-def add_map(root, source, name, difficulty, mode, regions):
+def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi'):
     root=Path(root).resolve()
-    SessionContext(difficulty,mode)
+    SessionContext(difficulty,mode,provider)
     name=validate_name(name)
     maps=mapstore.maps_dir(root)
     source=Path(source).resolve()
     original=read_image(source)
     h,w=original.shape[:2]
     validate_regions(regions,w,h)
-    target=_target_for(maps,source,name,difficulty,mode)
+    target=_target_for(maps,source,name,difficulty,mode,provider)
     map_id=f'{difficulty}/'+(f'{mode}/' if mode else '')+name
+    if provider == 'zhanshi':map_id='zhanshi/'+map_id
     library=mapstore.live_entries(maps)
     disabled=mapstore.read_disabled(maps)
     if any(e['map_id']==map_id for e in library+disabled):
@@ -109,6 +111,8 @@ def add_map(root, source, name, difficulty, mode, regions):
                    source=target.relative_to(root).as_posix(),sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
                    pixel_sha256=pixel,size=[w,h],regions=regions,exclude_regions=[],
                    include_regions=[r['bbox'] for r in regions],review='')
+        entry['provider']=provider
+        if provider == 'zhanshi':entry['reference_style']='zhanshi-v1'
         try:
             # 挂索引走 `build_index` 而不是自己往 index.json 里塞一条：它是增量的，
             # 没变过的 58 张直接复用旧记录，只抽这一张；而且顺手把「索引文件不存在 /

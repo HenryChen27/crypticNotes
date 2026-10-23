@@ -182,9 +182,10 @@ class ImportJob(C.QThread):
 
 
 class MapImportDialog(PanelDialog):
-    def __init__(self,root,difficulty,mode,parent=None):
+    def __init__(self,root,difficulty,mode,parent=None,provider='lianghapi'):
         super().__init__(parent,880,720)     # 右对齐主窗口、点到框外自动关，见 panel_dialogs
         self.root=root
+        self.provider=provider
         self.path=None
         self.job=None
         self.result_record=None
@@ -201,11 +202,11 @@ class MapImportDialog(PanelDialog):
         row=W.QHBoxLayout()
         self.difficulty=ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(int(difficulty=='nightmare'))
-        self.party=ChalkChoice([('单人','solo'),('多人','duo')])
-        self.party.setCurrentIndex(int(mode=='duo'))
+        self.party=ChalkChoice([('全棺','full'),('速刷','speed')] if provider == 'zhanshi' else [('单人','solo'),('多人','duo')])
+        self.party.setCurrentIndex(int(mode in ('duo','speed')))
         row.addWidget(self.difficulty); row.addWidget(self.party); box.addLayout(row)
-        self.party.setVisible(difficulty=='nightmare')
-        self.difficulty.currentIndexChanged.connect(lambda i:self.party.setVisible(i==1))
+        self.party.setVisible(difficulty=='nightmare' or provider=='zhanshi')
+        self.difficulty.currentIndexChanged.connect(lambda i:self.party.setVisible(i==1 or provider=='zhanshi'))
         self.canvas=FloorCanvas(); box.addWidget(self.canvas,1)
         row=W.QHBoxLayout()
         self.floor=ChalkChoice([('1F',1),('2F',2),('地下室',-1)])
@@ -264,7 +265,7 @@ class MapImportDialog(PanelDialog):
             self.status.setText('请先选择原图'); return
         regions=[dict(floor=f,bbox=b) for f,b in self.canvas.boxes.items()]
         difficulty=self.difficulty.currentData()
-        args=(self.root,self.path,self.name.text(),difficulty,self.party.currentData() if difficulty=='nightmare' else None,regions)
+        args=(self.root,self.path,self.name.text(),difficulty,self.party.currentData() if difficulty=='nightmare' or self.provider=='zhanshi' else None,regions,self.provider)
         self.job=ImportJob(args,self)
         self.job.completed.connect(self.saved)
         self.job.failed.connect(self.failed)

@@ -37,20 +37,20 @@ def validate_android_signing():
 
 PACKAGES = {
     'android': ['IdentityVMapAssistant-Android-arm64.apk'],
-    'windows': ['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','matching-module.json'],
+    'windows': ['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json'],
     'mac': ['IdentityVMapAssistant-macOS-arm64.zip', 'IdentityVMapAssistant-macOS-x64.zip'],
 }
 
 def input_fingerprint(platform, root=None):
     """Hash release inputs, not timestamps, build output or automatic versions."""
     root = root or ROOT
-    patterns = ['maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
+    patterns = ['maps/lianghapi/**', 'maps/zhanshi/**', 'maps/providers.json', 'maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
                 'mapmatching/src/**', 'mapmatching/config.py', 'mapmatching/paths.py',
                 'mapmatching/__init__.py']
     if platform == 'android':
         patterns += ['android/app/src/**', 'android/*.gradle', 'android/app/*.gradle',
                      'android/gradle.properties', 'scripts/prepare_android.py',
-                     'mapmatching/assets/map-ui/**', 'mapmatching/assets/fonts/*.ttf']
+                     'mapmatching/assets/map-ui/**', 'mapmatching/assets/mobile-map-ui/**', 'mapmatching/assets/fonts/*.ttf']
     else:
         patterns += ['mapmatching/**', 'requirements*.txt', 'scripts/dist_extras.py',
                      'scripts/run.cmd', 'scripts/create_shortcut.ps1', 'maps/disabled.json',
@@ -327,14 +327,14 @@ def main():
     wanted=set()
     if 'windows' not in platforms:
         run([sys.executable,'scripts/build_matching_module.py'])
-        for n in ('IdentityVMapAssistant-Matching.zip','matching-module.json'):
+        for n in ('IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json'):
             shutil.copy2(ROOT/'release'/n,directory/n);wanted.add(n)
     if 'windows' in platforms:
         run([sys.executable,'scripts/build_windows.py'])
         report=directory/'windows-smoke.json'
         run([ROOT/'dist/IdentityVMapAssistant/IdentityVMapAssistant.exe','--self-test',report],env={**os.environ,'JYSJ_SMOKE_MAP_ROOT':str(ROOT)})
         if not json.loads(report.read_text(encoding='utf-8')).get('ok'):raise RuntimeError('Windows smoke failed')
-        wanted.update(['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','matching-module.json','windows-update.json','SHA256SUMS.txt'])
+        wanted.update(['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json','windows-update.json','SHA256SUMS.txt'])
         shutil.copy2(ROOT/'scripts/update-client.ps1',directory/'update-client.ps1')
         for n in wanted:shutil.copy2(ROOT/'release'/n,directory/n)
         wanted.add('update-client.ps1')

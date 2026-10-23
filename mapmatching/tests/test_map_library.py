@@ -31,7 +31,7 @@ class LibraryTests(unittest.TestCase):
             source,image=_fixture(root)
             entry=add_map(root,source,'地下通路','nightmare','duo',REGIONS)
             self.assertEqual(entry['map_id'],'nightmare/duo/地下通路')
-            target=root/'maps/nightmare/duo/地下通路.png'
+            target=root/'maps/lianghapi/nightmare/duo/地下通路.png'
             # 原图是被**复制**过去的，且逐字节不变（重编码会让 benchmark 的
             # sha256 配对静默失效）。
             self.assertTrue(target.exists())

@@ -21,6 +21,7 @@ final class MapCatalog {
         final String mapId, name, difficulty, mode, source, review;
         final List<Integer> floors = new ArrayList<>();
         int width, height;
+        String provider="lianghapi";
 
         Entry(String mapId, String name, String difficulty, String mode, String source, String review) {
             this.mapId = mapId;
@@ -60,6 +61,7 @@ final class MapCatalog {
                         item.optString("name", mapId.substring(mapId.lastIndexOf('/') + 1)),
                         item.optString("difficulty"), item.optString("mode", null),
                         item.optString("source"), item.optString("review"));
+                entry.provider=item.optString("provider","lianghapi");
                 JSONArray size = item.optJSONArray("size");
                 if (size != null && size.length() >= 2) {
                     entry.width = size.optInt(0);
@@ -96,8 +98,8 @@ final class MapCatalog {
     }
 
     static String contextText(String difficulty, String mode) {
-        if ("hard".equals(difficulty)) return "困难";
-        String suffix = "solo".equals(mode) ? "单人" : "duo".equals(mode) ? "多人" : "";
+        if ("hard".equals(difficulty)) return "困难"+("full".equals(mode)?"·展十全棺":"speed".equals(mode)?"·展十速刷":"");
+        String suffix = "solo".equals(mode) ? "单人" : "duo".equals(mode) ? "多人" : "full".equals(mode) ? "展十全棺" : "speed".equals(mode) ? "展十速刷" : "";
         return "噩梦·" + suffix;
     }
 }

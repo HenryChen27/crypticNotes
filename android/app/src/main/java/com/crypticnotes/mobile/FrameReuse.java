@@ -8,6 +8,7 @@ final class FrameReuse {
     static final class Latest {
         private Object source;
         private int[] pixels;
+        void clear(){source=null;pixels=null;}
         void remember(Object reader,int[] value){if(reader!=null&&value!=null){source=reader;pixels=value;}}
         int[] forReader(Object reader){return reader!=null&&reader==source?pixels:null;}
     }

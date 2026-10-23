@@ -24,3 +24,12 @@ def remove(root):
         if old.exists():shutil.rmtree(old)
     finally:
         if stage.exists():shutil.rmtree(stage)
+
+
+def install_provider(root,assets,provider,spec_json):
+    from mapmatching.src.provider_packages import change
+    change(root,provider,assets,json.loads(spec_json))
+
+def remove_provider(root,provider):
+    from mapmatching.src.provider_packages import change
+    change(root,provider)

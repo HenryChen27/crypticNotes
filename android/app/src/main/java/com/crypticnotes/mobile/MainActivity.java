@@ -15,6 +15,7 @@ public class MainActivity extends Activity {
     private Theme.SectionHeading gameHeading;
     private InlineGameManager inlineGames;
     private Theme.ChalkChoice difficulty, party;
+    private MapLibraryChoice libraryChoice;
     private int opacity = 30;
     private AppUpdater updater;
     private boolean capturePermissionPending;
@@ -112,8 +113,12 @@ public class MainActivity extends Activity {
         // is a reading preference, not a setting, so it is not persisted.
         LinearLayout settings = fold("游戏设置", true);
 
+        libraryChoice = new MapLibraryChoice(this);
+        settings.addView(libraryChoice);
         difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
-        settings.addView(choiceRow(fieldLabel("难度"), difficulty), matchWrap());
+        LinearLayout difficultyRow=choiceRow(fieldLabel("难度"), difficulty);
+        settings.addView(difficultyRow, matchWrap());
+        settings.addView(libraryChoice.detachRoute(), matchWrap());
         TextView routeLabel = fieldLabel("参考路线");
         party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
         LinearLayout routeRow = choiceRow(routeLabel, party);
@@ -122,14 +127,19 @@ public class MainActivity extends Activity {
         party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
         difficulty.setListener(i -> {
             getSharedPreferences("mobile", 0).edit().putString("difficulty", i == 0 ? "hard" : "nightmare").apply();
-            party.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
-            routeLabel.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
-            routeRow.setVisibility(i == 1 ? View.VISIBLE : View.GONE);
+            party.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
+            routeLabel.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
+            routeRow.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
         });
         party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
         routeLabel.setVisibility(party.getVisibility());
         routeRow.setVisibility(party.getVisibility());
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
+        libraryChoice.changed=()->{
+            difficultyRow.setVisibility(View.VISIBLE);
+            routeRow.setVisibility(!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
+        };
+        libraryChoice.changed.run();
 
         // Same preference key the in-game panel writes, so a value set mid-game
         // survives a restart instead of being reset here on every launch.
@@ -173,21 +183,16 @@ public class MainActivity extends Activity {
         LinearLayout more = fold("辅助设置", false);
         Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
         powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
-        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","降低检查频率；小游戏采用更小动画缓存并最多请求60Hz，重开小游戏生效。手动识别不受等待限制。"),powerSaving,120),matchWrap());
+        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","正常与省电均只在点击地图区域后采集识别，关闭地图后休眠。省电进一步降低展开期间检查频率和小游戏动画开销。"),powerSaving,120),matchWrap());
         powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
         Theme.ChalkChoice feedback = new Theme.ChalkChoice(this,new String[]{"关","开"});
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
         more.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
         feedback.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("touch_feedback",i==1).apply());
-        more.addView(Theme.helpLabel(this, "点击触发", "可选功能，需要无障碍手势授权。仅转交地图入口范围的触摸；关闭后仍可通过画面自动检测地图。"));
-        final Theme.ChalkToggle tapMode = new Theme.ChalkToggle(this, "启用", 120);
-        tapMode.setChecked(getSharedPreferences("mobile", 0).getBoolean("tap_mode", false));
-        more.addView(tapMode, matchWrap());
-        tapMode.setListener(checked -> {
-            getSharedPreferences("mobile", 0).edit().putBoolean("tap_mode", checked).apply();
-            if (checked && TapRelayService.current == null)
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-        });
+        more.addView(Theme.helpLabel(this, "点击触发", "正常与省电均需要点击固定地图区域才开始采集，关闭地图后休眠。请开启无障碍手势授权以转交点击；也可在悬浮球点重新识别。"));
+        Theme.ChalkButton tapPermission=new Theme.ChalkButton(this,"点击触发权限");
+        more.addView(tapPermission,matchWrap());
+        tapPermission.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         Theme.ChalkButton manage = new Theme.ChalkButton(this, "地图管理");
         more.addView(manage, matchWrap());
         manage.setOnClickListener(v -> startActivity(new Intent(this, MapLibraryActivity.class)));
@@ -383,6 +388,9 @@ public class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("pendingGame",pendingGame);}
 
     private void startCapture() {
+        if(!new MatchingModuleStore(this,getSharedPreferences("mobile",0).getString("map_provider","lianghapi")).installed()){
+            status.setText("请先下载所选作者的地图库，再开始共享");return;
+        }
         pendingGame=null;
         if(!new MatchingModuleStore(this).installed()){status.setText("请先下载加页手记模块");return;}
         if (capturePermissionPending) return;
@@ -462,6 +470,7 @@ public class MainActivity extends Activity {
             }, "update-reconcile").start();
         }
         syncRecordingRows();
+        if (libraryChoice != null) {libraryChoice.refresh();libraryChoice.changed.run();}
         if (difficulty != null) {
             difficulty.setIndex(getSharedPreferences("mobile", 0).getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
             party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
@@ -485,8 +494,9 @@ public class MainActivity extends Activity {
         stopService(new Intent(this, CaptureService.class));
         Intent service = new Intent(this, CaptureService.class)
                 .putExtra("projection", data).putExtra("result", result)
-                .putExtra("difficulty", difficulty.getIndex() == 0 ? "hard" : "nightmare")
-                .putExtra("mode", party.getIndex() == 0 ? "solo" : "duo")
+                .putExtra("provider", getSharedPreferences("mobile",0).getString("map_provider","lianghapi"))
+                .putExtra("difficulty", libraryChoice.difficulty(difficulty.getIndex() == 0 ? "hard" : "nightmare"))
+                .putExtra("mode", libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"))
                 .putExtra("opacity", opacity)
                 .putExtra("gameOnly",pendingGame!=null).putExtra("launchGame",pendingGame);
         startForegroundService(service);pendingGame=null;

@@ -5,10 +5,10 @@ import android.view.accessibility.AccessibilityEvent;
 
 public class TapRelayService extends AccessibilityService {
     public static volatile TapRelayService current;
-    @Override public void onServiceConnected(){current=this;}
+    @Override public void onServiceConnected(){current=this;if(CaptureService.current!=null)CaptureService.current.onTapRelayChanged();}
     @Override public void onAccessibilityEvent(AccessibilityEvent event){}
     @Override public void onInterrupt(){}
-    @Override public void onDestroy(){current=null;super.onDestroy();}
+    @Override public void onDestroy(){current=null;if(CaptureService.current!=null)CaptureService.current.onTapRelayChanged();super.onDestroy();}
     public void relay(Path path,long duration,Runnable done){
         GestureDescription gesture=new GestureDescription.Builder().addStroke(
             new GestureDescription.StrokeDescription(path,0,Math.min(1500,Math.max(45,duration)))).build();

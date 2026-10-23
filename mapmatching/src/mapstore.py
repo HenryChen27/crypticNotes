@@ -140,7 +140,9 @@ def evidence_name(map_id: str) -> str:
 
 
 def entry_sha(entry: dict) -> str:
-    payload = json.dumps({k: entry.get(k) for k in EVIDENCE_FIELDS},
+    fields = {k: entry.get(k) for k in EVIDENCE_FIELDS}
+    if entry.get('reference_style'): fields['reference_style'] = entry['reference_style']
+    payload = json.dumps(fields,
                          sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(payload.encode('utf-8')).hexdigest()
 
@@ -177,6 +179,10 @@ def materialize(maps, entry: dict) -> dict:
     root = _root_of(maps)
     source = _safe_source(root, entry)
     image = read_image(source)
+    if entry.get('reference_style') == 'zhanshi-v1':
+        from .map_style import zhanshi_mask
+        mask = zhanshi_mask(image)
+        image = cv2.cvtColor(cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)*120, cv2.COLOR_GRAY2BGR)
     if entry.get('include_regions'):
         image = mask_outside(image, entry['include_regions'])
     evidence = extract(image, reference=True, remove_annotations=REMOVE_ANNOTATIONS,
@@ -226,7 +232,7 @@ def build_index(maps, *, force: bool = False) -> None:
                                        remove_annotations=REMOVE_ANNOTATIONS, references=records))
 
 
-def load_references(maps, *, difficulty=None, mode=None) -> list:
+def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', map_ids=None) -> list:
     from .reference import Reference      # 延迟导入：reference 在函数体里反向引用本模块
     maps = Path(maps)
     payload = _read_json(maps/'index.json', None)
@@ -238,6 +244,10 @@ def load_references(maps, *, difficulty=None, mode=None) -> list:
     records = {r['map_id']: r for r in payload.get('references', []) if isinstance(r, dict)}
     result = []
     for entry in live_entries(maps):
+        if map_ids is not None and entry['map_id'] not in map_ids:
+            continue
+        if entry.get('provider', 'lianghapi') != provider:
+            continue
         if difficulty is not None and entry['difficulty'] != difficulty:
             continue
         if mode is not None and entry['mode'] != mode:
@@ -254,7 +264,7 @@ def load_references(maps, *, difficulty=None, mode=None) -> list:
             result.append(Reference(entry['map_id'], entry['difficulty'], entry['mode'],
                                     entry['source'], evidence, a['distance'],
                                     entry.get('regions', []), entry.get('exclude_regions', []),
-                                    entry.get('terrain_id')))
+                                    entry.get('terrain_id'), entry.get('recognition_map_id')))
     return result
 
 

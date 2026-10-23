@@ -7,7 +7,7 @@ import os
 from . import mapstore
 
 FLOOR_TEXT = {1: '1F', 2: '2F', -1: '地下室'}
-MODE_TEXT = {None: '', 'solo': '单人', 'duo': '多人'}
+MODE_TEXT = {None: '', 'solo': '单人', 'duo': '多人', 'full':'展十全棺', 'speed':'展十速刷'}
 
 
 def maps_dir(root):
@@ -20,7 +20,7 @@ def floor_text(floors):
 
 def context_text(difficulty, mode):
     if difficulty == 'hard':
-        return '困难'
+        return '困难'+('·'+MODE_TEXT[mode] if mode in ('full','speed') else '')
     return f'噩梦·{MODE_TEXT.get(mode, "")}'
 
 

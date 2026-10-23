@@ -5,7 +5,7 @@ from .theme import MistPanel, ChalkButton, ChalkChoice, chalk_texture
 from .panel_dialogs import PanelDialog, ThumbnailPopup
 from .src.map_admin import context_text, floor_text, list_maps, delete_map
 
-FILTERS = [('全部', ''), ('困难', 'hard'), ('噩梦·单人', 'nightmare/solo'), ('噩梦·双人', 'nightmare/duo')]
+FILTERS = [('全部', ''), ('困难', 'hard'), ('噩梦·单人', 'nightmare/solo'), ('噩梦·双人', 'nightmare/duo'), ('展十·全棺','nightmare/full'), ('展十·速刷','nightmare/speed')]
 SECTIONS = [('active', '可用'), ('disabled', '已停用')]
 
 
@@ -114,7 +114,7 @@ class MapManageDialog(PanelDialog):
         if not key:
             return list(self.records)
         difficulty, _, mode = key.partition('/')
-        return [r for r in self.records if r['difficulty'] == difficulty and (r['mode'] or '') == mode]
+        return [r for r in self.records if r['difficulty'] == difficulty and (not mode or (r['mode'] or '') == mode)]
 
     def remaining(self, record):
         """同难度/人数下还剩几张可匹配的 —— 删到 0 那个模式就没法匹配了。"""
@@ -311,7 +311,7 @@ class MapManageDialog(PanelDialog):
     def add_map(self):
         from .map_import_ui import MapImportDialog
         difficulty, mode = self.context
-        dialog = MapImportDialog(self.root, difficulty, mode, self)
+        dialog = MapImportDialog(self.root, difficulty, mode, self,provider='zhanshi' if mode in ('full','speed') else 'lianghapi')
         if dialog.exec() == W.QDialog.Accepted:
             self.changed = True
             self.status.setText(f'已录入：{dialog.result_record["name"]}')

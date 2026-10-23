@@ -29,6 +29,9 @@ def presentation_candidate(result):
     candidate remains explicitly labelled experimental even when displayed.
     """
     if not result.candidates:
+        if result.reason == 'conflicting_reference_drawings':return None, '候选地形存在分歧，请增加探索范围后重试'
+        if result.reason == 'terrain_identity_unconfirmed':return None, '地图线索不足，暂未确认地形，请增加探索范围'
+        if result.reason == 'author_route_alignment_failed':return None, '地形已确认，路线图暂未对齐，请增加探索范围'
         return None, '没有识别到地图结构，请打开游戏地图后重试'
     c = result.candidates[0]
     if c.pose is None or (c.explained or 0) < .55 or c.contradiction is None or c.contradiction > .40 or c.retrieval_score < 4:
@@ -71,9 +74,10 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
     p = candidate.pose
     if not np.isfinite([p.scale, p.tx, p.ty]).all() or p.scale <= 0:
         raise ValueError('Invalid pose')
-    alpha = np.zeros(original.shape[:2], np.uint8)
-    x0,y0,x1,y1 = region['bbox']
-    alpha[y0:y1,x0:x1] = 255
+    from .map_style import floor_selection
+    alpha = floor_selection(original.shape,region)*255
+    if reference.map_id.startswith('zhanshi/'):
+        alpha[original[:,:,:3].max(axis=2)<25]=0
     for x0,y0,x1,y1 in reference.exclusions:
         alpha[y0:y1,x0:x1] = 0
     source = cv2.cvtColor(original, cv2.COLOR_BGR2BGRA)
@@ -115,19 +119,12 @@ def centered_floor_layer(shape, original, reference, floor, margin=.10, scale=No
             Pose(scale,w/2-scale*(x0+x1)/2,h/2-scale*(y0+y1)/2),floor=floor)
         return raw_layer(shape,original,reference,candidate,full_view=True)
     x0,y0,x1,y1=map(round,(x0,y0,x1,y1))
-    crop = original[max(0,y0):min(original.shape[0],y1),
-                    max(0,x0):min(original.shape[1],x1)]
-    if crop.size == 0:
-        return None
-    h, w = shape[:2]
-    scale = min((w*(1-2*margin))/crop.shape[1], (h*(1-2*margin))/crop.shape[0])
-    nw, nh = max(1, int(crop.shape[1]*scale)), max(1, int(crop.shape[0]*scale))
-    resized = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA)
-    layer = np.zeros((h,w,4), np.uint8)
-    left, top = (w-nw)//2, (h-nh)//2
-    layer[top:top+nh, left:left+nw, :3] = cv2.cvtColor(resized, cv2.COLOR_BGR2BGRA)[:,:,:3]
-    layer[top:top+nh, left:left+nw, 3] = 255
-    return layer
+    h,w=shape[:2]
+    scale=min(w*(1-2*margin)/max(1,x1-x0),h*(1-2*margin)/max(1,y1-y0))
+    from .types import Candidate, Pose
+    candidate=Candidate(reference.map_id,reference.difficulty,reference.mode,0,
+        Pose(scale,w/2-scale*(x0+x1)/2,h/2-scale*(y0+y1)/2),floor=floor)
+    return raw_layer(shape,original,reference,candidate,full_view=True)
 
 
 def composite(screenshot, layer, opacity=.30):
@@ -301,7 +298,7 @@ class SharedTerrainMatcher:
         return self.primary.match(pixels)
 
 
-def worker(connection, root, difficulty, mode):
+def worker(connection, root, difficulty, mode, provider='lianghapi'):
     """Persistent, event-driven process. Parent can terminate active work."""
     from pathlib import Path
     import time
@@ -322,8 +319,16 @@ def worker(connection, root, difficulty, mode):
         if not (index/'index.json').exists():
             from .reference import build
             build(index)
-        matcher = MapMatcher(index, difficulty=difficulty, mode=mode)
-        if difficulty == 'nightmare':
+        if provider == 'zhanshi' and difficulty == 'nightmare':
+            from .author_matcher import LazyAuthorAtlas
+            matcher=LazyAuthorAtlas(index,MapMatcher,difficulty=difficulty,mode=mode,provider=provider)
+        else:
+            matcher = MapMatcher(index, difficulty=difficulty, mode=mode, provider=provider)
+        if provider == 'zhanshi' and difficulty == 'nightmare':
+            from .author_matcher import AuthorRouteMatcher,terrain_recognizer
+            recognizer=terrain_recognizer(index,MapMatcher)
+            matcher=AuthorRouteMatcher(matcher,recognizer)
+        if difficulty == 'nightmare' and provider == 'lianghapi':
             other_mode = 'duo' if mode == 'solo' else 'solo'
             matcher = SharedTerrainMatcher(matcher,
                 lambda: MapMatcher(index, difficulty='nightmare', mode=other_mode))

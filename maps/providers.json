@@ -1,0 +1,29 @@
+{
+  "default": "lianghapi",
+  "providers": [
+    {
+      "id": "lianghapi",
+      "name": "凉哈皮",
+      "routes": [
+        "solo",
+        "duo"
+      ],
+      "difficulties": [
+        "hard",
+        "nightmare"
+      ]
+    },
+    {
+      "id": "zhanshi",
+      "name": "展十",
+      "routes": [
+        "full",
+        "speed"
+      ],
+      "difficulties": [
+        "hard",
+        "nightmare"
+      ]
+    }
+  ]
+}

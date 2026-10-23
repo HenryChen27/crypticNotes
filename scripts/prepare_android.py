@@ -10,7 +10,7 @@ python=target/'python/mapmatching'
 python.mkdir(parents=True,exist_ok=True)
 for name in ('__init__.py','config.py','paths.py'):
     shutil.copy2(ROOT/'mapmatching'/name,python/name)
-for name in ('src','assets/map-ui'):
+for name in ('src','assets/map-ui','assets/mobile-map-ui'):
     shutil.copytree(ROOT/'mapmatching'/name,python/name,dirs_exist_ok=True,ignore=shutil.ignore_patterns('__pycache__'))
 # Same font as the desktop client, so both clients read as one product.
 # Only the UI face is staged; the italic accent face is desktop-only.

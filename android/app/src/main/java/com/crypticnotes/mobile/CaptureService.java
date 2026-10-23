@@ -41,6 +41,28 @@ public class CaptureService extends Service {
         if(!recordingPulse.isStarted()) recordingPulse.start();
     }
     private int capturedWidth, capturedHeight;
+    private volatile String lastGateResult="尚未检测",lastMatchResult="尚未匹配",lastPauseReason="";
+    private int loadedMapCount;
+    private long lastFreshFrameAt;
+    private void copyRecognitionDiagnostic(){
+        long now=SystemClock.elapsedRealtime();
+        String protection="未知";
+        try{protection=String.valueOf(android.provider.Settings.Secure.getInt(getContentResolver(),"screen_share_protection_on",-1));}catch(Exception ignored){}
+        String report="小布偶识图诊断（测试包1）\n版本="+BuildConfig.VERSION_NAME+" ("+BuildConfig.VERSION_CODE+")"
+            +"\n设备="+Build.MANUFACTURER+" "+Build.MODEL+", Android "+Build.VERSION.RELEASE+", "+Build.VERSION.INCREMENTAL
+            +"\n系统共享防护="+protection+"\n已加载地图="+loadedMapCount
+            +"\n界面="+width+"x"+height+", 共享源="+capturedWidth+"x"+capturedHeight
+            +"\n有共享="+(projection!=null)+", 可见="+capturedVisible+", 比例符合="+captureFitsScreen()
+            +"\n初始化="+initializing+", 就绪="+ready+", 小游戏模式="+gameOnly+", 隐藏叠图="+overlayHidden
+            +"\n采集模式=点击唤醒, 会话活动="+touchCapture.awake()+", 无障碍已连接="+(TapRelayService.current!=null)+", 正在录屏="+(recorder!=null)
+            +"\n忙碌="+busy+", 检测中="+checking+", 排队="+manualRetry+", 状态="+state
+            +"\n匹配耗时ms="+(busy?now-busySince:0)+", 检测耗时ms="+(checking?now-checkingSince:0)
+            +"\n新帧数="+freshCaptureCount+", 距新帧ms="+(lastFreshFrameAt==0?-1:now-lastFreshFrameAt)
+            +"\n暂停原因="+lastPauseReason+"\n展开检测="+lastGateResult+"\n最近匹配="+lastMatchResult;
+        ((android.content.ClipboardManager)getSystemService(CLIPBOARD_SERVICE)).setPrimaryClip(android.content.ClipData.newPlainText("识图诊断",report));
+        Toast.makeText(this,"诊断已复制，请粘贴发给开发者",Toast.LENGTH_LONG).show();
+    }
+
 
     private boolean captureFitsScreen() {
         if(capturedWidth<=0 || capturedHeight<=0 || width<=0 || height<=0) return true;
@@ -99,7 +121,7 @@ public class CaptureService extends Service {
                     setStatus(S_IDLE,error==null?"录屏已保存到 "+location:"录屏失败："+error);
                     if(wantAudioPermission) promptAudioPermission();
                     if(pendingCaptureResize) { pendingCaptureResize=false; resizeCapture(); }
-                    invalidateSamples(); repoll(WATCH_MS);
+                    updateCaptureOutput();invalidateSamples(); repoll(WATCH_MS);
                 }
             }
         });
@@ -311,6 +333,7 @@ public class CaptureService extends Service {
         overlayHidden = false;
         clearOverlay(); lastMatch = 0;
         manualRetry = true;
+        wakeRecognition();
         android.util.Log.i("CrypticNotes","Manual recognition queued: busy="+busy+", checking="+checking+", token="+generation);
         setStatus(S_IDLE, (busy || checking) ? "已排队，当前识别结束后自动重试" : "重新识别");
         if (!applying) { ready = true; repoll(0); }
@@ -338,6 +361,34 @@ public class CaptureService extends Service {
      */
     private static final long BADGE_HOLD_MS = 900;
 
+    private final TouchCaptureSession touchCapture = new TouchCaptureSession();
+    private boolean recognitionIdle(){return !gameOnly && !MiniGameOverlayService.running && !touchCapture.awake();}
+    private void updateCaptureOutput(){
+        if(display==null || reader==null || recorder!=null || stoppingRecording)return;
+        display.setSurface(recognitionIdle()?null:reader.getSurface());
+    }
+    private void wakeRecognition(){
+        touchCapture.wake(SystemClock.elapsedRealtime());
+        memoryEpoch++;mapPanelOpen=false;
+        // Never re-use the last session's image while a fresh frame is pending.
+        if(reader!=null)try(Image stale=reader.acquireLatestImage()){}catch(Exception ignored){}
+        if(cleanCaptureFrame!=null){cleanCaptureFrame.recycle();cleanCaptureFrame=null;}
+        cleanCaptureReader=null;cleanCaptureSignature=null;
+        latestViewport.clear();
+        reusableGatePixels=null;lastAttemptPixels=null;actualGateAt=0;lastGateAt=0;
+        updateCaptureOutput();
+        repoll(60);
+        android.util.Log.i("CrypticNotes","Touch capture awake");
+    }
+    private void sleepRecognition(){
+        touchCapture.sleep();mapPanelOpen=false;manualRetry=false;forceNextMatch=false;
+        if(cleanCaptureFrame!=null){cleanCaptureFrame.recycle();cleanCaptureFrame=null;}
+        cleanCaptureReader=null;cleanCaptureSignature=null;latestViewport.clear();
+        main.removeCallbacks(poll);pollScheduled=false;
+        updateCaptureOutput();setSpinning(false);
+        android.util.Log.i("CrypticNotes","Touch capture asleep; screenshot output detached unless recording");
+    }
+    void onTapRelayChanged(){main.post(()->{if(!destroyed)refreshTapRegion();});}
     private boolean pollScheduled = false;
     private final Runnable poll = new Runnable() { public void run() {
         pollScheduled = false;
@@ -376,7 +427,7 @@ public class CaptureService extends Service {
     boolean hasProjection(){return projection!=null;}
     void openGame(String id){
         if(MiniGameOverlayService.running&&!id.equals(MiniGameOverlayService.activeGameId)){Toast.makeText(this,"请先关闭当前小游戏",Toast.LENGTH_SHORT).show();return;}
-        gameOnly=true;generation++;clearOverlay();setSpinning(false);
+        gameOnly=true;generation++;clearOverlay();setSpinning(false);updateCaptureOutput();refreshTapRegion();
         getSharedPreferences("mobile",0).edit().putString("active_game",id).putString("last_module","games").apply();
         startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
         if(ready)repoll(0);
@@ -415,7 +466,8 @@ public class CaptureService extends Service {
                 @Override public void onStop() { stopSelf(); }
                 @Override public void onCapturedContentVisibilityChanged(boolean visible) {
                     capturedVisible=visible;
-                    if(!visible) clearOverlay();
+                    android.util.Log.i("CrypticNotes","Shared content visibility: "+visible);
+                    if(!visible){lastPauseReason="共享应用不可见";clearOverlay();if(!gameOnly)sleepRecognition();setStatus(S_IDLE,"共享应用不可见，请切回所选游戏");}
                 }
                 @Override public void onCapturedContentResize(int w,int h) {
                     boolean changed=capturedWidth!=w || capturedHeight!=h;
@@ -434,7 +486,8 @@ public class CaptureService extends Service {
             android.util.Log.i("CrypticNotes", "Overlay attached; initialization started");
             setStatus(S_IDLE, preparationText);
             String difficulty = intent.getStringExtra("difficulty"), mode = intent.getStringExtra("mode");
-            getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
+            final String provider=getSharedPreferences("mobile",0).getString("map_provider","lianghapi");
+            if(provider.equals("lianghapi"))getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
             compute.execute(() -> {
                 try {
                     if(!new MatchingModuleStore(this).installed())throw new IOException("请先下载加页手记模块");
@@ -442,7 +495,8 @@ public class CaptureService extends Service {
                     MatchingModuleStore.python(this);
                     bridge = Python.getInstance().getModule("mobile_bridge");
                     preparationStatus("正在准备地图特征…");
-                    int mapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode).toInt();
+                    int mapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider).toInt();
+                    loadedMapCount=mapCount;
                     android.util.Log.i("CrypticNotes","Recognition library loaded: maps="+mapCount+", difficulty="+difficulty+", mode="+mode);
                     if(mapCount==0)throw new IOException("当前难度或模式未加载到地图，请检查地图库下载是否完成");
                     main.post(() -> {
@@ -452,7 +506,10 @@ public class CaptureService extends Service {
                         ready = !applying;
                         if (preparationLabel != null) preparationLabel.setVisibility(View.GONE);
                         setStatus(S_IDLE, applying ? "正在应用设置…" : "等待地图");
-                        if (ready) repoll(0);
+                        if (ready) {
+                            sleepRecognition();
+                            setStatus(S_IDLE,TapRelayService.current==null?"请开启点击触发的无障碍权限；也可点重新识别":"点击地图区域开始识别");
+                        }
                     });
                 } catch (Exception e) {
                     main.post(() -> {
@@ -544,6 +601,7 @@ public class CaptureService extends Service {
         if (destroyed) return;
         applyOpacity(getSharedPreferences("mobile", 0).getInt("opacity", Math.round(opacity * 100)));
         layoutBadge();
+        refreshTapRegion();
     }
 
     /**
@@ -815,18 +873,19 @@ public class CaptureService extends Service {
         reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2);
         if (display == null)
             display = projection.createVirtualDisplay("CrypticNotes", width, height, density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.getSurface(), null, main);
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, recognitionIdle()?null:reader.getSurface(), null, main);
         else {
             // Detach before resizing: the old portrait buffer must not remain
             // attached while the projection switches to a landscape source.
             display.setSurface(null);
             display.resize(width, height, density);
-            display.setSurface(reader.getSurface());
+            display.setSurface(recognitionIdle()?null:reader.getSurface());
         }
         android.util.Log.i("CrypticNotes","Capture surface configured: "+width+"x"+height+", source="+capturedWidth+"x"+capturedHeight);
         if(previous!=null)previous.close();
         layoutBadge();
         refreshTapRegion();
+        updateCaptureOutput();
     }
 
     // ---- overlay lifetime --------------------------------------------------
@@ -891,6 +950,7 @@ public class CaptureService extends Service {
         if(recorder!=null) recorder.requestPreview();
         try (Image image = reader.acquireLatestImage()) {
             if (image == null) return latestViewport.forReader(reader);
+            freshCaptureCount++;lastFreshFrameAt=SystemClock.elapsedRealtime();
             Image.Plane plane = image.getPlanes()[0];
             if (plane.getPixelStride() != 4) {
                 Bitmap fallback = grab();
@@ -955,7 +1015,7 @@ public class CaptureService extends Service {
 
     /** The single place the loop is re-armed. Every path out of a step lands here. */
     private void repoll(int delayMs) {
-        if (destroyed) return;
+        if (destroyed || recognitionIdle()) return;
         main.removeCallbacks(poll);
         pollScheduled = true;
         main.postDelayed(poll, powerSaving() && delayMs>=WATCH_MS ? delayMs*2 : delayMs);
@@ -1059,7 +1119,10 @@ public class CaptureService extends Service {
     private void sample() {
         if(destroyed)return;
         if(gameOnly){if(projection!=null&&MiniGameOverlayService.running)watchMiniGameScene();repoll(1500);return;}
-        if(!ready)return;
+        if(!ready || recognitionIdle())return;
+        if(touchCapture.openingExpired(SystemClock.elapsedRealtime()) && !checking){
+            clearOverlay();sleepRecognition();setStatus(S_IDLE,"未检测到地图，点击地图区域可重试");return;
+        }
         if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);watchMiniGameScene();repoll(500);return;}
         gameSceneDetector.reset();
         long nowWatch = SystemClock.elapsedRealtime();
@@ -1072,9 +1135,10 @@ public class CaptureService extends Service {
         }
         if (!overdue) timeoutReported = false;
         if(recorder!=null && !recordingReady) { repoll(100); return; }
-        if(!capturedVisible) { clearOverlay(); repoll(500); return; }
-        if(!captureFitsScreen()) { clearOverlay(); setStatus(S_IDLE,"请全屏打开所选游戏，或重新选择共享整个屏幕"); repoll(500); return; }
+        if(!capturedVisible) { lastPauseReason="共享应用不可见";clearOverlay();setStatus(S_IDLE,"共享应用不可见，请切回所选游戏");repoll(500);return; }
+        if(!captureFitsScreen()) { lastPauseReason="共享源与屏幕比例不符";clearOverlay(); setStatus(S_IDLE,"请全屏打开所选游戏，或重新选择共享整个屏幕"); repoll(500); return; }
         if (calibration != null || quickSettings != null) { repoll(500); return; }
+        lastPauseReason="";
         // Nothing to keep in step while the player has the overlay switched off;
         // matching would only burn a cycle per settle and be thrown away.
         if (overlayHidden) { repoll(WATCH_MS); return; }
@@ -1185,24 +1249,26 @@ public class CaptureService extends Service {
     }
 
     private void capture() {
+        if(recognitionIdle())return;
         if(gameOnly||!new MatchingModuleStore(this).installed())return;
         if (destroyed) return;
         if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
         if (checking) { repoll(100); return; }
         if(recorder!=null && !recordingReady) { repoll(100); return; }
-        if(!capturedVisible) { clearOverlay(); repoll(500); return; }
+        if(!capturedVisible) { lastPauseReason="共享应用不可见";clearOverlay();setStatus(S_IDLE,"共享应用不可见，请切回所选游戏");repoll(500);return; }
         if(!captureFitsScreen()) { clearOverlay(); repoll(500); return; }
         if (calibration != null || quickSettings != null) { repoll(500); return; }
+        lastPauseReason="";
         if (((KeyguardManager) getSystemService(KEYGUARD_SERVICE)).isKeyguardLocked()) {
             clearOverlay();
             setStatus(S_IDLE, "屏幕已锁定");
-            repoll(1000);
+            sleepRecognition();
             return;
         }
         if (width <= height) {
             clearOverlay();
             setStatus(S_IDLE, "请横屏打开游戏");
-            repoll(800);
+            sleepRecognition();
             return;
         }
         // blink() guaranteed the layer is down, so this grab is a clean frame.
@@ -1252,6 +1318,7 @@ public class CaptureService extends Service {
                 if (frame != null) {
                     try {
                         String inspection=bridge.callAttr("inspect", frame, excluded).toString();
+                        lastGateResult=inspection;
                         visible = new JSONObject(inspection).getBoolean("visible");
                         if(explicitAttempt)android.util.Log.i("CrypticNotes","Manual screenshot inspection: "+inspection+", source="+sourceWidth+"x"+sourceHeight);
                         if(new File(getFilesDir(),"recognition-diagnostic.flag").isFile()){
@@ -1280,6 +1347,7 @@ public class CaptureService extends Service {
                         return;
                     }
                     if (!passed) {
+                        boolean closed=touchCapture.closed(false,SystemClock.elapsedRealtime());
                         mapPanelOpen = false;
                         clearOverlay();
                         lastMatch = 0;
@@ -1287,9 +1355,10 @@ public class CaptureService extends Service {
                             String message="共享画面未确认地图展开，请检查共享范围或系统屏幕共享防护";
                             setStatus(S_FAILED,message);Toast.makeText(this,message,Toast.LENGTH_LONG).show();
                         }else setStatus(S_IDLE,"等待地图");
-                        repoll(WATCH_MS);
+                        if(closed)sleepRecognition();else repoll(WATCH_MS);
                         return;
                     }
+                    touchCapture.closed(true,SystemClock.elapsedRealtime());
                     reusableGatePixels=framePixels;
                     actualGateAt=SystemClock.elapsedRealtime();
                     missStreak = 0;
@@ -1394,6 +1463,7 @@ public class CaptureService extends Service {
                         bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor, viewedFloor).toString());
                 offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
+                lastMatchResult="ok="+ok+", "+result.optString("message")+", map="+result.optString("map_id")+", floor="+result.optInt("floor");
                 if (ok) {
                     if (!destroyed && requestEpoch == memoryEpoch) {
                         boolean committed=bridge.callAttr("commit_match", token).toBoolean();
@@ -1406,6 +1476,7 @@ public class CaptureService extends Service {
                 label = ok ? describe(result, message) : message;
                 if (!ok) android.util.Log.i("CrypticNotes", "Recognition declined: token="+token+", result="+result);
             } catch (Exception error) {
+                lastMatchResult="异常："+error.getClass().getSimpleName()+": "+error.getMessage();
                 android.util.Log.e("CrypticNotes", "Recognition failed: token="+token,error);
             }
             final Bitmap decoded = layer;
@@ -1535,7 +1606,7 @@ public class CaptureService extends Service {
                     return cleanCaptureFrame.copy(Bitmap.Config.ARGB_8888,true);
                 return null;
             }
-            freshCaptureCount++;
+            freshCaptureCount++;lastFreshFrameAt=SystemClock.elapsedRealtime();
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer bytes = plane.getBuffer();
             bytes.rewind();
@@ -1586,7 +1657,7 @@ public class CaptureService extends Service {
     private void refreshTapRegion() {
         if (tapRegion != null) { windows.removeView(tapRegion); tapRegion = null; }
         if (destroyed || width <= height || calibration != null
-                || !getSharedPreferences("mobile", 0).getBoolean("tap_mode", false)
+                || gameOnly || MiniGameOverlayService.running
                 || TapRelayService.current == null) return;
         tapBounds = readBounds();
         tapRegion = new View(this);
@@ -1609,9 +1680,12 @@ public class CaptureService extends Service {
                 lastMatch = 0;
                 main.postDelayed(() -> {
                     TapRelayService relay = TapRelayService.current;
-                    if (relay != null) relay.relay(path, duration, () -> main.postDelayed(() -> {
-                        if (!destroyed) refreshTapRegion();
-                    }, 150));
+                    if (relay != null) relay.relay(path, duration, () -> main.post(() -> {
+                        if (!destroyed) {
+                            wakeRecognition();
+                            main.postDelayed(()->{if(!destroyed)refreshTapRegion();},150);
+                        }
+                    }));
                     else refreshTapRegion();
                 }, 70);
             } else if (e.getAction() == MotionEvent.ACTION_CANCEL) touchPath = null;
@@ -1686,11 +1760,12 @@ public class CaptureService extends Service {
         String difficultyValue = prefs.getString("difficulty", "hard");
         String modeValue = prefs.getString("mode", "solo");
 
+        MapLibraryChoice libraryChoice=new MapLibraryChoice(this);panel.addView(libraryChoice);
         Theme.ChalkChoice difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         difficulty.setIndex(difficultyValue.equals("nightmare") ? 1 : 0);
         LinearLayout difficultyRow=new LinearLayout(this);difficultyRow.setGravity(Gravity.CENTER_VERTICAL);
         difficultyRow.addView(label("难度",14,Theme.MUTED,0),new LinearLayout.LayoutParams(Theme.px(this,56),-2));
-        difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(Theme.px(this,170),Theme.px(this,42)));panel.addView(difficultyRow);
+        difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(Theme.px(this,170),Theme.px(this,42)));panel.addView(difficultyRow);panel.addView(libraryChoice.detachRoute());
 
         TextView routeLabel = label("参考路线", 14, Theme.MUTED, 6);
 
@@ -1709,13 +1784,17 @@ public class CaptureService extends Service {
         panel.addView(applied);
         Theme.ChalkChoice.Listener apply = i -> {
             boolean nightmare = difficulty.getIndex() == 1;
-            party.setVisibility(nightmare ? View.VISIBLE : View.GONE);
+            difficultyRow.setVisibility(View.VISIBLE);
+            party.setVisibility(!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
             routeRow.setVisibility(party.getVisibility());
-            applyRecognition(nightmare ? "nightmare" : "hard",
-                    party.getIndex() == 0 ? "solo" : "duo", applied);
+            applyRecognition(libraryChoice.difficulty(nightmare ? "nightmare" : "hard"),
+                    libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"), applied);
         };
         difficulty.setListener(apply);
         party.setListener(apply);
+        libraryChoice.changed=()->apply.onChanged(0);
+        difficultyRow.setVisibility(View.VISIBLE);
+        if(libraryChoice.isZhanshi())routeRow.setVisibility(View.GONE);
 
         // Overlay opacity. Live, because it is a display setting and the whole
         // point is seeing the change; re-recognition is not needed for it.
@@ -1743,6 +1822,8 @@ public class CaptureService extends Service {
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
         actionParams.topMargin = Theme.px(this, 10);
         actionParams.rightMargin = Theme.px(this, 6);
+        Theme.ChalkButton diagnostic = button("复制识图诊断", false);
+        diagnostic.setOnClickListener(v->copyRecognitionDiagnostic());
         Theme.ChalkButton retry = button("重新识别", true);
         actions.addView(retry, actionParams);
         retry.setOnClickListener(v -> retryFromBadge());
@@ -1768,6 +1849,7 @@ public class CaptureService extends Service {
         opacityLabel.setText("透明度 " + startOpacity + "%");
         panel.addView(opacityLabel,actionIndex+1);panel.addView(slider,actionIndex+2,new LinearLayout.LayoutParams(-1,Theme.px(this,40)));
         panel.addView(region,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
+        panel.addView(diagnostic,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
         if(gameOnly||!new MatchingModuleStore(this).installed()){
             panel.removeAllViews();panel.addView(label(gameOnly?"当前为小游戏专用悬浮窗，不进行地图识别":"请先下载加页手记模块",14,Theme.MUTED,8));
             Theme.ChalkButton maps=button("前往加页手记",true);panel.addView(maps);maps.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","notes").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
@@ -1812,16 +1894,18 @@ public class CaptureService extends Service {
      */
     private void applyRecognition(String difficulty, String mode, TextView applied) {
         if(gameOnly||bridge==null){applied.setText("小游戏模式不进行地图识别");return;}
-        getSharedPreferences("mobile", 0).edit()
-                .putString("difficulty", difficulty).putString("mode", mode).apply();
+        final String provider=getSharedPreferences("mobile",0).getString("map_provider","lianghapi");
+        getSharedPreferences("mobile",0).edit().putString("difficulty",difficulty).apply();
+        if(provider.equals("lianghapi"))getSharedPreferences("mobile", 0).edit().putString("mode", mode).apply();
         final int token = ++applyToken;
+        clearOverlay();setSpinning(false);
         applying = true;
         ready = false;
         applied.setText("正在应用…");
         compute.execute(() -> {
             String error = null;
             try {
-                bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode);
+                loadedMapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider).toInt();
             } catch (Exception e) {
                 error = e.getMessage();
             }
@@ -1830,7 +1914,7 @@ public class CaptureService extends Service {
                 // A later change owns the panel now; it will report for itself.
                 if (destroyed || token != applyToken) return;
                 applying = false;
-                ready = true;
+                ready = failure == null;
                 lastMatch = 0;
                 applied.setText(failure == null
                         ? "已应用：" + difficultyLabel(difficulty, mode)
@@ -1842,7 +1926,7 @@ public class CaptureService extends Service {
 
     private static String difficultyLabel(String difficulty, String mode) {
         return (difficulty.equals("nightmare") ? "噩梦" : "困难")
-                + " · " + (mode.equals("duo") ? "多人路线" : "单人路线");
+                + " · " + (mode.equals("full") ? "展十全棺" : mode.equals("speed") ? "展十速刷" : mode.equals("duo") ? "多人路线" : "单人路线");
     }
 
     /** Panel text, slightly larger than the home screen's but kept compact. */

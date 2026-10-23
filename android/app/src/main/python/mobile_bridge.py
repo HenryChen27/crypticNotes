@@ -19,7 +19,7 @@ _root = None
 _names = {}
 _originals = {}
 
-def initialize(root, difficulty, mode):
+def initialize(root, difficulty, mode, provider='lianghapi'):
     global _matcher, _cached, _confirmed, _root, _names, _pending_candidate
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
@@ -28,7 +28,15 @@ def initialize(root, difficulty, mode):
     _confirmed = None
     _pending_candidate = None
     _originals.clear()
-    _matcher = MapMatcher(_root/'maps',difficulty=difficulty,mode=mode if difficulty=='nightmare' else None)
+    if provider=='zhanshi' and difficulty=='nightmare':
+        from mapmatching.src.author_matcher import LazyAuthorAtlas
+        _matcher=LazyAuthorAtlas(_root/'maps',MapMatcher,difficulty=difficulty,mode=mode,provider=provider)
+    else:
+        _matcher = MapMatcher(_root/'maps',difficulty=difficulty,mode=mode if difficulty=='nightmare' or provider=='zhanshi' else None,provider=provider)
+    if provider=='zhanshi' and difficulty=='nightmare':
+        from mapmatching.src.author_matcher import AuthorRouteMatcher,terrain_recognizer
+        recognizer=terrain_recognizer(_root/'maps',MapMatcher)
+        _matcher=AuthorRouteMatcher(_matcher,recognizer)
     if difficulty=='nightmare' and mode=='duo':
         _matcher = MultiplayerFallback(_matcher,lambda:MapMatcher(_root/'maps',difficulty='nightmare',mode='solo'))
     # Display names for the on-screen status strip; `map_id` alone is not readable.
