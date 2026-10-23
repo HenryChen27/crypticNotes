@@ -227,7 +227,7 @@ class MapImportDialog(PanelDialog):
         box.addLayout(row)
 
     def choose(self):
-        path,_=W.QFileDialog.getOpenFileName(self,'选择完整地图原图',str(self.root),'地图图片 (*.png *.jpg *.jpeg *.bmp)')
+        path,_=W.QFileDialog.getOpenFileName(self,'选择完整地图原图',str(self.root),'地图图片 (*.png *.jpg *.jpeg *.bmp *.webp)')
         if not path:
             return
         pixmap=G.QPixmap(path)

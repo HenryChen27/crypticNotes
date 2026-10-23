@@ -23,6 +23,8 @@ def build():
    write_json(maps/'disabled.json',dict(records=[]))
    for entry in selected:
     original=ROOT/entry['source'];target=Path(temp)/entry['source'];target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(original,target)
+    if entry.get('recognition'):
+     relative=entry['recognition']['source'];target=Path(temp)/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/relative,target)
    for record in index['references']:
     if record['map_id'] in ids:
      target=maps/'evidence'/record['array'];target.parent.mkdir(exist_ok=True);shutil.copy2(source/'evidence'/record['array'],target)
@@ -35,6 +37,9 @@ def build():
     write_json(common/'index.json',{**index,'references':records})
     (common/'evidence').mkdir()
     for record in records:shutil.copy2(source/'evidence'/record['array'],common/'evidence'/record['array'])
+    for entry in canonical:
+     if entry.get('recognition'):
+      relative=entry['recognition']['source'];target=Path(temp)/relative;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/relative,target)
    for name in ('README.md','providers.json'):
     if (source/name).is_file():shutil.copy2(source/name,maps/name)
    stamp(maps)

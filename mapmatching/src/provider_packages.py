@@ -28,14 +28,24 @@ def change(root,provider,incoming=None,spec=None):
         for entry in fresh:
             source=child(Path(incoming).parent,entry['source'])
             if not source.is_file() or (entry.get('sha256') and hashlib.sha256(source.read_bytes()).hexdigest()!=entry['sha256']):raise ValueError('Author original missing or hash mismatch: '+entry['map_id'])
+            if entry.get('recognition'):
+                geometry=entry['recognition'];path=child(Path(incoming).parent,geometry['source'])
+                if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest()!=geometry.get('sha256'):
+                    raise ValueError('Author terrain input missing or hash mismatch: '+entry['map_id'])
         fresh_ids={e['map_id'] for e in fresh};official=set(provenance.get('ids',[]))|fresh_ids
         removed=[e for e in current+disabled if e.get('provider','lianghapi')==provider and e['map_id'] in official]
         removed_ids={e['map_id'] for e in removed};removed_files=set()
         remaining=[e for e in current if e['map_id'] not in removed_ids]
         disabled=[e for e in disabled if e['map_id'] not in removed_ids]
         shared={e['source'] for e in remaining+disabled}
+        shared.update(e['recognition']['source'] for e in remaining+disabled if e.get('recognition'))
+        if provider!='zhanshi' and any(e.get('provider')=='zhanshi' for e in remaining+disabled):
+            canonical=read(stage/'recognition/floors.json',{}).get('references',[])
+            shared.update(e['recognition']['source'] for e in canonical if e.get('recognition'))
         for entry in removed:
-            for relative in (entry['source'].removeprefix('maps/'),'evidence/'+evidence_name(entry['map_id'])):
+            paths=[entry['source'].removeprefix('maps/'),'evidence/'+evidence_name(entry['map_id'])]
+            if entry.get('recognition'):paths.append(entry['recognition']['source'].removeprefix('maps/'))
+            for relative in paths:
                 if 'maps/'+relative in shared:continue
                 path=child(stage,relative)
                 if path.is_file():path.unlink()

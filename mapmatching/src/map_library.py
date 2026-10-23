@@ -11,13 +11,14 @@ from pathlib import Path
 import hashlib
 import json
 import os
-import shutil
+import uuid
 from .context import SessionContext
 from .reference import read_image
 from . import mapstore
+from .map_image import compact, scale_entry_geometry, POLICY
 
 # 一张图被登记时允许的后缀。和 reference.py 当年扫目录时的白名单一致。
-SUFFIXES = ('.png', '.jpg', '.jpeg')
+SUFFIXES = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 
 
 def validate_regions(regions, width, height):
@@ -49,12 +50,10 @@ def validate_name(name):
 
 
 def _target_for(maps, source, name, difficulty, mode, provider='lianghapi'):
-    """`maps/<难度>[/<人数>]/<名字><后缀>`。后缀跟着源文件走，绝不重编码 ——
-    `benchmarks/benchmark.py` 靠 `examples/N/*.jpg` 与条目的 sha256 精确配对，
-    任何一次重编码都会让那 7 个样例静默变成 skipped。"""
+    """Return a safe import destination; compression may change the suffix."""
     suffix=Path(source).suffix.lower()
     if suffix not in SUFFIXES:
-        raise ValueError('只支持 PNG / JPG 格式的地图原图')
+        raise ValueError('只支持 PNG / JPG / WebP / BMP 格式的地图')
     if Path(source).resolve().is_relative_to(maps.resolve()):return Path(source).resolve()
     directory=maps/provider/difficulty
     if mode:
@@ -65,8 +64,8 @@ def _target_for(maps, source, name, difficulty, mode, provider='lianghapi'):
 def _fingerprints(maps):
     """现有全部条目的字节哈希与像素哈希，用来拦重复录入。"""
     entries=mapstore.live_entries(maps)+mapstore.read_disabled(maps)
-    return ({e['sha256'] for e in entries if e.get('sha256')},
-            {e['pixel_sha256'] for e in entries if e.get('pixel_sha256')})
+    return ({v for e in entries for v in (e.get('sha256'), e.get('storage',{}).get('original_sha256')) if v},
+            {v for e in entries for v in (e.get('pixel_sha256'), e.get('storage',{}).get('original_pixel_sha256')) if v})
 
 
 def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi'):
@@ -78,17 +77,32 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
     original=read_image(source)
     h,w=original.shape[:2]
     validate_regions(regions,w,h)
-    target=_target_for(maps,source,name,difficulty,mode,provider)
     map_id=f'{difficulty}/'+(f'{mode}/' if mode else '')+name
     if provider == 'zhanshi':map_id='zhanshi/'+map_id
     library=mapstore.live_entries(maps)
     disabled=mapstore.read_disabled(maps)
     if any(e['map_id']==map_id for e in library+disabled):
         raise ValueError('这个模式下已有同名地图，请勿重复录入')
-    digest=hashlib.sha256(source.read_bytes()).hexdigest()
+    raw=source.read_bytes()
+    digest=hashlib.sha256(raw).hexdigest()
     pixel=hashlib.sha256(original.tobytes()).hexdigest()
     known_bytes,known_pixels=_fingerprints(maps)
     if digest in known_bytes or pixel in known_pixels:
+        raise ValueError('这个模式下已有相同图片的地图，请勿重复录入')
+    encoded,suffix,pixels,ratios=compact(original,raw,source.suffix)
+    converted=encoded!=raw
+    target=_target_for(maps,source,name,difficulty,mode,provider)
+    if converted:
+        directory=maps/provider/difficulty
+        if mode: directory=directory/mode
+        target=directory/f'{name}{suffix}'
+        # Never overwrite a user's input, even if it is already inside maps/.
+        if target.resolve()==source:
+            target=directory/f'{name}.compact{suffix}'
+    geometry=scale_entry_geometry(dict(regions=regions,include_regions=[r['bbox'] for r in regions]),ratios,(pixels.shape[1],pixels.shape[0]))
+    validate_regions(geometry['regions'],pixels.shape[1],pixels.shape[0])
+    stored_pixel=hashlib.sha256(pixels.tobytes()).hexdigest()
+    if stored_pixel in known_pixels:
         raise ValueError('这个模式下已有相同图片的地图，请勿重复录入')
     if target.exists() and target.resolve()!=source:
         raise ValueError(f'maps 目录下已有同名文件：{target.name}')
@@ -104,16 +118,28 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
         os.close(fd)
         if copied:
             target.parent.mkdir(parents=True,exist_ok=True)   # maps/<难度>/[<人数>/] 可能还不存在
-            shutil.copyfile(source,target)      # 字节原样，不重编码
+            pending=target.with_name(target.name+'.import-'+uuid.uuid4().hex)
+            try:
+                pending.write_bytes(encoded)
+                os.replace(pending,target)
+            finally:
+                pending.unlink(missing_ok=True)
         # 手绘的楼层框一物二用：`regions` 给叠图定位用，`include_regions` 给特征提取用
         # （在全分辨率下把框外清零，见 `mapstore.mask_outside` 里为什么必须这样）。
         entry=dict(map_id=map_id,name=name,difficulty=difficulty,mode=mode,
                    source=target.relative_to(root).as_posix(),sha256=hashlib.sha256(target.read_bytes()).hexdigest(),
-                   pixel_sha256=pixel,size=[w,h],regions=regions,exclude_regions=[],
-                   include_regions=[r['bbox'] for r in regions],review='')
+                   pixel_sha256=stored_pixel,size=geometry['size'],regions=geometry['regions'],exclude_regions=[],
+                   include_regions=geometry['include_regions'],review='')
+        if converted:
+            entry['storage']=dict(policy=POLICY,original_size=[w,h],original_sha256=digest,original_pixel_sha256=pixel,resize=list(ratios))
         entry['provider']=provider
         if provider == 'zhanshi':entry['reference_style']='zhanshi-v1'
+        recognition_path=None
         try:
+            if converted:
+                original_entry=dict(entry,regions=regions,include_regions=[r['bbox'] for r in regions])
+                recognition_path=maps/'recognition-inputs'/mapstore.evidence_name(map_id).replace('.npz','.png')
+                entry['recognition']=mapstore.recognition_input(maps,original_entry,original,ratios)
             # 挂索引走 `build_index` 而不是自己往 index.json 里塞一条：它是增量的，
             # 没变过的 58 张直接复用旧记录，只抽这一张；而且顺手把「索引文件不存在 /
             # 版本过期 / 别的图几何改过」这几种情况一并修好 —— 自己塞一条的话，
@@ -124,6 +150,9 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
             mapstore.write_manifest(maps,library)   # 抽特征失败就退回登记前，不留半截状态
             if copied:
                 target.unlink(missing_ok=True)
+            if recognition_path is not None:
+                recognition_path.unlink(missing_ok=True)
+            (maps/'evidence'/mapstore.evidence_name(map_id)).unlink(missing_ok=True)
             raise
         return entry
     finally:

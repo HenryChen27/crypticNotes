@@ -1,7 +1,7 @@
 """`maps/` 目录的读写：登记表、特征、索引。
 
     maps/
-    ├─ hard/   nightmare/{solo,duo}/   原图。文件名 = 地图名，字节原样，绝不重编码。
+    ├─ hard/   nightmare/{solo,duo}/   显示图。大图按统一规格压缩，识图地形单独保存。
     ├─ _unindexed/                     放进来但**没有登记的**图，不参与匹配。
     ├─ floors.json                     登记表 + 楼层几何。**唯一手工维护的文件。**
     ├─ index.json                      派生物：抽取结果缓存（factor / 校验用哈希）
@@ -172,13 +172,60 @@ def _safe_source(root: Path, entry: dict) -> Path:
     return resolved
 
 
+def recognition_input(maps, entry, image, ratios=(1., 1.)):
+    """Store the exact pre-morphology terrain at the matcher's working resolution.
+
+    Display atlases may be resized/lossy; this tiny lossless geometry input keeps
+    indexing reproducible without retaining a multi-megabyte original photograph.
+    """
+    from mapmatching.config import DEFAULT
+    maps = Path(maps).resolve()
+    if entry.get('reference_style') == 'zhanshi-v1':
+        from .map_style import zhanshi_mask
+        mask = zhanshi_mask(image)
+        image = cv2.cvtColor(cv2.resize(mask, (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)*120, cv2.COLOR_GRAY2BGR)
+    if entry.get('include_regions'):
+        image = mask_outside(image, entry['include_regions'])
+    factor = min(1., DEFAULT.max_side / max(image.shape[:2]))
+    bgr = cv2.resize(image[:, :, :3], None, fx=factor, fy=factor, interpolation=cv2.INTER_AREA)
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    mask = ((hsv[:, :, 2] >= DEFAULT.value_min) & (hsv[:, :, 2] <= DEFAULT.value_max) & (hsv[:, :, 1] <= DEFAULT.saturation_max)).astype(np.uint8)
+    for box in entry.get('exclude_regions') or []:
+        x,y,X,Y = np.rint(np.array(box)*factor).astype(int)
+        mask[max(0,y):min(mask.shape[0],Y),max(0,x):min(mask.shape[1],X)] = 0
+    path = Path(maps)/'recognition-inputs'/evidence_name(entry['map_id']).replace('.npz','.png')
+    path.parent.mkdir(parents=True, exist_ok=True)
+    data = cv2.imencode('.png', mask*120, [cv2.IMWRITE_PNG_COMPRESSION,9])[1].tobytes()
+    path.write_bytes(data)
+    # Pose is expressed in display-atlas pixels. Preserve the original uniform
+    # normalization factor, including the rounding used by cv2.resize.
+    ratio = ratios[0] if image.shape[1] >= image.shape[0] else ratios[1]
+    return dict(source=path.relative_to(Path(maps).resolve().parent).as_posix(),
+                sha256=hashlib.sha256(data).hexdigest(), factor=factor/ratio,
+                kind='terrain-mask-v1', config=fingerprint())
+
+
 def materialize(maps, entry: dict) -> dict:
     """把（原图 + 楼层几何）变成（特征 npz + 索引记录）。**唯一的一条路**，
     `build_index()` 和录入都走它 —— 两条路各写各的，迟早会漂移。"""
     maps = Path(maps)
     root = _root_of(maps)
     source = _safe_source(root, entry)
-    image = read_image(source)
+    recognition = entry.get('recognition')
+    if recognition and recognition.get('kind') == 'terrain-mask-v1':
+        source = _safe_source(root, dict(source=recognition['source'],map_id=entry['map_id']))
+        if hashlib.sha256(source.read_bytes()).hexdigest() != recognition['sha256']:
+            raise ValueError('Recognition terrain hash mismatch: '+entry['map_id'])
+        evidence = extract(read_image(source), reference=True, remove_annotations=REMOVE_ANNOTATIONS)
+        evidence.image_factor *= recognition['factor']
+    else:
+        evidence = _image_evidence(read_image(source), entry)
+    if len(evidence.corners) < 4:
+        raise ValueError(f'选区内缺少可识别的地图结构，请使用清晰完整的地图原图：{entry.get("map_id")}')
+    return _save_evidence(maps, entry, evidence)
+
+
+def _image_evidence(image, entry):
     if entry.get('reference_style') == 'zhanshi-v1':
         from .map_style import zhanshi_mask
         mask = zhanshi_mask(image)
@@ -187,11 +234,10 @@ def materialize(maps, entry: dict) -> dict:
         image = mask_outside(image, entry['include_regions'])
     evidence = extract(image, reference=True, remove_annotations=REMOVE_ANNOTATIONS,
                        exclude_regions=entry.get('exclude_regions') or None)
-    if len(evidence.corners) < 4:
-        # 这条以前长在 `map_library.add_map` 里。挪过来是为了让「登记一张图」和
-        # 「重建索引」共用同一道检查 —— 否则一张抽不出结构的图会安静地进索引，
-        # 然后在匹配时空转。
-        raise ValueError(f'选区内缺少可识别的地图结构，请使用清晰完整的地图原图：{entry.get("map_id")}')
+    return evidence
+
+
+def _save_evidence(maps, entry, evidence):
     distance = cv2.distanceTransform(1-evidence.boundary, cv2.DIST_L2, 3)
 
     directory = maps/'evidence'
@@ -207,7 +253,8 @@ def materialize(maps, entry: dict) -> dict:
         Path(temp).unlink(missing_ok=True)
         raise
     return dict(map_id=entry['map_id'], array=target.name, factor=evidence.image_factor,
-                sha256=entry.get('sha256'), entry_sha=entry_sha(entry))
+                sha256=entry.get('sha256'), entry_sha=entry_sha(entry),
+                recognition_sha256=entry.get('recognition',{}).get('sha256'))
 
 
 def build_index(maps, *, force: bool = False) -> None:
@@ -226,6 +273,7 @@ def build_index(maps, *, force: bool = False) -> None:
         fresh = (cached is not None
                  and cached.get('sha256') == entry.get('sha256')
                  and cached.get('entry_sha') == entry_sha(entry)
+                 and cached.get('recognition_sha256') == entry.get('recognition',{}).get('sha256')
                  and (maps/'evidence'/str(cached.get('array'))).exists())
         records.append(cached if fresh else materialize(maps, entry))
     write_json(maps/'index.json', dict(version=VERSION, config_fingerprint=fingerprint(),
@@ -253,7 +301,7 @@ def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', m
         if mode is not None and entry['mode'] != mode:
             continue
         record = records.get(entry['map_id'])
-        if record is None or record.get('entry_sha') != entry_sha(entry):
+        if record is None or record.get('entry_sha') != entry_sha(entry) or record.get('recognition_sha256') != entry.get('recognition',{}).get('sha256'):
             raise ValueError(f'Rebuild index: {entry["map_id"]}')
         array = maps/'evidence'/str(record.get('array'))
         if not array.exists():

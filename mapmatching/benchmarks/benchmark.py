@@ -30,6 +30,10 @@ def evaluate(root: Path, index: Path, output: Path, *, spatial: bool = True, hud
     if metadata['remove_annotations'] != clean:
         raise ValueError('Reference index preprocessing must match --no-clean; rebuild a separate index')
     hashes = {r['sha256']: r['map_id'] for r in metadata['references']}
+    manifest=json.loads((index/'floors.json').read_text(encoding='utf-8'))
+    for entry in manifest.get('references',[]):
+        original=entry.get('storage',{}).get('original_sha256')
+        if original:hashes[original]=entry['map_id']
     samples, skipped = [], []
     eligible_ids = {r.map_id for r in refs}
     # Pairing is evaluation-only, by exact original reference file hash.

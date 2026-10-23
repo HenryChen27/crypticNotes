@@ -97,6 +97,7 @@ def delete_map(root, map_id):
         raise ValueError('找不到这张地图')
     others = [e for e in entries + disabled if e['map_id'] != map_id]
     shared = {mapstore._safe_source(maps.parent, e) for e in others}
+    shared.update(mapstore._safe_source(maps.parent,dict(source=e['recognition']['source'],map_id=e['map_id'])) for e in others if e.get('recognition'))
     files = set()
     for entry in targets:
         source = mapstore._safe_source(maps.parent, entry)
@@ -104,6 +105,10 @@ def delete_map(root, map_id):
             raise ValueError('原图不在地图库内，拒绝删除')
         if source not in shared:
             files.add(source)
+        if entry.get('recognition'):
+            terrain=mapstore._safe_source(maps.parent,dict(source=entry['recognition']['source'],map_id=map_id))
+            if not terrain.is_relative_to(maps):raise ValueError('识图底稿不在地图库内，拒绝删除')
+            if terrain not in shared:files.add(terrain)
     evidence = (maps/'evidence'/mapstore.evidence_name(map_id)).resolve()
     if not evidence.is_relative_to(maps):
         raise ValueError('特征文件路径越界，拒绝删除')
