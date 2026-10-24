@@ -250,6 +250,24 @@ public class CaptureService extends Service {
     private boolean checking = false;
     private long checkingSince = 0;
     private boolean manualRetry = false;
+    private static final class PendingMatch {
+        final byte[] frame; final int[] pixels; final int floor, generation, serial;
+        PendingMatch(byte[] frame,int[] pixels,int floor,int generation,int serial){
+            this.frame=frame;this.pixels=pixels;this.floor=floor;this.generation=generation;this.serial=serial;
+        }
+    }
+    private PendingMatch pendingLatestMatch;
+    private boolean startPendingMatch(){
+        PendingMatch next=pendingLatestMatch;pendingLatestMatch=null;
+        if(next==null)return false;
+        if(destroyed || next.generation!=generation || next.serial!=matchRequests.get()
+                || !mapPanelOpen || overlayHidden || MiniGameOverlayService.running)return false;
+        android.util.Log.i("CrypticNotes","Latest screenshot started: request="+next.serial);
+        setStatus(S_MATCHING,null);
+        runMatch(next.frame,next.pixels,next.floor);
+        return true;
+    }
+    private final java.util.concurrent.atomic.AtomicInteger matchRequests = new java.util.concurrent.atomic.AtomicInteger();
     private View manualPrompt;
     private int pendingForceFloor;
     private boolean manualOfferSuppressed;
@@ -263,7 +281,7 @@ public class CaptureService extends Service {
         final int floor=offer.optInt("floor");
         manualPrompt=new ManualAlignmentPrompt(this,()-> {
             if(destroyed || token!=generation) { dismissManualPrompt();return; }
-            clearOverlay();pendingForceFloor=floor;manualRetry=true;lastMatch=0;
+            matchRequests.incrementAndGet();clearOverlay();pendingForceFloor=floor;manualRetry=true;lastMatch=0;
             repoll(0);
         },()-> { dismissManualPrompt();manualOfferSuppressed=true; });
         WindowManager.LayoutParams p=params(Theme.px(this,200),Theme.px(this,106),true);
@@ -335,7 +353,7 @@ public class CaptureService extends Service {
         manualRetry = true;
         wakeRecognition();
         android.util.Log.i("CrypticNotes","Manual recognition queued: busy="+busy+", checking="+checking+", token="+generation);
-        setStatus(S_IDLE, (busy || checking) ? "已排队，当前识别结束后自动重试" : "重新识别");
+        setStatus(S_MATCHING, "正在重新识别…");
         if (!applying) { ready = true; repoll(0); }
     }
     private float badgeDownX, badgeDownY; private int badgeStartX, badgeStartY;
@@ -420,6 +438,8 @@ public class CaptureService extends Service {
         else { idleProbe.cancel();display.resize(width,height,density);display.setSurface(reader.getSurface()); }
     }
     private void wakeRecognition(){
+        int latestRequest=matchRequests.incrementAndGet();
+        android.util.Log.i("CrypticNotes","Latest recognition requested: request="+latestRequest+", busy="+busy+", checking="+checking);
         main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel();
         touchCapture.wake(SystemClock.elapsedRealtime());
         memoryEpoch++;mapPanelOpen=false;
@@ -480,7 +500,7 @@ public class CaptureService extends Service {
     }
     boolean hasProjection(){return projection!=null;}
     void openGame(String id){
-        if(MiniGameOverlayService.running&&!id.equals(MiniGameOverlayService.activeGameId)){Toast.makeText(this,"请先关闭当前小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         gameOnly=true;generation++;clearOverlay();setSpinning(false);updateCaptureOutput();refreshTapRegion();
         getSharedPreferences("mobile",0).edit().putString("active_game",id).putString("last_module","games").apply();
         startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
@@ -562,7 +582,7 @@ public class CaptureService extends Service {
                         setStatus(S_IDLE, applying ? "正在应用设置…" : "等待地图");
                         if (ready) {
                             sleepRecognition();
-                            setStatus(S_IDLE,"等待地图 · 不接管触摸");
+                            setStatus(S_IDLE,"等待地图");
                         }
                     });
                 } catch (Exception e) {
@@ -1053,6 +1073,7 @@ public class CaptureService extends Service {
     }
 
     private void clearOverlay() {
+        pendingLatestMatch=null;
         reusableGatePixels=null;lastAttemptPixels=null;
         dismissManualPrompt();pendingForceFloor=0;manualOfferSuppressed=false;
         generation++;
@@ -1079,6 +1100,7 @@ public class CaptureService extends Service {
 
     private void setStatus(int newState, String text) {
         state = newState;
+        if(badgeEmblem instanceof GameBadgeView)((GameBadgeView)badgeEmblem).setLoading(initializing||applying);
         setSpinning(newState == S_MATCHING);
         // Work in progress is shown by the turning emblem, not by words: the
         // bubble is kept for outcomes the player has to read. Fold any bubble
@@ -1119,6 +1141,7 @@ public class CaptureService extends Service {
      */
     private void setSpinning(boolean on) {
         if (badgeEmblem == null) return;
+        if(badgeEmblem instanceof GameBadgeView && ((GameBadgeView)badgeEmblem).loading())on=false;
         if (!on) {
             if (spin != null) spin.cancel();
             badgeEmblem.setRotation(0f);
@@ -1141,6 +1164,15 @@ public class CaptureService extends Service {
         if(recorder!=null) {
             stopRecording();
             Toast.makeText(this,"正在保存录屏；保存后再次长按可关闭识别",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if(gameOnly||MiniGameOverlayService.running){
+            closeQuickSettings();
+            MiniGameOverlayService game=MiniGameOverlayService.current;
+            if(game!=null){
+                game.closeSession();
+                Toast.makeText(this,"正在保存并关闭小游戏及悬浮球",Toast.LENGTH_SHORT).show();
+            }else stopSelf();
             return;
         }
         stopRecognition();
@@ -1199,7 +1231,7 @@ public class CaptureService extends Service {
         // matching would only burn a cycle per settle and be thrown away.
         if (overlayHidden) { repoll(WATCH_MS); return; }
         if (checking) { repoll(100); return; }
-        if (manualRetry && !busy) {
+        if (manualRetry) {
             manualRetry = false;
             forceNextMatch = true;
             gateOnly = false;
@@ -1354,6 +1386,7 @@ public class CaptureService extends Service {
             if(badge!=null)badge.setVisibility(View.VISIBLE);
             repoll(WATCH_MS);return;
         }
+        final int captureSerial=matchRequests.get();
         final boolean explicitAttempt=forceNextMatch;
         forceNextMatch=false;
         final int token = generation;
@@ -1367,6 +1400,9 @@ public class CaptureService extends Service {
                         byte[] header=encodeFloorHeader(bitmap);
                         if(header!=null)viewedFloor=bridge.callAttr("read_floor_header",header,sourceWidth,sourceHeight).toInt();
                     }catch(Exception error){android.util.Log.w("CrypticNotes","Floor header reading failed",error);}
+                }
+                if(captureSerial!=matchRequests.get()){
+                    bitmap.recycle();main.post(()->{checking=false;if(!destroyed)repoll(0);});return;
                 }
                 final int detectedFloor=viewedFloor;
                 byte[] frame = encode(bitmap);      // takes ownership, off the main thread
@@ -1395,7 +1431,7 @@ public class CaptureService extends Service {
                     // from submission starves matching when inspection is slow.
                     lastGateAt = SystemClock.elapsedRealtime();
                     if (!destroyed && calibration == null && quickSettings == null) badge.setVisibility(View.VISIBLE);
-                    if (destroyed || token != generation || MiniGameOverlayService.running) { repoll(POLL_IDLE_MS); return; }
+                    if (destroyed || captureSerial!=matchRequests.get() || token != generation || MiniGameOverlayService.running) { repoll(manualRetry?0:POLL_IDLE_MS); return; }
                     if (!ran) {
                         clearOverlay();
                         setStatus(S_FAILED, "画面检测失败");
@@ -1424,13 +1460,25 @@ public class CaptureService extends Service {
                     }
                     controlPixels = framePixels;
                     if (verifyOnly) {
+                        if(busy && matchPixels!=null && difference(matchPixels,framePixels)>=REALIGN_LIMIT){
+                            clearOverlay();manualRetry=true;lastMatch=0;wakeRecognition();
+                            android.util.Log.i("CrypticNotes","Viewport superseded running recognition");
+                            repoll(0);return;
+                        }
                         // Watch samples handle motion. A heartbeat only checks
                         // visibility and must not realign against our own overlay.
                         repoll(WATCH_MS);
                         return;
                     }
                     if (overlayLayer != null) { clearOverlay(); lastMatch = 0; }
-                    if (busy || throttled()) { repoll(WATCH_MS); return; }
+                    if (busy) {
+                        if(explicitAttempt){
+                            pendingLatestMatch=new PendingMatch(bytes,framePixels,detectedFloor,generation,captureSerial);
+                            android.util.Log.i("CrypticNotes","Latest screenshot ready: request="+captureSerial);
+                        }
+                        repoll(WATCH_MS);return;
+                    }
+                    if (throttled() && !explicitAttempt) { repoll(WATCH_MS); return; }
                     // No wording for work in progress: the turning emblem says it.
                     setStatus(S_MATCHING, null);
                     runMatch(bytes, framePixels, detectedFloor);
@@ -1504,6 +1552,7 @@ public class CaptureService extends Service {
         lastAttemptAt=busySince;
         final int token = generation;
         final int requestEpoch = memoryEpoch;
+        final int requestSerial = matchRequests.get();
         android.util.Log.i("CrypticNotes","Recognition started: token="+token+", frameBytes="+frame.length+", capture="+width+"x"+height+", viewedFloor="+viewedFloor);
         final int forceFloor=pendingForceFloor;
         pendingForceFloor=0; // Consent is consumed by exactly this request.
@@ -1516,12 +1565,20 @@ public class CaptureService extends Service {
                 // gated=True: capture() already confirmed the panel is open on
                 // this exact frame, so the adapter need not re-run the gate.
                 JSONObject result = new JSONObject(
-                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor, viewedFloor).toString());
+                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor, viewedFloor, matchRequests, requestSerial).toString());
+                if (requestSerial != matchRequests.get() || result.optBoolean("cancelled")) {
+                    android.util.Log.i("CrypticNotes", "Recognition superseded: request="+requestSerial);
+                    main.post(() -> { busy=false; if(!startPendingMatch() && !destroyed)repoll(0); });
+                    return;
+                }
+                android.util.Log.i("CrypticNotes","Recognition result: request="+requestSerial+", token="+token
+                        +", ok="+result.optBoolean("ok")+", map="+result.optString("map_id")
+                        +", floor="+result.optInt("floor")+", forced="+(forceFloor!=0));
                 offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
                 lastMatchResult="ok="+ok+", "+result.optString("message")+", map="+result.optString("map_id")+", floor="+result.optInt("floor");
                 if (ok) {
-                    if (!destroyed && requestEpoch == memoryEpoch) {
+                    if (!destroyed && requestEpoch == memoryEpoch && requestSerial == matchRequests.get()) {
                         boolean committed=bridge.callAttr("commit_match", token).toBoolean();
                         if(committed) android.util.Log.i("CrypticNotes", "Recognition memory committed: token="+token+", epoch="+requestEpoch+", map="+result.optString("map_id")+", floor="+result.optInt("floor"));
                     }
@@ -1540,17 +1597,21 @@ public class CaptureService extends Service {
             final JSONObject proposedOffer=offer;
             main.post(() -> {
                 busy = false;
-                // Every completion ends the busy animation, even when a stale
-                // request or a changed viewport suppresses presentation.
-                if(state==S_MATCHING)setStatus(S_IDLE,null);
-                // Closing only suppresses presentation. Reopening supersedes
-                // the previous identity proposal before it can update memory.
-                if (destroyed || token != generation || !mapPanelOpen || MiniGameOverlayService.running) {
-                    android.util.Log.i("CrypticNotes","Recognition presentation skipped: token="+token+", generation="+generation+", mapOpen="+mapPanelOpen+", destroyed="+destroyed);
-                    if (decoded != null) decoded.recycle();
-                    repoll(WATCH_MS);
+                if(startPendingMatch()){
+                    if(decoded!=null)decoded.recycle();
                     return;
                 }
+                // Every completion ends the busy animation, even when a stale
+                // request or a changed viewport suppresses presentation.
+                // Closing only suppresses presentation. Reopening supersedes
+                // the previous identity proposal before it can update memory.
+                if (destroyed || requestSerial != matchRequests.get() || token != generation || !mapPanelOpen || MiniGameOverlayService.running) {
+                    android.util.Log.i("CrypticNotes","Recognition presentation skipped: token="+token+", generation="+generation+", mapOpen="+mapPanelOpen+", destroyed="+destroyed);
+                    if (decoded != null) decoded.recycle();
+                    repoll(manualRetry ? 0 : WATCH_MS);
+                    return;
+                }
+                if(state==S_MATCHING)setStatus(S_IDLE,null);
                 if (decoded == null) {
                     if(proposedOffer!=null) {
                         setStatus(S_IDLE,null);collapseBadge();showManualPrompt(proposedOffer,token);
@@ -1739,7 +1800,9 @@ public class CaptureService extends Service {
         DarkTab gamesTab=new DarkTab(this,"小游戏");
         ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
         ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
+        final boolean gamesOnlyMenu=gameOnly||MiniGameOverlayService.running;
         header.addView(settingsTab,new LinearLayout.LayoutParams(0,Theme.px(this,40),1));
+        settingsTab.setVisibility(gamesOnlyMenu?View.GONE:View.VISIBLE);
         LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,Theme.px(this,40),1);tabParams.setMargins(Theme.px(this,6),0,Theme.px(this,6),0);
         header.addView(gamesTab,tabParams);
         HeaderClose dismiss = new HeaderClose(this);
@@ -1769,7 +1832,7 @@ public class CaptureService extends Service {
         settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);prefs.edit().putString("last_module","notes").apply();});
         gamesTab.select(false);
         gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);prefs.edit().putString("last_module","games").apply();});
-        if(gameOnly||prefs.getString("last_module","notes").equals("games")){scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);}
+        if(gamesOnlyMenu||prefs.getString("last_module","notes").equals("games")){scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);}
         MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));});
         shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         dismiss.setOnClickListener(v -> closeQuickSettings());

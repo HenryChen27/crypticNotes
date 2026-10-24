@@ -5,7 +5,8 @@ import cv2
 import numpy as np
 from mobile_matching import MobileMatcher as MapMatcher, selected_floor
 from mapmatching.src.live import match_with_cache, raw_layer, MultiplayerFallback
-from mapmatching.src.reference import read_image
+from mobile_images import read_image
+from mobile_cancellation import checkpoint, request_scope, Superseded
 from mapmatching.src.manual_alignment import reliable_memory, automatic_cross_floor_reliable
 from mapmatching.src.live import centered_floor_layer
 from dataclasses import replace
@@ -95,12 +96,23 @@ def commit_match(token):
     return False
 
 
-def match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0):
+def match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0,
+          request_counter=None, request_serial=0):
+    try:
+        with request_scope(request_counter, request_serial):
+            return _match(data, output, gated, remember, token, force_floor, viewed_floor)
+    except Superseded:
+        return json.dumps(dict(ok=False, cancelled=True, message='正在重新识别…'))
+
+
+def _match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0):
     """Register the open map. `gated=True` when the caller already ran the
     map-panel gate on this exact frame, which saves a second decode and a
     second gate pass (~40-80ms) on the hot re-registration path."""
     global _cached, _confirmed, _pending_candidate
+    checkpoint()
     pixels=decode(data)
+    checkpoint()
     if not gated:
         visibility=inspect_map_ui(pixels)
         if not visibility['visible']:
@@ -156,6 +168,7 @@ def match(data, output, gated=False, remember=True, token=None, force_floor=0, v
         result,candidate,message=match_with_cache(_matcher,map_pixels,_cached,require_map_ui=False,floor_hint=floor)
         if offer is not None and (candidate is None or candidate.floor != floor or not automatic_cross_floor_reliable(candidate,_confirmed,result)):
             return json.dumps(dict(ok=False,message='是否需要直接叠图？',manual_offer=offer,details=result.to_dict()),default=str)
+    checkpoint()
     if candidate is None:
         failure_text = {
             'insufficient_visible_structure': '可见地图结构太少，请继续探索',
@@ -167,11 +180,14 @@ def match(data, output, gated=False, remember=True, token=None, force_floor=0, v
     if reference.source not in _originals:
         _originals.clear()  # Bound decoded-image memory to the currently used map.
         _originals[reference.source] = read_image(_root/reference.source)
+    checkpoint()
     layer=(centered_floor_layer(pixels.shape,_originals[reference.source],reference,floor,scale=_confirmed.pose.scale)
            if centered else raw_layer(pixels.shape,_originals[reference.source],reference,candidate,full_view=True))
     ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
     if not ok:raise ValueError('Overlay encoding failed')
+    checkpoint()
     Path(output).write_bytes(encoded.tobytes())
+    checkpoint()
     if force_floor:
         _pending_candidate=None
     elif remember:

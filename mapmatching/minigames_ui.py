@@ -511,6 +511,7 @@ class GameControls(W.QWidget):
         self.stop_scene_watch()
         self.window_timer.stop()
         self.game_hidden=False
+        self.companion.module_tabs.buttons[0].show()
         self.companion.gear.set_game_background(False)
         self.start_timer.stop()
         self.ready_timer.stop()

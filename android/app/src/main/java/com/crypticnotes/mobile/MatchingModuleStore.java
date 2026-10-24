@@ -39,12 +39,14 @@ final class MatchingModuleStore {
             try(ZipInputStream in=new ZipInputStream(new FileInputStream(zip))){ZipEntry e;byte[] b=new byte[65536];while((e=in.getNextEntry())!=null){String name=e.getName().replace('\\','/');File target=new File(stage,name);if(!name.startsWith("maps/")||name.contains("..")||name.contains(":")||!target.getCanonicalPath().startsWith(base)||!seen.add(name.toLowerCase(Locale.ROOT))||++count>20000)throw new IOException("无效地图文件路径");if(e.isDirectory()){target.mkdirs();continue;}target.getParentFile().mkdirs();try(OutputStream out=new FileOutputStream(target)){int n;while((n=in.read(b))!=-1){unpacked+=n;if(unpacked>1400L*1024*1024)throw new IOException("模块解压大小异常");out.write(b,0,n);}}}}
             progress.update("正在保留个人地图并安装…");python(c);Python.getInstance().getModule("mobile_modules").callAttr("install_provider",c.getFilesDir().toString(),new File(stage,"maps").toString(),id(),spec.toString());
             c.getSharedPreferences("mobile",0).edit().putBoolean("matchingEnabled",true).putBoolean("matchingEnabled_"+id(),true).putString("matchingHash_"+id(),sha).apply();
-        }finally{remove(stage);}
+        }finally{MapCatalog.invalidate();remove(stage);}
     }
     void delete()throws Exception{
         python(c);
+        try {
         if(provider==null){Python.getInstance().getModule("mobile_modules").callAttr("remove",c.getFilesDir().toString());c.getSharedPreferences("mobile",0).edit().putBoolean("matchingEnabled",false).apply();}
         else {Python.getInstance().getModule("mobile_modules").callAttr("remove_provider",c.getFilesDir().toString(),provider);c.getSharedPreferences("mobile",0).edit().putBoolean("matchingEnabled_"+provider,false).remove("matchingHash_"+provider).apply();}
+        } finally { MapCatalog.invalidate(); }
     }
     static void remove(File p){if(p.isDirectory()){File[] children=p.listFiles();if(children!=null)for(File x:children)remove(x);}p.delete();}
 }

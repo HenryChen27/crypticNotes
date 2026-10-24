@@ -29,7 +29,7 @@ def presentation_candidate(result):
     candidate remains explicitly labelled experimental even when displayed.
     """
     if not result.candidates:
-        if result.reason == 'conflicting_reference_drawings':return None, '候选地形存在分歧，请增加探索范围后重试'
+        if result.reason in ('conflicting_reference_drawings','ambiguous_reference_drawings'):return None, '候选地形存在分歧，请增加探索范围后重试'
         if result.reason == 'terrain_identity_unconfirmed':return None, '地图线索不足，暂未确认地形，请增加探索范围'
         if result.reason == 'author_route_alignment_failed':return None, '地形已确认，路线图暂未对齐，请增加探索范围'
         return None, '没有识别到地图结构，请打开游戏地图后重试'

@@ -20,7 +20,8 @@ public class MiniGameOverlayService extends Service {
     private WebView web;
     private File root;
     private AtomicFile save;
-    private boolean closing;
+    private boolean closing,savedExitConfirmed,closeSessionAfterSave;
+    private String nextGame;
     static volatile boolean running;
     static volatile boolean hidden;
     static MiniGameOverlayService current;
@@ -232,12 +233,21 @@ public class MiniGameOverlayService extends Service {
         @JavascriptInterface public void safeExit(String message){
             try{JSONObject m=new JSONObject(message);if(!"safe-exit".equals(m.optString("type")))return;
                 if(!m.optBoolean("saved"))throw new IOException(m.optString("reason","保存失败"));write(m.getString("json"));
-                runOnUiThread(()->{handler.removeCallbacks(saveTimeout);stopSelf();});
+                runOnUiThread(()->{handler.removeCallbacks(saveTimeout);savedExitConfirmed=true;stopSelf();});
             }catch(Exception e){runOnUiThread(()->closeFailed(e.getMessage()));}
         }
         @JavascriptInterface public String saveStorage(String json,boolean exit){
-            try{write(json);if(exit)runOnUiThread(()->stopSelf());return "ok";}catch(Exception e){return "保存失败："+e.getMessage();}
+            try{write(json);if(exit)runOnUiThread(()->{savedExitConfirmed=true;stopSelf();});return "ok";}catch(Exception e){return "保存失败："+e.getMessage();}
         }
+    }
+    void closeSession(){nextGame=null;closeSessionAfterSave=true;saveAndClose();}
+    void switchTo(String id){
+        if(!new MiniGameStore(this,id).installed()){
+            Toast.makeText(this,"请先下载小游戏",Toast.LENGTH_SHORT).show();return;
+        }
+        closeSessionAfterSave=false;nextGame=id;
+        Toast.makeText(this,"正在保存并切换小游戏",Toast.LENGTH_SHORT).show();
+        saveAndClose();
     }
     void saveAndClose(){
         if(closing||web==null)return;closing=true;
@@ -246,11 +256,22 @@ public class MiniGameOverlayService extends Service {
         web.evaluateJavascript("(()=>{if(typeof window.__jellyfishHostSave!=='function')return 'bridge_missing';window.__jellyfishHostSave(1);return 'started'})()",result->{if(closing&&"\"bridge_missing\"".equals(result))closeFailed("关闭接口未加载，请更新小游戏后重试");});
     }
     private void closeFailed(String reason){
-        handler.removeCallbacks(saveTimeout);closing=false;
+        handler.removeCallbacks(saveTimeout);closing=false;nextGame=null;closeSessionAfterSave=false;
         if(web!=null)web.evaluateJavascript("window.__jellyfishHostFrozen=false",null);
         android.util.Log.e("CrypticNotes","Mini-game close failed: "+reason);
         // Never steal focus back from the main game after an automatic hide.
         Toast.makeText(this,(hidden?"小游戏保持后台，":"")+"保存未完成："+reason+"。请更新小游戏后重试",Toast.LENGTH_LONG).show();
     }
-    @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();}
+    @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();
+        if(savedExitConfirmed&&closeSessionAfterSave){
+            CaptureService capture=CaptureService.current;
+            if(capture!=null)capture.stopSelf();
+        }
+        final String launch=savedExitConfirmed?nextGame:null;nextGame=null;
+        if(launch!=null)new android.os.Handler(android.os.Looper.getMainLooper()).post(()->{
+            CaptureService capture=CaptureService.current;
+            if(capture!=null)capture.openGame(launch);
+            else startActivity(new Intent(this,MainActivity.class).putExtra("launch_game",launch).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
+        });
+    }
 }

@@ -1327,6 +1327,9 @@ class Companion(W.QWidget):
         self.toast.hide()
         right = self.geometry().right()
         if not self.panel.isVisible():
+            games_only=self.minigames.running()
+            self.module_tabs.buttons[0].setVisible(not games_only)
+            if games_only:self.module_tabs.setCurrentIndex(1)
             self.settings_scroll.verticalScrollBar().setValue(0)
         self.panel.setVisible(not self.panel.isVisible())
         self.resize_settings()

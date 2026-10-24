@@ -33,6 +33,7 @@ def inspect_floor_tabs(pixels):
         mask = (roi > threshold).astype(np.uint8)
         count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
         digits = []
+        negative_digits = []
         for index in range(1, count):
             x,y,bw,bh,area = stats[index]
             if not (8 <= bh <= 55 and .10 <= bw/bh <= .85 and area >= 12):
@@ -42,10 +43,15 @@ def inspect_floor_tabs(pixels):
             scores = {i: float(np.logical_and(glyph,t).sum()/max(1,np.logical_or(glyph,t).sum()))
                       for i,t in _templates().items()}
             digit = max(scores, key=scores.get)
+            # A highlighted basement digit can lose thin edge pixels to the
+            # textured button. Only allow this weaker glyph as the EXTRA left
+            # digit: the normal 1/2 pair, minus bar and spacing remain required.
+            if digit==1 and scores[1]>=.60 and scores[1]-scores[2]>=.12:
+                negative_digits.append((digit,x,y,bw,bh,scores[1]))
             if scores[digit] < .67 or scores[digit]-scores[3-digit] < .12:
                 continue
             digits.append((digit,x,y,bw,bh,scores[digit]))
-        for one in (d for d in digits if d[0]==1):
+        for one in negative_digits:
             _,x,y,bw,bh,score = one
             cx = x+bw/2
             for two in (d for d in digits if d[0]==2):
@@ -55,8 +61,9 @@ def inspect_floor_tabs(pixels):
                     continue
                 centers = [cx, tx+tw/2]
                 floors = [1,2]
+                strong_negative_support = False
                 # The extra left-hand '1' must also have a horizontal minus.
-                for neg in (d for d in digits if d[0]==1 and d[1]<x):
+                for neg in (d for d in negative_digits if d[1]<x):
                     _,nx,ny,nw,nh,ns = neg
                     if abs(ny-y)>.22*bh or abs((nx+nw/2)-(cx-step+.20*bh))>.4*bh:
                         continue
@@ -65,8 +72,13 @@ def inspect_floor_tabs(pixels):
                             and abs(s[1]+s[3]/2-(ny+.55*nh))<.23*bh
                             and s[4]/(s[2]*s[3])>.5]
                     if bars:
+                        strong_negative_support = ns >= .67
                         centers.insert(0,cx-step);floors.insert(0,-1)
                         break
+                # A worn ordinary 1 needs a separately strong -1 glyph, its
+                # minus bar and the strong 2; never weaken the two-button case.
+                if score < .67 and not strong_negative_support:
+                    continue
                 values=[]
                 for center in centers:
                     a,b=int(center-step*.42),int(center+step*.42)

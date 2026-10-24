@@ -34,7 +34,23 @@ final class MapCatalog {
     }
 
     /** Downloads/removals can replace the manifest without restarting the APK. */
-    static synchronized List<Entry> load(Context context) { return read(context); }
+    private static List<Entry> cached;
+    private static String cachedPath;
+    private static long cachedModified=-1,cachedLength=-1;
+    static synchronized void invalidate(){cached=null;cachedPath=null;cachedModified=-1;cachedLength=-1;}
+    static synchronized List<Entry> load(Context context) {
+        java.io.File file=new java.io.File(context.getFilesDir(),"maps/floors.json");
+        String path=file.getAbsolutePath();long modified=file.lastModified(),length=file.length();
+        if(cached!=null && path.equals(cachedPath) && modified==cachedModified && length==cachedLength)return cached;
+        long began=android.os.SystemClock.uptimeMillis();
+        List<Entry> loaded=read(context);
+        android.util.Log.i("CrypticNotes","Map catalog parsed: entries="+loaded.size()+", elapsedMs="+(android.os.SystemClock.uptimeMillis()-began));
+        // Do not cache a snapshot if installation replaced it while it was read.
+        if(modified==file.lastModified() && length==file.length()){
+            cached=Collections.unmodifiableList(loaded);cachedPath=path;cachedModified=modified;cachedLength=length;
+        }
+        return loaded;
+    }
 
     static InputStream open(Context context,String relative)throws IOException{
         java.io.File root=new java.io.File(context.getFilesDir(),"maps").getCanonicalFile();

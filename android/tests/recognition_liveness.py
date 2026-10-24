@@ -10,7 +10,7 @@ class LivenessTests(unittest.TestCase):
     def test_idle_recognition_is_not_preempted_by_visibility_heartbeat(self):
         sample=SOURCE.split('private void sample() {',1)[1].split('private void blink()',1)[0]
         self.assertIn('(overlayLayer != null || busy) &&',sample)
-        self.assertLess(sample.index('manualRetry && !busy'),sample.index('lastGateAt >= 800'))
+        self.assertLess(sample.index('if (manualRetry)'),sample.index('lastGateAt >= 800'))
 
     def test_slow_inspection_restarts_heartbeat_clock_on_completion(self):
         callback=SOURCE.split('final boolean passed = visible, ran = ok;',1)[1]

@@ -15,10 +15,11 @@ class Retrieved:
     matches: int
 
 
-def retrieve(game: Evidence, references: list[Reference], spatial: bool = True) -> list[Retrieved]:
+def retrieve(game: Evidence, references: list[Reference], spatial: bool = True, *, checkpoint=None) -> list[Retrieved]:
     matcher = cv2.BFMatcher(cv2.NORM_L2)
     results = []
     for ref in references:
+        if checkpoint is not None: checkpoint()
         r = ref.evidence
         if len(game.corners) < 2 or len(r.corners) < 2:
             results.append(Retrieved(ref, 0., np.empty((0, 3)), 0))

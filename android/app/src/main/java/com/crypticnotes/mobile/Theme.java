@@ -116,10 +116,12 @@ public final class Theme {
         for (int i = 0; i < grainField.length; i++) grainField[i] = (float) random.nextGaussian();
         float[] edgeJitter = new float[w * h];
         for (int i = 0; i < edgeJitter.length; i++) edgeJitter[i] = random.nextFloat() * 5f * roughness;
-        float[] alphaField = new float[w * h];
-        for (int i = 0; i < alphaField.length; i++) alphaField[i] = (float) random.nextGaussian();
+        // Same deterministic random sequence, without a third full-size float array.
+        float[] horizontalWave = new float[w];
+        for(int x=0;x<w;x++)horizontalWave[x]=5f*(float)Math.sin(x/(float)Math.max(1,w-1)*Math.PI);
 
         for (int y = 0; y < h; y++) {
+            float verticalWave=8f*(1f-y/(float)Math.max(1,h-1));
             for (int x = 0; x < w; x++) {
                 int i = y * w + x;
                 float edge = Math.min(y, h - 1 - y);
@@ -145,9 +147,8 @@ public final class Theme {
                 }
                 float feather = (edge - edgeJitter[i]) / (featherUnit * roughness);
                 feather = Math.max(0f, Math.min(1f, feather));
-                float wave = 8f * (1f - y / (float) Math.max(1, h - 1))
-                        + 5f * (float) Math.sin(x / (float) Math.max(1, w - 1) * Math.PI) - 5f;
-                int alpha = Math.round(feather * alphaBase + alphaField[i] * alphaJitter * feather);
+                float wave = verticalWave + horizontalWave[x] - 5f;
+                int alpha = Math.round(feather * alphaBase + ((float) random.nextGaussian()) * alphaJitter * feather);
                 alpha = Math.max(0, Math.min(255, alpha));
                 int r = channel(palette[0], grainField[i] * grain * (dark ? .35f : 1f) + wave);
                 int g = channel(palette[1], grainField[i] * grain * (dark ? .35f : 1f) + wave);

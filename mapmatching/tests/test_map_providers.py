@@ -57,6 +57,57 @@ class ProviderTests(unittest.TestCase):
   result=TerrainIdentityMatcher(ROOT/'maps',factory).match(np.zeros((10,10,3),np.uint8))
   self.assertFalse(result.candidates)
   self.assertEqual(result.reason,'conflicting_reference_drawings')
+ def test_solo_identity_does_not_require_optional_terrain_alias(self):
+  from types import SimpleNamespace
+  from unittest.mock import Mock
+  from mapmatching.src.author_matcher import TerrainIdentityMatcher
+  from mapmatching.src.matcher import MatchResult
+  ref=SimpleNamespace(map_id='solo/canonical-new-map',terrain_id=None)
+  solo=SimpleNamespace(references=[ref],match=Mock(return_value=MatchResult(candidates=[Candidate(ref.map_id,'nightmare','solo',12,Pose(1,2,3),.85,.1,2)])))
+  duo=SimpleNamespace(references=[],match=Mock(return_value=MatchResult()))
+  factory=lambda index,**kw:duo if kw['mode']=='duo' else solo
+  result=TerrainIdentityMatcher(ROOT/'maps',factory).match(np.zeros((10,10,3),np.uint8))
+  self.assertEqual(result.candidates[0].map_id,ref.map_id)
+  self.assertEqual(result.candidates[0].floor,2)
+ def test_every_official_solo_map_can_supply_its_own_identity(self):
+  from types import SimpleNamespace
+  from unittest.mock import Mock
+  from mapmatching.src.author_matcher import TerrainIdentityMatcher
+  from mapmatching.src.matcher import MatchResult
+  entries=json.loads((ROOT/'maps/floors.json').read_text(encoding='utf8'))['references']
+  refs=[SimpleNamespace(map_id=e['map_id'],terrain_id=e.get('terrain_id')) for e in entries
+        if e.get('provider','lianghapi')=='lianghapi' and e['difficulty']=='nightmare' and e['mode']=='solo']
+  for ref in refs:
+   with self.subTest(map_id=ref.map_id):
+    solo=SimpleNamespace(references=refs,match=Mock(return_value=MatchResult(candidates=[Candidate(ref.map_id,'nightmare','solo',12,Pose(1,2,3),.85,.1,2)])))
+    duo=SimpleNamespace(references=[],match=Mock(return_value=MatchResult()))
+    factory=lambda index,**kw:duo if kw['mode']=='duo' else solo
+    result=TerrainIdentityMatcher(ROOT/'maps',factory).match(np.zeros((10,10,3),np.uint8))
+    self.assertEqual(result.candidates[0].map_id,ref.map_id)
+ def test_phone_ties_need_a_clear_independent_author_pose(self):
+  from types import SimpleNamespace
+  from unittest.mock import Mock
+  from mapmatching.src.author_matcher import TerrainIdentityMatcher,AuthorRouteMatcher
+  from mapmatching.src.matcher import MatchResult
+  refs=[SimpleNamespace(map_id='solo/a',terrain_id='a'),SimpleNamespace(map_id='solo/b',terrain_id='b')]
+  hypotheses=[dict(map_id=r.map_id,floor=2,explained=.85,contradiction=.1,retrieval_score=12) for r in refs]
+  solo=SimpleNamespace(references=refs,match=Mock(return_value=MatchResult(reason='mobile_identity_ambiguous',diagnostics=dict(rejected_candidates=hypotheses))))
+  duo=SimpleNamespace(references=[],match=Mock(return_value=MatchResult()))
+  factory=lambda index,**kw:duo if kw['mode']=='duo' else solo
+  recognizer=TerrainIdentityMatcher(ROOT/'maps',factory)
+  self.assertEqual(recognizer.match(np.zeros((10,10,3),np.uint8)).reason,'ambiguous_reference_drawings')
+  primary=Mock(references=[SimpleNamespace(map_id='route/a',recognition_map_id='solo/a',terrain_id=None),SimpleNamespace(map_id='route/b',recognition_map_id='solo/b',terrain_id=None)])
+  scores={'route/a':.9,'route/b':.81}
+  def align(pixels,map_id):return MatchResult(candidates=[Candidate(map_id,'nightmare','full',12,Pose(.7,30,40),scores[map_id],.1,2)])
+  primary.register_known.side_effect=align
+  matcher=AuthorRouteMatcher(primary,recognizer)
+  result=matcher.match(np.zeros((10,10,3),np.uint8))
+  self.assertEqual(result.candidates[0].map_id,'route/a')
+  self.assertTrue(result.diagnostics['author_conflict_recovered']['independent_pose'])
+  scores['route/b']=.89
+  result=matcher.match(np.zeros((10,10,3),np.uint8))
+  self.assertFalse(result.candidates)
+  self.assertEqual(result.reason,'ambiguous_reference_drawings')
  def test_author_coordinates_are_independent(self):
   from types import SimpleNamespace
   from unittest.mock import Mock

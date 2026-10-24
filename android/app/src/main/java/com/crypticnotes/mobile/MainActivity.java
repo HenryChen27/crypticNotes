@@ -12,6 +12,9 @@ import android.widget.*;
 /** Settings screen. Visual language mirrors the desktop client (see {@link Theme}). */
 public class MainActivity extends Activity {
     private TextView status;
+    private boolean uiReady,resumed;
+    private FrameLayout startupHost;
+    private View loadingOverlay;
     private Theme.SectionHeading gameHeading;
     private InlineGameManager inlineGames;
     private Theme.ChalkChoice difficulty, party;
@@ -45,6 +48,24 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        LinearLayout loading=new LinearLayout(this);loading.setOrientation(LinearLayout.VERTICAL);
+        loading.setGravity(Gravity.CENTER);loading.setBackgroundColor(0xff1d3040);
+        loading.addView(new DollLoadingView(this),new LinearLayout.LayoutParams(Theme.px(this,152),Theme.px(this,171)));
+        startupHost=new FrameLayout(this);
+        loadingOverlay=loading;
+        startupHost.addView(loading,new FrameLayout.LayoutParams(-1,-1));
+        setContentView(startupHost);
+        new Thread(()->{
+            try{
+                Theme.typeface(getApplicationContext());
+                MapCatalog.load(getApplicationContext());
+            }catch(Exception error){android.util.Log.w("CrypticNotes","Startup preload failed; continuing",error);}
+            runOnUiThread(()->{if(!isDestroyed()&&!isFinishing())buildContent(state);});
+        },"startup-preload").start();
+    }
+
+    private void buildContent(Bundle state){
+        final long startupAt=SystemClock.uptimeMillis();
 
         FrameLayout root = new FrameLayout(this);
         View wallpaper = new View(this);
@@ -60,7 +81,8 @@ public class MainActivity extends Activity {
         scroll.addView(content);
         root.addView(scroll, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        setContentView(root);
+        startupHost.addView(root,0,new FrameLayout.LayoutParams(-1,-1));
+        root.requestApplyInsets();
         root.setOnApplyWindowInsetsListener((v, insets) -> {
             v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(),
                     insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
@@ -68,7 +90,7 @@ public class MainActivity extends Activity {
         });
 
         TextView subtitle = new TextView(this);
-        subtitle.setText("Android 预览版 · 截图只在本机处理，不上传");
+        subtitle.setVisibility(View.GONE);
         content.addView(Theme.muted(this, subtitle.getText().toString()));
         Theme.Rule rule = new Theme.Rule(this);
         LinearLayout.LayoutParams ruleParams = matchWrap();
@@ -86,7 +108,7 @@ public class MainActivity extends Activity {
         LinearLayout actions = card();
         content.addView(actions);mapActions=actions;
         status = Theme.status(this);
-        status.setText("首次启动需要悬浮窗与屏幕采集授权。");
+        status.setText("准备就绪");
         LinearLayout serviceActions = new LinearLayout(this);
         actions.addView(serviceActions, matchWrap());
         Theme.ChalkButton start = new Theme.ChalkButton(this, "开启自动识图", true);
@@ -290,6 +312,17 @@ public class MainActivity extends Activity {
         switchModule(getIntent().getStringExtra("open_module")!=null?getIntent().getStringExtra("open_module"):getSharedPreferences("mobile",0).getString("last_module","notes"));
         if(state!=null)pendingGame=state.getString("pendingGame");
         String launch=getIntent().getStringExtra("launch_game");if(launch!=null){getIntent().removeExtra("launch_game");startGame(launch);}
+        root.post(()->{
+            if(isDestroyed()||isFinishing()||loadingOverlay==null)return;
+            final View overlay=loadingOverlay;
+            overlay.animate().alpha(0f).setDuration(180).withEndAction(()->{
+                startupHost.removeView(overlay);
+                if(loadingOverlay==overlay)loadingOverlay=null;
+            }).start();
+        });
+        uiReady=true;
+        if(resumed)refreshResumedUi();
+        android.util.Log.i("CrypticNotes","Main UI constructed: elapsedMs="+(SystemClock.uptimeMillis()-startupAt));
     }
 
     /**
@@ -377,7 +410,7 @@ public class MainActivity extends Activity {
 
     public void startGame(String id){
         if(!new MiniGameStore(this,id).installed()){Toast.makeText(this,"请先下载小游戏",Toast.LENGTH_SHORT).show();return;}
-        if(MiniGameOverlayService.running&&!id.equals(MiniGameOverlayService.activeGameId)){Toast.makeText(this,"请先关闭当前小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         if(!Settings.canDrawOverlays(this)){Toast.makeText(this,"请允许显示悬浮窗后再次打开",Toast.LENGTH_LONG).show();startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
         boolean detection=getSharedPreferences("mobile",0).getBoolean("gameSceneEnabled",true);
         CaptureService service=CaptureService.current;
@@ -385,7 +418,7 @@ public class MainActivity extends Activity {
         if(!detection){startForegroundService(new Intent(this,CaptureService.class).setAction("games_only").putExtra("gameOnly",true).putExtra("launchGame",id));return;}
         if(capturePermissionPending)return;pendingGame=id;requestCapturePermission();
     }
-    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);String module=intent.getStringExtra("open_module");if(module!=null)switchModule(module);String game=intent.getStringExtra("launch_game");if(game!=null){intent.removeExtra("launch_game");startGame(game);}}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(!uiReady)return;String module=intent.getStringExtra("open_module");if(module!=null)switchModule(module);String game=intent.getStringExtra("launch_game");if(game!=null){intent.removeExtra("launch_game");startGame(game);}}
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("pendingGame",pendingGame);}
 
     private void startCapture() {
@@ -451,7 +484,10 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onResume() {
-        super.onResume();
+        super.onResume();resumed=true;
+        if(uiReady)refreshResumedUi();
+    }
+    private void refreshResumedUi(){
         if(inlineGames!=null)inlineGames.refresh();
         if(gameHeading!=null){gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));MiniGameUpdates.check(this,()->{if(!isDestroyed()&&gameHeading!=null)gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));if(inlineGames!=null)inlineGames.refresh();});}
         if (updater != null) {
@@ -479,7 +515,7 @@ public class MainActivity extends Activity {
     }
 
     @Override protected void onPause() {
-        super.onPause();
+        resumed=false;super.onPause();
         UpdateService.unobserve();
     }
 

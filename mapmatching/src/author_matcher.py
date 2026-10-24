@@ -23,19 +23,37 @@ class TerrainIdentityMatcher:
     def references(self):return self.solo.references
     def match(self,pixels):
         from dataclasses import replace
-        accepted=[];details=[]
+        accepted=[];details=[];ambiguous=set()
         for matcher in (self.duo,self.solo):
             matcher.floor_hint=self.floor_hint
             result=matcher.match(pixels);details.append(result.to_dict())
             candidate=presentation_candidate(result)[0]
-            if candidate is None:continue
+            if candidate is None:
+                # Retain strong but tied phone hypotheses for independent route
+                # verification. These are identities only, never render poses.
+                if result.reason=='mobile_identity_ambiguous':
+                    hypotheses=result.diagnostics.get('rejected_candidates',[])
+                    top=max((h.get('explained') or 0 for h in hypotheses),default=0)
+                    for h in hypotheses:
+                        if (h.get('explained') or 0)<max(.65,top-.04) or h.get('contradiction',1)>.25 or h.get('retrieval_score',0)<4:continue
+                        if self.floor_hint is not None and h.get('floor')!=self.floor_hint:continue
+                        ref=next((r for r in matcher.references if r.map_id==h['map_id']),None)
+                        if ref is None:continue
+                        canonical=ref.map_id if matcher is self.solo else self.by_terrain.get(ref.terrain_id)
+                        if canonical is not None:ambiguous.add((canonical,h['floor']))
+                continue
             ref=next(r for r in matcher.references if r.map_id==candidate.map_id)
-            map_id=self.by_terrain.get(ref.terrain_id)
+            # A solo reference is already the canonical recognition identity.
+            # Only alternate duo drawings require an explicit terrain alias.
+            map_id=ref.map_id if matcher is self.solo else self.by_terrain.get(ref.terrain_id)
             if map_id is not None:accepted.append(replace(candidate,map_id=map_id,mode='solo'))
         # Scores from different atlas drawings/views are not calibrated against
         # one another. Conflicting accepted identities require more evidence;
         # a slightly higher boundary score must never pick the other map.
         identities={(c.map_id,c.floor) for c in accepted}
+        if not accepted and len(ambiguous)>=2:
+            return MatchResult(reason='ambiguous_reference_drawings',diagnostics=dict(identity_only=True,
+                reference_drawings=details,identity_hypotheses=[dict(map_id=m,floor=f) for m,f in sorted(ambiguous)]))
         if len(identities)!=1:
             return MatchResult(reason='conflicting_reference_drawings' if accepted else 'terrain_identity_unconfirmed',
                 diagnostics=dict(identity_only=True,reference_drawings=details,
@@ -96,7 +114,7 @@ class AuthorRouteMatcher:
         identity=self.recognizer.match(pixels)
         known,message=presentation_candidate(identity)
         if known is None:
-            if identity.reason == 'conflicting_reference_drawings':
+            if identity.reason in ('conflicting_reference_drawings','ambiguous_reference_drawings'):
                 recovered=self.resolve_conflict(pixels,identity)
                 if recovered is not None:return recovered
             # Do not let a route stroke break an unresolved identity tie.

@@ -5,7 +5,14 @@ import numpy as np
 from mapmatching.src.matcher import MapMatcher, MatchResult
 from mapmatching.src.evidence import extract
 from mapmatching.src.retrieval import retrieve
-from mapmatching.src.registration import register
+from mapmatching.src.registration import register as _register
+from mobile_cancellation import checkpoint
+
+def register(*args, **kwargs):
+    checkpoint()
+    result = _register(*args, **kwargs)
+    checkpoint()
+    return result
 
 
 def selected_floor(pixels):
@@ -59,6 +66,7 @@ class MobileMatcher(MapMatcher):
         return self._mobile_match(screenshot, map_id)
 
     def _mobile_match(self, screenshot, map_id=None):
+        checkpoint()
         start = time.perf_counter()
         # The adapter already masks the phone viewport. Desktop's first crop
         # loses its upper/lower edges and can trigger a second complete search.
@@ -85,7 +93,9 @@ class MobileMatcher(MapMatcher):
                       if self.floor_hint is None or any(
                           region['floor'] == self.floor_hint for region in r.regions)]
         extracted = time.perf_counter()
-        retrieved = retrieve(evidence, references)
+        checkpoint()
+        retrieved = retrieve(evidence, references, checkpoint=checkpoint)
+        checkpoint()
         ranked = time.perf_counter()
         candidates = sorted([register(evidence, r) for r in retrieved[:10]],
                             key=lambda c: -(c.explained or 0))
@@ -94,7 +104,9 @@ class MobileMatcher(MapMatcher):
         if reason and self.floor_hint in (-1, 1, 2):
             # Treat the tab as an optimization, not a hard gate. A false tab
             # reading must not make a well-explored map impossible to match.
-            retrieved = retrieve(evidence, all_references)
+            checkpoint()
+            retrieved = retrieve(evidence, all_references, checkpoint=checkpoint)
+            checkpoint()
             ranked = time.perf_counter()
             candidates = sorted([register(evidence, r) for r in retrieved[:10]],
                                 key=lambda c: -(c.explained or 0))
