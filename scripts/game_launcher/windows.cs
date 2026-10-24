@@ -7,6 +7,7 @@ using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
 
 class GameWindow : Form {
+    [System.Runtime.InteropServices.DllImport("user32.dll")] static extern bool DestroyIcon(IntPtr handle);
     readonly WebView2 view = new WebView2();
     readonly string root, profile, report, testScript;
     readonly Timer save = new Timer();
@@ -60,6 +61,15 @@ class GameWindow : Form {
         Directory.CreateDirectory(profile);
         Text=title;FormBorderStyle=FormBorderStyle.None;TopMost=true;
         Icon=System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        try {
+            string path=Path.Combine(root,"assets","icon.png");
+            if(File.Exists(path)&&new FileInfo(path).Length<=4*1024*1024)
+                using(var original=new Bitmap(path))using(var small=new Bitmap(original,64,64)) {
+                    IntPtr handle=small.GetHicon();
+                    try {using(var icon=System.Drawing.Icon.FromHandle(handle))Icon=(Icon)icon.Clone();}
+                    finally {DestroyIcon(handle);}
+                }
+        } catch(Exception) {}
         BackColor=Color.FromArgb(18,30,42);ForeColor=Color.FromArgb(213,224,233);
         Padding=new Padding(1);
         Font=new Font("Microsoft YaHei UI",9f);

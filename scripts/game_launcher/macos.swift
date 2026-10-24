@@ -186,4 +186,5 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     }
 }
 let app=NSApplication.shared;app.setActivationPolicy(.regular)
+if let icon=NSImage(contentsOf:root.appendingPathComponent("assets/icon.png")){app.applicationIconImage=icon}
 let host=Host();app.delegate=host;app.run()

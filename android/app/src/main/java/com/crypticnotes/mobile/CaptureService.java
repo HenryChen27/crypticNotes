@@ -1757,7 +1757,7 @@ public class CaptureService extends Service {
         for(String gameId:GameCatalog.ids(this)){
             MiniGameStore store=new MiniGameStore(this,gameId);
             LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
-            row.addView(label(store.title(),16,Theme.TITLE,0),new LinearLayout.LayoutParams(0,-2,1));
+            GameIcons.addTo(row,gameId);row.addView(label(store.title(),16,Theme.TITLE,0),new LinearLayout.LayoutParams(0,-2,1));
             Theme.ChalkButton launch=button(MiniGameOverlayService.running&&gameId.equals(MiniGameOverlayService.activeGameId)?"回到游戏":"打开",true);row.addView(launch);
             launch.setOnClickListener(v->{
                 if(!store.installed()){Toast.makeText(this,"请在应用内下载该小游戏",Toast.LENGTH_SHORT).show();return;}

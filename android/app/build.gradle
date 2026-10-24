@@ -12,8 +12,8 @@ android {
         applicationId 'com.crypticnotes.mobile.v2'
         minSdk 26
         targetSdk 35
-        versionCode 55
-        versionName '0.6.47-preview'
+        versionCode 56
+        versionName '0.6.48-preview'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {

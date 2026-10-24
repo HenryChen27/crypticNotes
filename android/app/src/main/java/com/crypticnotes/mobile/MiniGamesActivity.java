@@ -15,7 +15,7 @@ public class MiniGamesActivity extends Activity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);store=new MiniGameStore(this);
         LinearLayout body=new LinearLayout(this);body.setOrientation(1);body.setPadding(24,24,24,24);body.setBackgroundColor(0xff182430);
-        body.addView(Theme.text(new TextView(this),23,Theme.TITLE));((TextView)body.getChildAt(0)).setText("合成大水母");
+        LinearLayout heading=new LinearLayout(this);heading.setGravity(android.view.Gravity.CENTER_VERTICAL);GameIcons.addTo(heading,store.id);TextView title=Theme.text(new TextView(this),23,Theme.TITLE);title.setText(store.title());heading.addView(title);body.addView(heading);
         body.addView(Theme.muted(this,"按需下载 · 暂停与存档 · 仅自己可见的排行榜\n删除包体会保留本机存档和成绩。"));
         status=Theme.muted(this,"");body.addView(status);
         download=new Theme.ChalkButton(this,"下载游戏",true);body.addView(download);

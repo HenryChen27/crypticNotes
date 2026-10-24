@@ -4,12 +4,42 @@ import json
 import time
 from PySide6 import QtCore as C, QtWidgets as W, QtGui as G
 from .paths import DATA_ROOT
+from .game_icons import game_pixmap,cache_catalog_icons
 from .theme import ChalkButton, FoldSection
 from .minigames import GameStore, CollectionGameStore, read_collection, read_catalog, package_info, platform_key,game_title,LauncherStore
 
 
 def game_profile(controls):
     return DATA_ROOT/'minigame-saves'/getattr(getattr(controls,'store',None),'game_id','jellyfish')
+
+
+def compact_game_caption(version, size):
+    version=('v'+str(version).lstrip('vV')) if version else '版本待同步'
+    amount=(f'{size/1048576:.1f}'.rstrip('0').rstrip('.')+'MB') if size else '大小待同步'
+    return version+' · '+amount
+
+
+class GameTaskStatus(W.QLabel):
+    def setText(self,text):
+        super().setText(text)
+        self.setVisible(bool(text))
+
+
+class GameListCard(W.QWidget):
+    """Reserve action width; long titles must never push the launch button out."""
+    def __init__(self,title):
+        super().__init__()
+        self.row=W.QHBoxLayout(self);self.row.setContentsMargins(0,7,0,7);self.row.setSpacing(10)
+        self.icon=W.QLabel();self.icon.setFixedSize(38,38);self.icon.setAlignment(C.Qt.AlignCenter);self.row.addWidget(self.icon)
+        text=W.QWidget();column=W.QVBoxLayout(text);column.setContentsMargins(0,0,0,0);column.setSpacing(3)
+        text.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
+        self.title=W.QLabel(title);self.title.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
+        self.subtitle=W.QLabel();self.subtitle.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
+        self.subtitle.setStyleSheet('color:rgba(187,204,216,145);font-size:12px;background:transparent;')
+        column.addWidget(self.title);column.addWidget(self.subtitle);self.row.addWidget(text,1)
+        self.launch=ChalkButton('启动');self.download=ChalkButton('下载')
+        for button in (self.launch,self.download):
+            button.setFixedWidth(84);button.setStyleSheet('font-size:15px;');self.row.addWidget(button)
 
 
 class DownloadTask(C.QThread):
@@ -34,7 +64,7 @@ class CatalogTask(C.QThread):
     result=C.Signal(object,str)
     def run(self):
         try:
-            catalog=read_collection();catalog['_launcher']=package_info(read_catalog(),platform_key())
+            catalog=read_collection();cache_catalog_icons(catalog);catalog['_launcher']=package_info(read_catalog(),platform_key())
             self.result.emit(catalog,'')
         except Exception as error:self.result.emit(None,str(error))
 
@@ -96,7 +126,7 @@ class GameControls(W.QWidget):
         self.rows_widget=W.QWidget();self.rows_layout=W.QVBoxLayout(self.rows_widget)
         self.rows_layout.setContentsMargins(0,0,0,0);layout.addWidget(self.rows_widget)
         self.rebuild_rows()
-        self.status=W.QLabel()
+        self.status=GameTaskStatus();self.status.setText('')
         self.status.setObjectName('muted');self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self.progress=W.QProgressBar();self.progress.setRange(0,100);self.progress.hide()
@@ -135,19 +165,19 @@ class GameControls(W.QWidget):
                 item=target.takeAt(0)
                 if item.widget():item.widget().deleteLater()
         self.launcher_version=W.QLabel();self.launcher_version.setWordWrap(True);self.version_section.body.addWidget(self.launcher_version)
-        self.game_rows=[];self.row_layouts=[];self.version_cards=[];self.size_labels=[]
+        self.game_rows=[];self.row_layouts=[];self.version_cards=[];self.size_labels=[];self.game_icon_labels=[];self.game_cards=[]
         for index,store in enumerate(self.stores):
-            card=W.QWidget();box=W.QVBoxLayout(card);box.setContentsMargins(0,6,0,6)
-            row=W.QHBoxLayout();title=W.QLabel(getattr(store,'title','合成大水母'));row.addWidget(title,1)
-            download,launch,remove=[ChalkButton(t) for t in ('下载','启动','删除')]
-            row.addWidget(launch);box.addLayout(row);self.rows_layout.addWidget(card)
+            card=GameListCard(getattr(store,'title','小游戏'));self.game_cards.append(card)
+            self.game_icon_labels.append(card.icon);title=card.title;launch=card.launch
+            download,remove=ChalkButton('下载'),ChalkButton('删除')
+            self.rows_layout.addWidget(card)
             version=W.QWidget();vbox=W.QVBoxLayout(version);vbox.setContentsMargins(0,0,0,6)
-            size_label=W.QLabel();size_label.setWordWrap(True);vbox.addWidget(size_label);self.size_labels.append(size_label)
+            size_label=W.QLabel();size_label.setWordWrap(True);size_label.setStyleSheet('color:rgba(187,204,216,145);font-size:12px;background:transparent;');vbox.addWidget(size_label);self.size_labels.append(size_label)
             actions=W.QHBoxLayout();actions.addWidget(download,1);actions.addWidget(remove);vbox.addLayout(actions)
             self.version_section.body.addWidget(version)
-            for button,action in ((download,'download'),(launch,'launch'),(remove,'delete')):
+            for button,action in ((download,'download'),(card.download,'download'),(launch,'launch'),(remove,'delete')):
                 button.clicked.connect(lambda checked=False,i=index,a=action:self.row_action(i,a))
-            self.game_rows.append((title,download,launch,remove));self.row_layouts.append(row);self.version_cards.append((version,actions))
+            self.game_rows.append((title,download,launch,remove));self.row_layouts.append(card.row);self.version_cards.append((version,actions))
         self.version_section.body.addWidget(self.sync_button)
         index=self.stores.index(self.store) if self.store in self.stores else 0
         self.game_title,self.download,self.launch,self.remove=self.game_rows[index]
@@ -252,7 +282,8 @@ class GameControls(W.QWidget):
         self.store=self.stores[index]
         self.game_title,self.download,self.launch,self.remove=self.game_rows[index]
         self.game_title.setText(getattr(self.store,'title','合成大水母'))
-        self.companion.gear.game_icon=G.QPixmap(str(getattr(self.store,'icon',DATA_ROOT/'mapmatching/assets/minigames/fish5.png')))
+        self.companion.gear.game_icon=game_pixmap(self.store)
+        self.companion.gear.update()
         self.refresh()
 
     def cancel_game_switch(self):
@@ -336,18 +367,19 @@ class GameControls(W.QWidget):
         launcher=LauncherStore(DATA_ROOT)
         self.launcher_version.setText('公共小游戏启动器版本 '+str(launcher.version() or '未安装'))
         for index,(store,(_,download,launch,remove)) in enumerate(zip(self.stores,self.game_rows)):
+            self.game_icon_labels[index].setPixmap(game_pixmap(store).scaled(36,36,C.Qt.KeepAspectRatio,C.Qt.SmoothTransformation))
             present=store.installed();source=getattr(store,'local',False);selected=store is self.store
             installed_size=store.size() if present else 0
             download_size=getattr(store,'spec',{}).get('size',0)
-            sizes=([f'已安装 {installed_size/1048576:.1f} MB'] if present else [])+([f'下载 {download_size/1048576:.1f} MB'] if download_size else [])
-            size_text=' · '.join(sizes) or '大小待同步'
             current=getattr(store,'version',lambda:None)() if present else None
             latest=getattr(store,'spec',{}).get('version')
-            versions=('版本 '+str(current or '本地源码/旧版')) if present else '未安装'
-            if latest:versions+=' · 最新 '+str(latest)
-            size_text=versions+'\n'+size_text
-            title=self.game_rows[index][0];title.setText(getattr(store,'title','小游戏')+'\n'+size_text)
-            self.size_labels[index].setText(getattr(store,'title','小游戏')+' · '+size_text)
+            caption=compact_game_caption(current or latest,download_size or installed_size)
+            title=self.game_rows[index][0];title.setText(getattr(store,'title','小游戏'))
+            card=self.game_cards[index];card.subtitle.setText(caption)
+            details='当前版本：'+str(current or '未安装')+'\n最新版本：'+str(latest or '待同步')
+            details+='\n已安装：'+f'{installed_size/1048576:.1f}MB'+'\n安装包：'+(f'{download_size/1048576:.1f}MB' if download_size else '待同步')
+            card.setToolTip(details)
+            self.size_labels[index].setText(getattr(store,'title','小游戏')+' · '+caption)
             legacy=present and not store.native()
             available=getattr(store,'update_available',lambda:True)()
             download.setEnabled(not source and not getattr(store,'withdrawn',False) and not self.running() and (not busy or selected) and (not present or available or (busy and selected)))
@@ -355,17 +387,20 @@ class GameControls(W.QWidget):
             launch.setEnabled(present and not busy and not switching)
             launch.setText('回到游戏' if selected and self.running() else '启动')
             remove.setEnabled(not source and present and not busy and not self.running())
-            main=self.row_layouts[index];version,actions=self.version_cards[index]
-            if present:
-                main.removeWidget(download);actions.insertWidget(0,download,1)
-            else:
-                actions.removeWidget(download);main.addWidget(download)
-            launch.setVisible(present);remove.setVisible(present);version.setVisible(present)
-        any_installed=any(store.installed() for store in self.stores)
+            # Keep launch and management controls in their own permanent layouts.
+            # Reparenting a download button during refresh can hide it in Qt.
+            payload=(getattr(store,'game_root',store.folder/'game')/'index.html').is_file()
+            show_launch=present or payload
+            launch.setVisible(show_launch)
+            launch.setToolTip('' if present else '公共启动器尚未就绪，请在版本管理中重新下载或更新')
+            card.download.setVisible(not show_launch)
+            card.download.setEnabled(download.isEnabled());card.download.setText(download.text())
+            remove.setVisible(show_launch);self.version_cards[index][0].setVisible(show_launch)
+        any_installed=any(store.installed() or (getattr(store,'game_root',store.folder/'game')/'index.html').is_file() for store in self.stores)
         for widget in (self.sound,self.detect,self.shortcut_section,self.version_section):widget.setVisible(any_installed)
         C.QTimer.singleShot(0,self.companion.resize_settings)
         if not busy:
-            self.status.setText(('直接读取本地源码 · 存档独立保存' if installed else '本地源码或公共启动器不存在') if local else f'已下载 · {self.store.size()/1024/1024:.0f} MB' if installed else '按需下载，未启动时不占用游戏运行资源')
+            self.status.setText('')
 
     def download_game(self):
         if getattr(self.store,'local',False):return
@@ -439,9 +474,14 @@ class GameControls(W.QWidget):
     def check_ready(self):
         if self.ready_file.exists() and not self.ready:
             self.ready = True
-            if sys.platform=='win32' and getattr(self.store,'window_icon',None):
+            if sys.platform=='win32':
                 from .local_minigames import set_window_icon
-                self._native_game_icon=set_window_icon(int(self.process.processId()),self.store.window_icon)
+                icon_path=DATA_ROOT/'out/minigames/icons'/f'{self.store.game_id}.ico'
+                try:
+                    icon_path.parent.mkdir(parents=True,exist_ok=True)
+                    if game_pixmap(self.store,64).save(str(icon_path),'ICO'):
+                        self._native_game_icon=set_window_icon(int(self.process.processId()),icon_path)
+                except OSError:pass
             self.start_timer.stop()
             self.ready_timer.stop()
             self.refresh()
@@ -462,6 +502,10 @@ class GameControls(W.QWidget):
         self.status.setText('小游戏无法启动，请删除后重新下载')
 
     def game_finished(self, code, status):
+        if sys.platform=='win32' and getattr(self,'_native_game_icon',None):
+            import ctypes
+            ctypes.windll.user32.DestroyIcon(ctypes.c_void_p(self._native_game_icon))
+            self._native_game_icon=None
         next_game=getattr(self,'pending_game_index',None)
         self.pending_game_index=None
         self.stop_scene_watch()
