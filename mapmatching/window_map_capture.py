@@ -49,6 +49,8 @@ class WindowSnapshot:
         if not _capture_slots.acquire(blocking=False):raise RuntimeError('截图资源仍在回收，请稍后重试')
         self.lock = threading.Lock()
         self._stop_requested = threading.Event()
+        self._frame_claimed = False
+        self._started_at = time.monotonic()
         self.result = None
         self.error = None
         try:
@@ -63,6 +65,12 @@ class WindowSnapshot:
 
         @self.capture.event
         def on_frame_arrived(frame, control):
+            # Native stop is asynchronous. Drivers may deliver more callbacks
+            # before shutdown completes; a snapshot must copy at most one frame.
+            with self.lock:
+                if self._frame_claimed or self._stop_requested.is_set():
+                    return
+                self._frame_claimed = True
             try:
                 rect = frame_rect(hwnd)
                 pixels = normalize_frame(frame.frame_buffer, rect)
@@ -99,13 +107,19 @@ class WindowSnapshot:
             while not self._stop_requested.wait(.02):
                 if control.is_finished():break
                 if time.monotonic()>=deadline:break
-            if not control.is_finished():control.stop()
+            if not control.is_finished():
+                if time.monotonic()-self._started_at>=1:
+                    from .src.ui_trace import trace
+                    trace('window_capture_stop_pending',elapsed_ms=round((time.monotonic()-self._started_at)*1000),frame_received=self.result is not None)
+                control.stop()
             control.wait()
             joined=True
         except Exception as exc:
             if self.error is None:self.error=str(exc)
         finally:
             if not joined:
+                from .src.ui_trace import trace
+                trace('window_capture_release_failed',error=self.error)
                 # Keep ownership and the slot if a driver fails to stop. Never
                 # free callbacks under a potentially live native thread.
                 return
@@ -117,6 +131,10 @@ class WindowSnapshot:
             self.capture=None
             self.control=None
             _capture_slots.release()
+            elapsed=time.monotonic()-self._started_at
+            if elapsed>=1:
+                from .src.ui_trace import trace
+                trace('window_capture_slow_release',elapsed_ms=round(elapsed*1000),error=self.error)
 
     def stop(self):
         # Never join a native capture thread on the Qt GUI thread.

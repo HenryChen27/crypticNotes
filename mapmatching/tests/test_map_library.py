@@ -67,7 +67,7 @@ class LibraryTests(unittest.TestCase):
             target.parent.mkdir(parents=True)
             target.write_bytes(source.read_bytes())
             before=sorted(p.name for p in (root/'maps/hard').iterdir())
-            add_map(root,target,'悬空桌门','hard',None,REGIONS)
+            add_map(root,target,'悬空桌门','hard',None,[r for r in REGIONS if r['floor']!=-1])
             self.assertEqual(sorted(p.name for p in (root/'maps/hard').iterdir()),before)
             np.testing.assert_array_equal(read_image(target),image)
 
@@ -98,7 +98,7 @@ class LibraryTests(unittest.TestCase):
             root=Path(tmp)
             flat=root/'flat.png'; cv2.imencode('.png',np.zeros((300,300,3),np.uint8))[1].tofile(flat)
             with self.assertRaises(ValueError):
-                add_map(root,flat,'纯色图','hard',None,REGIONS)
+                add_map(root,flat,'纯色图','hard',None,[r for r in REGIONS if r['floor']!=-1])
             self.assertFalse((root/'maps/.import.lock').exists())
             # 失败的那张不该留下半个文件或半条登记
             self.assertEqual(mapstore.read_manifest(root/'maps'),[])
@@ -110,7 +110,15 @@ class LibraryTests(unittest.TestCase):
             source,_=_fixture(root)
             for name in ['','   ','带/斜杠','带\\反斜杠','带\n换行','.隐藏','x'*61]:
                 with self.assertRaises(ValueError):
-                    add_map(root,source,name,'hard',None,REGIONS)
+                    add_map(root,source,name,'hard',None,[r for r in REGIONS if r['floor']!=-1])
+
+    def test_hard_basement_is_rejected_before_writing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source,_=_fixture(root)
+            for provider,mode in [('lianghapi',None),('zhanshi','full')]:
+                with self.assertRaisesRegex(ValueError,'地下室'):
+                    add_map(root,source,'北-凹门','hard',mode,REGIONS,provider)
+            self.assertFalse((root/'maps/floors.json').exists())
 
     def test_region_validation(self):
         for regions in [[],[dict(floor=1,bbox=[-1,0,100,100])],

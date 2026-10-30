@@ -21,13 +21,15 @@ from .map_image import compact, scale_entry_geometry, POLICY
 SUFFIXES = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 
 
-def validate_regions(regions, width, height):
+def validate_regions(regions, width, height, difficulty=None):
     if not regions:
         raise ValueError('请至少框选一个楼层')
     seen=set()
     for r in regions:
         floor=r['floor']
         box=r['bbox']
+        if floor == -1 and difficulty == 'hard':
+            raise ValueError('困难地图没有地下室，请选择一楼/二楼，或改为噩梦难度')
         if floor not in (-1,1,2) or floor in seen:
             raise ValueError('每个楼层只能标注一次')
         seen.add(floor)
@@ -44,6 +46,10 @@ def validate_name(name):
     name=name.strip()
     if not name or len(name)>60 or any(c in name for c in '/\\\n\r'):
         raise ValueError('请输入 1–60 字的地图名称，不包含斜杠或换行')
+    if any(c in name for c in '<>:"|?*') or any(ord(c)<32 for c in name) or name.endswith('.'):
+        raise ValueError('地图名称不能包含 <>:"|?* 等文件名特殊字符，或以点结尾')
+    if name.split('.')[0].upper() in {'CON','PRN','AUX','NUL',*(f'COM{i}' for i in range(1,10)),*(f'LPT{i}' for i in range(1,10))}:
+        raise ValueError('请勿使用系统保留名称')
     if name.startswith('.'):
         raise ValueError('地图名称不能以点开头')
     return name
@@ -76,7 +82,7 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
     source=Path(source).resolve()
     original=read_image(source)
     h,w=original.shape[:2]
-    validate_regions(regions,w,h)
+    validate_regions(regions,w,h,difficulty)
     map_id=f'{difficulty}/'+(f'{mode}/' if mode else '')+name
     if provider == 'zhanshi':map_id='zhanshi/'+map_id
     library=mapstore.live_entries(maps)
@@ -100,7 +106,7 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
         if target.resolve()==source:
             target=directory/f'{name}.compact{suffix}'
     geometry=scale_entry_geometry(dict(regions=regions,include_regions=[r['bbox'] for r in regions]),ratios,(pixels.shape[1],pixels.shape[0]))
-    validate_regions(geometry['regions'],pixels.shape[1],pixels.shape[0])
+    validate_regions(geometry['regions'],pixels.shape[1],pixels.shape[0],difficulty)
     stored_pixel=hashlib.sha256(pixels.tobytes()).hexdigest()
     if stored_pixel in known_pixels:
         raise ValueError('这个模式下已有相同图片的地图，请勿重复录入')

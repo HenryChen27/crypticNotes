@@ -186,6 +186,7 @@ class MapImportDialog(PanelDialog):
         super().__init__(parent,880,720)     # 右对齐主窗口、点到框外自动关，见 panel_dialogs
         self.root=root
         self.provider=provider
+        self._basement_box=None
         self.path=None
         self.job=None
         self.result_record=None
@@ -194,19 +195,20 @@ class MapImportDialog(PanelDialog):
         box=W.QVBoxLayout(panel); box.setContentsMargins(22,18,22,18)
         title=W.QLabel('录入新地图'); title.setObjectName('title'); box.addWidget(title)
         row=W.QHBoxLayout()
-        self.name=W.QLineEdit(); self.name.setPlaceholderText('地图名称'); self.name.setMaxLength(60)
+        self.name=W.QLineEdit(); self.name.setPlaceholderText('地图名称，例如：北-凹门；无需重复作者、难度或路线'); self.name.setMaxLength(60)
         self.name.setStyleSheet('background:rgba(20,35,49,160);padding:8px;border:1px solid #607789;border-radius:4px;')
         row.addWidget(self.name,1)
         choose=ChalkButton('选择原图'); choose.clicked.connect(self.choose); row.addWidget(choose)
         box.addLayout(row)
         row=W.QHBoxLayout()
+        self.provider_choice=ChalkChoice([('凉哈皮','lianghapi'),('展十','zhanshi')])
+        self.provider_choice.setCurrentIndex(int(provider=='zhanshi'))
+        row.addWidget(self.provider_choice)
         self.difficulty=ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(int(difficulty=='nightmare'))
         self.party=ChalkChoice([('全棺','full'),('速刷','speed')] if provider == 'zhanshi' else [('单人','solo'),('多人','duo')])
         self.party.setCurrentIndex(int(mode in ('duo','speed')))
         row.addWidget(self.difficulty); row.addWidget(self.party); box.addLayout(row)
-        self.party.setVisible(difficulty=='nightmare' or provider=='zhanshi')
-        self.difficulty.currentIndexChanged.connect(lambda i:self.party.setVisible(i==1 or provider=='zhanshi'))
         self.canvas=FloorCanvas(); box.addWidget(self.canvas,1)
         row=W.QHBoxLayout()
         self.floor=ChalkChoice([('1F',1),('2F',2),('地下室',-1)])
@@ -225,6 +227,26 @@ class MapImportDialog(PanelDialog):
         cancel=ChalkButton('取消'); cancel.clicked.connect(self.reject); row.addWidget(cancel)
         self.save_button=ChalkButton('保存并入库'); self.save_button.clicked.connect(self.save_map); row.addWidget(self.save_button)
         box.addLayout(row)
+        self.provider_choice.currentIndexChanged.connect(self.context_changed)
+        self.difficulty.currentIndexChanged.connect(self.context_changed)
+        self.context_changed()
+
+    def context_changed(self,index=None):
+        self.provider=self.provider_choice.currentData()
+        nightmare=self.difficulty.currentData()=='nightmare'
+        self.party.items=([('全棺','full'),('速刷','speed')] if self.provider=='zhanshi' else [('单人','solo'),('多人','duo')])
+        self.party.update();self.party.setVisible(nightmare or self.provider=='zhanshi')
+        current=self.floor.currentData()
+        if not nightmare and -1 in self.canvas.boxes:
+            self._basement_box=self.canvas.boxes.pop(-1)
+        elif nightmare and self._basement_box is not None:
+            self.canvas.boxes[-1]=self._basement_box;self._basement_box=None
+        self.floor.items=[('1F',1),('2F',2)]+([('地下室',-1)] if nightmare else [])
+        self.floor.index=next((i for i,(_,f) in enumerate(self.floor.items) if f==current),0)
+        self.floor.update();self.floor_changed(self.floor.index)
+        self.summary()
+        if not nightmare and self._basement_box is not None:
+            self.status.setText(self.status.text()+'；困难不录入地下室，切回噩梦可恢复该选区')
 
     def choose(self):
         path,_=W.QFileDialog.getOpenFileName(self,'选择完整地图原图',str(self.root),'地图图片 (*.png *.jpg *.jpeg *.bmp *.webp)')
@@ -234,6 +256,7 @@ class MapImportDialog(PanelDialog):
         if pixmap.isNull():
             self.status.setText('无法读取这张图片')
             return
+        self._basement_box=None
         self.path=Path(path)
         self.canvas.pixmap=pixmap; self.canvas.boxes={}; self.canvas.fit()
         self.name.setText(self.path.stem[:60]); self.summary()

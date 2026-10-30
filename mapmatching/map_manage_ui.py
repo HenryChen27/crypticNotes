@@ -316,7 +316,7 @@ class MapManageDialog(PanelDialog):
             self.changed = True
             self.status.setText(f'已录入：{dialog.result_record["name"]}')
             # 新条目排在列表最后，滚过去让用户看见 —— 否则像是没录进去。
-            self.focus_on(dialog.result_record['map_id'], difficulty, mode)
+            self.focus_on(dialog.result_record['map_id'], dialog.result_record['difficulty'], dialog.result_record.get('mode'))
 
     def keyPressEvent(self, event):
         if event.key() == C.Qt.Key_Escape:

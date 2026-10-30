@@ -16,9 +16,9 @@ class ProviderTests(unittest.TestCase):
   SessionContext('nightmare','full','zhanshi')
   SessionContext('hard','full','zhanshi')
   refs=load(ROOT/'maps',difficulty='nightmare',mode='solo')
-  self.assertEqual(len(refs),27)
+  self.assertEqual(len(refs),29)
   self.assertTrue(all(not r.map_id.startswith('zhanshi/') for r in refs))
-  for mode,count in [('full',28),('speed',27)]:
+  for mode,count in [('full',30),('speed',29)]:
    refs=load(ROOT/'maps',difficulty='nightmare',mode=mode,provider='zhanshi')
    self.assertEqual(len(refs),count)
    self.assertTrue(all(r.map_id.startswith('zhanshi/') for r in refs))
@@ -36,7 +36,7 @@ class ProviderTests(unittest.TestCase):
   from mapmatching.src.author_matcher import LazyAuthorAtlas
   from mapmatching.src.matcher import MapMatcher
   atlas=LazyAuthorAtlas(ROOT/'maps',MapMatcher,difficulty='nightmare',mode='full',provider='zhanshi')
-  self.assertEqual(len(atlas.references),28)
+  self.assertEqual(len(atlas.references),30)
   self.assertTrue(all(r.evidence is None for r in atlas.references))
   first,second=[r.map_id for r in atlas.references[:2]]
   atlas.ensure(first)

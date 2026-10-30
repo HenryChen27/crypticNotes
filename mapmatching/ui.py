@@ -1779,6 +1779,7 @@ class Companion(W.QWidget):
                 {'force_floor':force_floor} if force_floor is not None else {})))
 
     def open_map(self, reason="map_hotkey", force_floor=None, target_override=None):
+        if getattr(self,'_startup_waiting',False):return
         if not Companion.matching_available(self):
             self.notify("请先下载加页手记地图识别模块");return
         games=getattr(self,'minigames',None)
@@ -2027,7 +2028,10 @@ class Companion(W.QWidget):
             dismiss()
         self.restore_capture_companion()
         self.gear.set_matching(False)
-        trace("closed",token=self.state.generation)
+        trace("closed",token=self.state.generation,busy=self.busy,
+              capturing=getattr(self,'_capturing',False),
+              visibility_running=getattr(self,'visibility_running',False),
+              foreground=win32gui.GetForegroundWindow(),target=getattr(self,'target',None))
         if background and self.state.opened:
             self.background_token = self.state.generation
         elif not background:
@@ -2400,7 +2404,8 @@ class Companion(W.QWidget):
                                     self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
                                 else:
                                     self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
-                                trace('overlay_displayed',token=token,map_id=candidate.map_id,floor=candidate.floor)
+                                trace('overlay_displayed',token=token,map_id=candidate.map_id,floor=candidate.floor,
+                                      foreground=win32gui.GetForegroundWindow(),target=self.target)
                                 floor_label='地下室' if candidate.floor==-1 else f'{candidate.floor}F'
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')
@@ -2494,31 +2499,60 @@ def main():
         native.dpi_aware()
     from .src.ui_trace import enable_crash_logging
     enable_crash_logging('desktop')
+    # UI-side visibility inspection shares the game CPU budget too. The
+    # matcher already caps OpenCV; do the same before any UI capture threads.
+    import cv2
+    cv2.setNumThreads(1)
+    trace('desktop_compute_policy',opencv_threads=cv2.getNumThreads())
     app = W.QApplication(sys.argv[:1])
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.
         native.install_window_policy(app)
     app.setQuitOnLastWindowClosed(False)
-    font_stack()
     lock_path = DATA_ROOT/'out/mapmatching/ui.lock'
     lock_path.parent.mkdir(parents=True,exist_ok=True)
     lock = C.QLockFile(str(lock_path))
     if not lock.tryLock(0):
         W.QMessageBox.information(None,'加页手记','地图助手已经在运行，请点击屏幕右上角齿轮。')
         return
-    ui = Companion()
+    from .startup_ui import StartupPet
+    startup=StartupPet()
+    show_floating(startup)
+    app.processEvents(C.QEventLoop.ExcludeUserInputEvents)
+    font_stack()
+    try:
+        ui = Companion()
+    except Exception:
+        startup.close()
+        raise
+    ui._startup_waiting=True
+    ui.setEnabled(False)
+    startup.move(ui.gear.mapToGlobal(C.QPoint(0,0)))
+    startup_started=time.monotonic()
+    startup_timer=C.QTimer(ui)
+    def finish_startup():
+        ready=getattr(ui,'ready',False) or not ui.matching_available()
+        failed=ui.process is None and time.monotonic()-startup_started>2
+        if not (ready or failed or time.monotonic()-startup_started>65):return
+        startup_timer.stop();startup.close()
+        ui._startup_waiting=False;ui.setEnabled(True);show_floating(ui)
+    startup_timer.timeout.connect(finish_startup)
+    startup_timer.start(50)
+    app.aboutToQuit.connect(startup.close)
     if args.demo:
         if not ui.open_screenshot(args.demo):
             parser.error('无法读取演示截图')
         if args.showcase:
             C.QTimer.singleShot(500,ui.retry)
-    show_floating(ui)
     if args.startup_smoke:
         smoke_dialog = None
         if sys.platform == 'darwin':
             smoke_dialog = HotkeyDialog('G',ui)
             C.QTimer.singleShot(300,smoke_dialog.show)
         def startup_check():
+            if getattr(ui,'_startup_waiting',False):
+                C.QTimer.singleShot(200,startup_check)
+                return
             args.startup_smoke.parent.mkdir(parents=True,exist_ok=True)
             report={
                 'visible':ui.isVisible(), 'width':ui.width(), 'height':ui.height(),

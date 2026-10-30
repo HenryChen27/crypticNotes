@@ -16,6 +16,8 @@ class CompanionCaptureTests(unittest.TestCase):
     def test_repeated_capture_does_not_toggle_companion_visibility(self):
         from mapmatching.ui import Companion,C
         subject=Mock()
+        subject.minigames.running.return_value=False
+        subject._visibility_hidden=False
         subject.state.accepts.return_value=True
         subject.foreground_lost.return_value=False
         with patch.object(C.QTimer,'singleShot') as timer:

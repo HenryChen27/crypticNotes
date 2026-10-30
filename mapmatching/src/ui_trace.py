@@ -1,20 +1,27 @@
 """Bounded event trace for requests that never reach the matching worker."""
 import json
+import threading
 from datetime import datetime,timezone
 from ..paths import DATA_ROOT
 record_directory = DATA_ROOT/'failure-records'
+_trace_lock=threading.Lock()
+EVENT_LIMIT=2*1024*1024
+HEALTH_LIMIT=512*1024
 
 
 def trace(event,**fields):
     try:
-        folder=record_directory;folder.mkdir(parents=True,exist_ok=True)
-        path=folder/'ui-events.jsonl'
-        if path.exists() and path.stat().st_size>128*1024:
-            lines=path.read_text(encoding='utf8').splitlines()[-200:]
-            path.write_text('\n'.join(lines)+'\n',encoding='utf8')
-        with path.open('a',encoding='utf8') as f:
-            f.write(json.dumps(dict(time=datetime.now(timezone.utc).isoformat(),
-                version='2026.09.24-display-guard',event=event,**fields),ensure_ascii=False)+'\n')
+        # Keyboard heartbeats must not evict capture/matching history.
+        health=event=='keyboard_health'
+        line=json.dumps(dict(time=datetime.now(timezone.utc).isoformat(),
+            version='2026.09.24-display-guard',event=event,**fields),ensure_ascii=False)+'\n'
+        with _trace_lock:
+            folder=record_directory;folder.mkdir(parents=True,exist_ok=True)
+            path=folder/('input-health.jsonl' if health else 'ui-events.jsonl')
+            limit=HEALTH_LIMIT if health else EVENT_LIMIT
+            if path.exists() and path.stat().st_size>limit:
+                path.replace(path.with_name(path.stem+'.previous.jsonl'))
+            with path.open('a',encoding='utf8') as f:f.write(line)
     except (OSError, TypeError, ValueError):
         pass
 
