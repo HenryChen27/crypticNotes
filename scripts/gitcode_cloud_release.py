@@ -1,5 +1,5 @@
 """Mirror a complete verified GitHub snapshot using exact-file temporary upload grants."""
-import argparse,concurrent.futures,datetime,json,subprocess,time,sys
+import argparse,concurrent.futures,datetime,json,subprocess,time,sys,hashlib,shutil
 from pathlib import Path
 from urllib.parse import quote
 ROOT=Path(__file__).resolve().parents[1]
@@ -78,6 +78,12 @@ def mirror(jobs,tag=None,release=None):
         by_name={a['name']:a for a in current['assets']}
         if any(n not in by_name or by_name[n].get('digest')!='sha256:'+e['sha256'] or by_name[n].get('size')!=e['size'] for n,e in prepared['files'].items()):raise RuntimeError('GitCode callback verification failed')
     receipt=publish(jobs,tag,prepared=prepared)
+    for name,e in prepared['files'].items():
+        if e.get('path'):
+            source=Path(e['path'])
+            if hashlib.sha256(source.read_bytes()).hexdigest()!=e['sha256']:raise RuntimeError('Local package changed after verification: '+name)
+            target=ROOT/'release'/name;temporary=target.with_name(target.name+'.publish-tmp')
+            shutil.copy2(source,temporary);temporary.replace(target)
     refresh_readme(receipt)
     return receipt
 
