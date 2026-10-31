@@ -1699,15 +1699,30 @@ class Companion(W.QWidget):
             self.notify('源码版请更新源码；一键更新适用于打包版')
             return
         if sys.platform == 'darwin':
-            # macOS 没有站内更新器：直接把**本机架构对应的那个包**交给浏览器，
-            # 而不是 releases 页让用户自己挑（挑错架构的包解压后打不开）。
-            # /releases/latest/download/ 这个地址不需要知道 tag。
-            arch = 'arm64' if platform.machine() == 'arm64' else 'x64'
-            chip = 'Apple 芯片' if arch == 'arm64' else 'Intel'
-            G.QDesktopServices.openUrl(C.QUrl(
-                'https://github.com/HenryChen27/crypticNotes/releases/latest/download/'
-                f'IdentityVMapAssistant-macOS-{arch}.zip'))
-            self.notify(f'正在下载 {chip} 版；下载完退出本应用，用新的替换即可')
+            import queue,threading
+            from .distribution import load_release,release_asset
+            arch='arm64' if platform.machine()=='arm64' else 'x64'
+            self._update_starting=True
+            self.update_button.setEnabled(False)
+            gear=getattr(self,'gear',None)
+            if gear is not None:gear.set_matching(True)
+            self.notify('正在检查更新…')
+            results=queue.Queue()
+            def probe():
+                try:results.put((release_asset(load_release(),f'IdentityVMapAssistant-macOS-{arch}.zip')['browser_download_url'],None))
+                except Exception as exc:results.put((None,str(exc)))
+            timer=C.QTimer(self)
+            def complete():
+                try:url,error=results.get_nowait()
+                except queue.Empty:return
+                timer.stop();timer.deleteLater()
+                self._update_starting=False;self.update_button.setEnabled(True)
+                if gear is not None:gear.set_matching(bool(getattr(self,'busy',False)))
+                if error:self.notify('检查更新失败，请稍后重试');return
+                G.QDesktopServices.openUrl(C.QUrl(url))
+                self.notify('正在下载对应芯片版本；下载后退出应用并替换即可')
+            timer.timeout.connect(complete);timer.start(200)
+            threading.Thread(target=probe,name='mac-update-check',daemon=True).start()
             return
         try:
             self.save()

@@ -63,4 +63,4 @@
 
 三个平台构建均读取当前 `maps`。修改地图后再运行入口即可。Windows 的旧更新器首次过渡仍应遵循 [地图库更新说明](map-library-updates.md)，不要直接覆盖用户自建地图。
 
-现行客户端从 GitHub Release 下载包，不再从 `dist` 分支更新。`dist` 分支删除前保留归档标签；这不删除本地 `dist/` 构建目录或 Release 附件。极老的依赖 Git 分支更新的客户端需手动下载当前 Release。
+新客户端优先从 GitCode Release 检查及下载主程序和地图库，查询连接失败时回退 GitHub，不再从 `dist` 分支更新。构建脚本的 GitHub 发布步骤不会自动替代 GitCode 同步：每次发布还需按 [GitCode 发布说明](gitcode-releasing.md) 上传并校验国内附件，最后标记为 latest。旧客户端仍查询 GitHub，需要过渡版或手动安装。`dist` 分支删除前保留归档标签；这不删除本地 `dist/` 构建目录或 Release 附件。极老的依赖 Git 分支更新的客户端需手动下载当前 Release。

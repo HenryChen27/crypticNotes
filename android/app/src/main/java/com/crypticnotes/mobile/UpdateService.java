@@ -152,7 +152,7 @@ public class UpdateService extends Service {
      * the header and is about to send the whole thing from byte zero.
      */
     private void download(String url, String digest, long size, long version) throws Exception {
-        if (url == null || !url.startsWith("https://")) throw new IOException("更新地址必须为 HTTPS");
+        if (!Distribution.official(url)) throw new IOException("非官方更新地址");
         if (size <= 0 || size > MAX_APK) throw new IOException("更新包大小异常");
         if (digest == null || !digest.matches("sha256:[0-9a-fA-F]{64}")) throw new IOException("更新包缺少 SHA-256 校验信息");
 

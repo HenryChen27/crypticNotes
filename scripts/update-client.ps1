@@ -232,6 +232,7 @@ $work = Join-Path ([IO.Path]::GetTempPath()) ('crypticnotes-package-' + [Guid]::
 [void][IO.Directory]::CreateDirectory($work)
 $client = [Net.WebClient]::new()
 $client.Headers['User-Agent'] = 'CrypticNotes-Windows-Updater'
+$client.Headers['Cache-Control'] = 'no-cache'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $completed = $false
 $logRoot = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'IdentityVMapAssistant\out'
@@ -245,6 +246,7 @@ Log "start installRoot=$InstallRoot"
 function New-Client {
     $fresh = [Net.WebClient]::new()
     $fresh.Headers['User-Agent'] = 'CrypticNotes-Windows-Updater'
+    $fresh.Headers['Cache-Control'] = 'no-cache'
     return $fresh
 }
 
@@ -275,7 +277,7 @@ function Explain($Exception) {
 }
 
 function Download([string]$Url, [string]$Path, [long]$Size = 0, [int]$Attempts = 4) {
-    if (-not $Url.StartsWith('https://github.com/HenryChen27/crypticNotes/releases/download/')) { throw '更新地址不是项目官方发布地址' }
+    if (-not ($Url.StartsWith('https://gitcode.com/weixin_51917701/crypticNotes/releases/download/') -or $Url.StartsWith('https://github.com/HenryChen27/crypticNotes/releases/download/'))) { throw '更新地址不是项目官方发布地址' }
     # GitHub release assets answer Range requests with 501, so an interrupted
     # 230 MB download cannot be resumed. Retry the whole file rather than
     # dropping the user back to a manual reinstall.
@@ -317,14 +319,26 @@ function Download([string]$Url, [string]$Path, [long]$Size = 0, [int]$Attempts =
 try {
     if (-not (Test-Path -LiteralPath (Join-Path $InstallRoot 'IdentityVMapAssistant.exe'))) { throw '请从完整解压的 Windows 程序目录运行更新' }
     # Public API: no Git, token or GitHub account required.
-    $task = $client.DownloadStringTaskAsync('https://api.github.com/repos/HenryChen27/crypticNotes/releases/latest')
-    $timer = [Diagnostics.Stopwatch]::StartNew()
-    while (-not $task.IsCompleted) {
-        [Windows.Forms.Application]::DoEvents()
-        if ($form.IsDisposed -or $timer.Elapsed.TotalSeconds -gt 40) { $client.CancelAsync(); throw '检查已取消或超时' }
-        Start-Sleep -Milliseconds 80
+    $release = $null
+    foreach ($endpoint in @('https://api.gitcode.com/api/v5/repos/weixin_51917701/crypticNotes/releases/latest', 'https://api.github.com/repos/HenryChen27/crypticNotes/releases/latest')) {
+        try {
+            $task = $client.DownloadStringTaskAsync($endpoint)
+            $timer = [Diagnostics.Stopwatch]::StartNew()
+            while (-not $task.IsCompleted) {
+                [Windows.Forms.Application]::DoEvents()
+                if ($form.IsDisposed -or $timer.Elapsed.TotalSeconds -gt 40) { $client.CancelAsync(); throw '检查已取消或超时' }
+                Start-Sleep -Milliseconds 80
+            }
+            $candidate = $task.GetAwaiter().GetResult() | ConvertFrom-Json
+            if (-not $candidate.assets) { throw '更新信息无效' }
+            $release = $candidate
+            break
+        } catch {
+            Log "release source failed: $endpoint"
+            if ($form.IsDisposed) { throw }
+        }
     }
-    $release = $task.GetAwaiter().GetResult() | ConvertFrom-Json
+    if (-not $release) { throw '无法连接更新服务器，请稍后重试' }
     Log "release=$($release.tag_name) assets=$($release.assets.Count)"
     $asset = @($release.assets | Where-Object name -eq 'IdentityVMapAssistant-Windows-x64.zip')
     $checksum = @($release.assets | Where-Object name -eq 'SHA256SUMS.txt')

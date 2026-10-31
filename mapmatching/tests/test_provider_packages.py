@@ -19,7 +19,7 @@ class ProviderPackageTests(unittest.TestCase):
    root=Path(t);live=root/'installed';a=self.package(root/'a','author-a','lianghapi');b=self.package(root/'b','author-b','zhanshi',8)
    change(live,'lianghapi',a,{'sha256':'a'})
    personal,_=_fixture(root,'personal.png',16)
-   custom=add_map(live,personal,'personal','hard',None,REGIONS)
+   custom=add_map(live,personal,'personal','hard',None,[r for r in REGIONS if r['floor']!=-1])
    before=(live/custom['source']).read_bytes()
    change(live,'zhanshi',b,{'sha256':'b'})
    self.assertTrue(installed(live/'maps','lianghapi'));self.assertTrue(installed(live/'maps','zhanshi'))

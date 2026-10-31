@@ -3,7 +3,7 @@ import json,shutil,urllib.request,hashlib,zipfile,uuid
 from pathlib import Path,PurePosixPath
 from .paths import ROOT,DATA_ROOT,FROZEN
 
-MANIFEST='https://github.com/HenryChen27/crypticNotes/releases/latest/download/matching-module.json'
+from .distribution import load_map_catalog,official_download
 class MatchingModule:
     def __init__(self,provider=None):
         self.provider=provider
@@ -64,10 +64,7 @@ class MatchingModule:
         local=ROOT/'release/matching-module.json'
         if not FROZEN and local.is_file():spec=json.loads(local.read_text(encoding='utf-8'))
         else:
-            request=urllib.request.Request(MANIFEST,headers={'User-Agent':'CrypticNotes-modules'})
-            with urllib.request.urlopen(request,timeout=30) as response:raw=response.read(32769)
-            if len(raw)>32768:raise ValueError('地图模块清单过大')
-            spec=json.loads(raw)
+            spec=load_map_catalog()
         spec=self.choose(spec)
         if not isinstance(spec.get('sha256'),str) or len(spec['sha256'])!=64:raise ValueError('无效模块校验值')
         current=self.root()/'maps/packages'/f'{self.provider}.json' if self.provider else self.folder/'module.json'
@@ -84,11 +81,10 @@ class MatchingModule:
         if development:
             raw=local.read_bytes();progress(0,'正在安装本地测试模块…')
         else:
-            request=urllib.request.Request(MANIFEST,headers={'User-Agent':'CrypticNotes-modules'})
-            with urllib.request.urlopen(request,timeout=30) as response:raw=response.read(32769)
+            raw=json.dumps(load_map_catalog()).encode('utf-8')
         if len(raw)>32768:raise ValueError('地图模块清单过大')
         spec=self.choose(json.loads(raw));url=spec['url'];sha=spec['sha256'];size=spec['size']
-        if not url.startswith('https://github.com/HenryChen27/crypticNotes/releases/download/') or len(sha)!=64 or any(c not in '0123456789abcdef' for c in sha) or not isinstance(size,int) or not 0<size<600*1024**2:
+        if not official_download(url) or len(sha)!=64 or any(c not in '0123456789abcdef' for c in sha) or not isinstance(size,int) or not 0<size<600*1024**2:
             raise ValueError('地图模块下载信息无效')
         parent=self.folder.parent;parent.mkdir(parents=True,exist_ok=True)
         stage=parent/('.matching-'+uuid.uuid4().hex);stage.mkdir();archive=stage/'module.zip'

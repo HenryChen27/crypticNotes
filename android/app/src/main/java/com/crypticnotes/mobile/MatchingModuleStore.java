@@ -10,7 +10,6 @@ import com.chaquo.python.Python;
 import com.chaquo.python.android.AndroidPlatform;
 
 final class MatchingModuleStore {
-    static final String MANIFEST="https://github.com/HenryChen27/crypticNotes/releases/latest/download/matching-module.json";
     final Context c;final String provider;JSONObject latest;
     MatchingModuleStore(Context context){this(context,null);}
     MatchingModuleStore(Context context,String provider){c=context.getApplicationContext();this.provider=provider;}
@@ -24,7 +23,16 @@ final class MatchingModuleStore {
         return false;
     }
     String version(){String value=hash();return !installed()?"未安装":value.isEmpty()?"旧版（未记录）":"库-"+value.substring(0,Math.min(12,value.length()));}
-    JSONObject info()throws Exception{HttpURLConnection conn=MiniGameStore.connect(MANIFEST);try(InputStream in=conn.getInputStream()){JSONObject spec=new JSONObject(new String(MiniGameStore.bytes(in,32768),"UTF-8"));if(spec.has("providers")){spec=spec.getJSONObject("providers").getJSONObject(id());if(!id().equals(spec.getString("provider")))throw new IOException("地图库作者清单不一致");}else if(id().equals("zhanshi"))throw new IOException("展十地图库尚未发布");latest=spec;String url=spec.getString("url"),sha=spec.getString("sha256");long size=spec.getLong("size");if(!url.startsWith("https://github.com/HenryChen27/crypticNotes/releases/download/")||!sha.matches("[0-9a-f]{64}")||size<=0||size>600L*1024*1024)throw new IOException("无效地图模块");return spec;}finally{conn.disconnect();}}
+    JSONObject info()throws Exception {
+        JSONObject spec=Distribution.mapCatalog();
+        if(spec.has("providers")) {
+            spec=spec.getJSONObject("providers").getJSONObject(id());
+            if(!id().equals(spec.getString("provider")))throw new IOException("地图库作者清单不一致");
+        }else if(id().equals("zhanshi"))throw new IOException("展十地图库尚未发布");
+        String url=spec.getString("url"),sha=spec.getString("sha256");long size=spec.getLong("size");
+        if(!Distribution.official(url)||!sha.matches("[0-9a-f]{64}")||size<=0||size>600L*1024*1024)throw new IOException("无效地图模块");
+        latest=spec;return spec;
+    }
     boolean updateAvailable()throws Exception{return !info().getString("sha256").equals(hash());}
     static synchronized void python(Context c){if(!Python.isStarted())Python.start(new AndroidPlatform(c));}
     void download(MiniGameStore.Progress progress)throws Exception{

@@ -1,12 +1,13 @@
 """Read-only startup version probe; never downloads an update package."""
 import json
 from urllib.request import Request, urlopen
+from .distribution import load_release
 
 
 def read_json(url):
     if not url.startswith('https://'):
         raise ValueError('HTTPS required')
-    with urlopen(Request(url, headers={'User-Agent':'CrypticNotes-Windows'}), timeout=12) as response:
+    with urlopen(Request(url, headers={'User-Agent':'CrypticNotes-Windows','Cache-Control':'no-cache'}), timeout=12) as response:
         data=response.read(2_000_001)
     if len(data)>2_000_000:
         raise ValueError('Update metadata too large')
@@ -18,7 +19,7 @@ def newer_build(root, fetch=read_json):
     if not stamp.is_file():
         return False
     local=json.loads(stamp.read_text(encoding='utf-8-sig'))
-    release=fetch('https://api.github.com/repos/HenryChen27/crypticNotes/releases/latest')
+    release=load_release(fetch)
     assets={a['name']:a for a in release['assets']}
     manifest=fetch(assets['windows-update.json']['browser_download_url'])
     package=assets['IdentityVMapAssistant-Windows-x64.zip']

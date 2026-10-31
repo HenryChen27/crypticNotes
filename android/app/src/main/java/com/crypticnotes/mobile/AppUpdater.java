@@ -63,19 +63,15 @@ final class AppUpdater implements UpdateService.Listener {
         new Thread(() -> {
             boolean handedOff=false;
             try {
-                HttpURLConnection c=connect("https://api.github.com/repos/HenryChen27/crypticNotes/releases/latest");
-                JSONObject release;
-                try(InputStream in=c.getInputStream(); ByteArrayOutputStream out=new ByteArrayOutputStream()) {
-                    byte[] b=new byte[8192]; int n;
-                    while((n=in.read(b))!=-1) { out.write(b,0,n); if(out.size()>2_000_000) throw new IOException("更新信息过大"); }
-                    release=new JSONObject(out.toString("UTF-8"));
-                } finally { c.disconnect(); }
+                JSONObject release=Distribution.release();
+                HttpURLConnection c;
                 JSONArray assets=release.getJSONArray("assets"); JSONObject asset=null;
                 for(int i=0;i<assets.length();i++) if(ASSET.equals(assets.getJSONObject(i).getString("name"))) asset=assets.getJSONObject(i);
                 if(asset==null) { if(!silent) message("暂未发布安卓更新包"); return; }
                 JSONObject manifestAsset=null;
                 for(int i=0;i<assets.length();i++) if("android-update.json".equals(assets.getJSONObject(i).getString("name"))) manifestAsset=assets.getJSONObject(i);
                 if(manifestAsset==null) throw new IOException("发布者尚未上传版本清单");
+                if(!Distribution.official(manifestAsset.getString("browser_download_url"))||!Distribution.official(asset.getString("browser_download_url")))throw new IOException("非官方更新地址");
                 c=connect(manifestAsset.getString("browser_download_url"));
                 JSONObject manifest;
                 try(InputStream in=c.getInputStream(); ByteArrayOutputStream out=new ByteArrayOutputStream()) {

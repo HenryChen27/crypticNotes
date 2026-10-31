@@ -31,10 +31,10 @@ class OptionalModulesTests(unittest.TestCase):
             raw=payload.getvalue();spec={'url':'https://github.com/HenryChen27/crypticNotes/releases/download/v1/module.zip','size':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
             with patch('mapmatching.matching_module.DATA_ROOT',data),patch('mapmatching.matching_module.ROOT',source):
                 store=MatchingModule()
-                with patch('mapmatching.matching_module.urllib.request.urlopen',side_effect=[io.BytesIO(json.dumps(spec).encode()),io.BytesIO(raw)]):store.download(lambda *a:None)
+                with patch('mapmatching.matching_module.load_map_catalog',return_value=spec),patch('mapmatching.matching_module.urllib.request.urlopen',return_value=io.BytesIO(raw)):store.download(lambda *a:None)
                 self.assertTrue(store.enabled());self.assertEqual(store.root(),store.folder)
                 spec['sha256']='0'*64
-                with patch('mapmatching.matching_module.urllib.request.urlopen',side_effect=[io.BytesIO(json.dumps(spec).encode()),io.BytesIO(raw)]),self.assertRaises(ValueError):store.download(lambda *a:None)
+                with patch('mapmatching.matching_module.load_map_catalog',return_value=spec),patch('mapmatching.matching_module.urllib.request.urlopen',return_value=io.BytesIO(raw)),self.assertRaises(ValueError):store.download(lambda *a:None)
                 self.assertTrue(store.enabled())
 
     def test_kitchen_title_does_not_fall_back_to_english_id(self):

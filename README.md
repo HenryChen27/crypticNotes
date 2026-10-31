@@ -2,7 +2,7 @@
 
 <p align="center"><img src="docs/images/logo.png" width="112" alt="加页手记"></p>
 <p align="center">一只陪你找路的小布偶，也带来一点等待时的乐趣。</p>
-<p align="center"><a href="https://github.com/HenryChen27/crypticNotes/releases/latest">下载最新版</a> · <a href="android/README.md">安卓说明</a> · <a href="docs/releasing.md">构建与发布</a></p>
+<p align="center"><a href="https://gitcode.com/weixin_51917701/crypticNotes/releases">国内下载</a> · <a href="https://github.com/HenryChen27/crypticNotes/releases/latest">GitHub 下载</a> · <a href="android/README.md">安卓说明</a> · <a href="docs/releasing.md">构建与发布</a></p>
 
 ![地图与路线叠加实景](docs/images/overlay-examples.jpg)
 
@@ -12,7 +12,7 @@
 
 ## 下载
 
-在 [GitHub Releases](https://github.com/HenryChen27/crypticNotes/releases/latest) 选择对应附件：
+在 [GitCode 国内下载](https://gitcode.com/weixin_51917701/crypticNotes/releases) 或 [GitHub Releases](https://github.com/HenryChen27/crypticNotes/releases/latest) 选择对应附件：
 
 | 平台 | 安装包 |
 | --- | --- |
@@ -84,7 +84,7 @@ Windows 本机实验可检测大厅画面的大幅变化，先收起小游戏，
 
 ## 更新、地图库和反馈
 
-启动时检查更新，有新版时提示。Windows、Android 使用各自的更新流程；Mac 下载对应芯片安装包后替换应用。更新失败时查看日志。
+新版客户端的主程序与地图库更新优先使用 GitCode，更新查询连接失败时回退 GitHub；文件大小和 SHA-256 校验保持启用。Windows、Android 使用各自的更新流程；Mac 下载对应芯片安装包后替换应用。已安装的旧版需先更新一次才能启用新通道。小游戏资源暂时仍使用原仓库。更新失败时查看日志。
 
 Windows／Android 更新官方地图时保留用户自建地图。早期整目录替换版本首次迁移前，请备份图库并阅读 [地图库更新说明](docs/map-library-updates.md)。Android 当前不提供桌面版完整录入界面；Mac 手动替换应用包需自行备份自建地图。
 
