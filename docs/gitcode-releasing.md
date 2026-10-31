@@ -2,7 +2,7 @@
 
 仓库：https://gitcode.com/weixin_51917701/crypticNotes
 
-当前阶段：初始化独立的安装包分发仓库；GitHub 发布、客户端更新地址均不修改。v2026.10.30 已正式发布，17 个附件已核对大小和 SHA-256，并通过匿名下载验证。未切换客户端更新源。GitCode README、distribution.json 及 published-files.json 已同步。
+当前阶段：三端新版客户端优先使用 GitCode 查询和下载主程序、地图库；GitHub 保留为过渡及查询回退渠道。发布脚本会自动同步完整国内快照、校验后更新 README。小游戏资源暂未迁移。
 
 令牌保存在 Windows Git Credential Manager。脚本优先读取 GITCODE_TOKEN，其次读取 gitcode.com 对应的系统凭据。不要把令牌放进仓库、命令行参数、JSON配置或日志。
 
@@ -16,9 +16,9 @@
 
     .venv\Scripts\python.exe scripts\gitcode_release.py plan --jobs release\jobs\20261030-165124\release-job.json release\jobs\20261030-185229\release-job.json
 
-非敏感配置：scripts/gitcode_release.json。client_updates_enabled=false 只标明准备阶段，不是客户端开关。现有客户端仍使用原 GitHub 更新渠道。
+非敏感配置：scripts/gitcode_release.json。client_updates_enabled 记录国内通道启用状态，不是客户端设置开关；mirror_after_github_publish=true 表示发布菜单自动同步 GitCode。旧客户端需安装一次过渡更新。
 
-后续接入时需要分别处理安装包、地图库、小游戏清单中的下载地址，不能只搬APK；包体复用现有构建并核对SHA-256，不重新签名或无故升版本。
+安装包与地图库已接入 GitCode，小游戏暂用原仓库，不能只迁移清单而缺少包体；包体复用现有构建并核对SHA-256，不重新签名或无故升版本。
 
 GitCode官方文档：
 - 认证：https://docs.gitcode.com/en/docs/guide/
