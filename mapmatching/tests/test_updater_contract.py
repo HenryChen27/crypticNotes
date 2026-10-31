@@ -77,6 +77,12 @@ class UpdaterContractTests(unittest.TestCase):
         self.assertIn('$form.TopMost = $true', form,
                       '更新窗口不置顶就会开在游戏/编辑器后面，一次成功的更新看起来像没反应')
 
+    def test_older_channel_build_cannot_replace_newer_installation(self):
+        guard=self.source.index('[long]$remote.build -lt [long]$local.build')
+        download=self.source.index('Download $asset[0].browser_download_url')
+        self.assertLess(guard,download)
+        self.assertIn('throw',self.source[guard:guard+160])
+
     def test_keeps_the_utf8_bom_and_crlf_dist_extras_requires(self):
         data = UPDATER.read_bytes()
         self.assertTrue(data.startswith(b'\xef\xbb\xbf'),

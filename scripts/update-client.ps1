@@ -360,6 +360,7 @@ try {
         if ($remote.sha256 -ne $expected) { throw '发布文件正在更新，请稍后重试' }
         if (Test-Path -LiteralPath $buildFile) {
             $local = Get-Content -LiteralPath $buildFile -Raw | ConvertFrom-Json
+            if ([long]$remote.build -lt [long]$local.build) { throw '更新源尚未同步到当前版本，请稍后重试；不会安装旧版本' }
             $sameBuild = $local.build -eq $remote.build
         }
     }
