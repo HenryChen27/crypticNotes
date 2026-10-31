@@ -1,0 +1,12 @@
+{
+  "owner": "weixin_51917701",
+  "repo": "crypticNotes",
+  "api_base": "https://api.gitcode.com/api/v5",
+  "repository_url": "https://gitcode.com/weixin_51917701/crypticNotes",
+  "branch": "main",
+  "role": "release-distribution",
+  "client_updates_enabled": true,
+  "credential_env": "GITCODE_TOKEN",
+  "credential_host": "gitcode.com",
+  "mirror_after_github_publish": true
+}

@@ -71,7 +71,8 @@ class ReleaseTests(unittest.TestCase):
                     return {'id':1,'html_url':'release','assets':[
                         {'name':'sample.zip','digest':'sha256:'+sha},
                         {'name':'unselected.apk','digest':'sha256:other'}]}
-            manager.publish(Fake(),{'id':'test','files':{'sample.zip':sha}},Path(d))
+            with patch.object(manager,'mirror_after_publish'):
+                manager.publish(Fake(),{'id':'test','files':{'sample.zip':sha}},Path(d))
 
     def test_changed_artifact_stops_before_upload(self):
         with tempfile.TemporaryDirectory() as d:

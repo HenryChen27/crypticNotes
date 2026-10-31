@@ -261,6 +261,15 @@ def publish(github,state,directory):
         if not any(a['name']==name and a.get('digest')=='sha256:'+expected for a in final['assets']):
             raise RuntimeError('Published verification failed: '+name)
     print('Published:',final['html_url'],flush=True)
+    mirror_after_publish(final,state,directory)
+
+def mirror_after_publish(release,state,directory):
+    config=ROOT/'scripts/gitcode_release.json'
+    if not config.is_file() or not json.loads(config.read_text(encoding='utf-8')).get('mirror_after_github_publish'):return
+    sys.path.insert(0,str(ROOT))
+    from scripts.gitcode_cloud_release import mirror
+    tag='v'+dt.datetime.strptime(state['id'],'%Y%m%d-%H%M%S').strftime('%Y.%m.%d-%H%M%S')
+    mirror([directory/'release-job.json'],tag,release)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
