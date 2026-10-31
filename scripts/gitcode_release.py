@@ -26,10 +26,16 @@ class GitCode:
         headers=dict(self._headers)
         if data is not None:headers["Content-Type"]="application/json"
         req=urllib.request.Request(self.base+path,headers=headers,data=json.dumps(data).encode() if data is not None else None,method=method)
-        try:
-            with self.opener.open(req,timeout=45) as response:return json.load(response)
-        except urllib.error.HTTPError as error:
-            raise RuntimeError('GitCode API HTTP '+str(error.code)) from None
+        for attempt in range(3):
+            try:
+                with self.opener.open(req,timeout=45) as response:return json.load(response)
+            except urllib.error.HTTPError as error:
+                if req.get_method()=='GET' and error.code in (429,500,502,503,504) and attempt<2:
+                    time.sleep(2);continue
+                raise RuntimeError('GitCode API HTTP '+str(error.code)) from None
+            except (OSError,TimeoutError):
+                if req.get_method()!='GET' or attempt==2:raise RuntimeError('GitCode API connection timed out') from None
+                time.sleep(2)
     def status(self):
         user=self.api('/user');repo=self.api(self.repository)
         branches=self.api(self.repository+'/branches?per_page=100')
@@ -67,6 +73,9 @@ def publish(jobs,tag,prepared=None):
         release=client.api(base+'/releases',dict(tag_name=tag,name=title+'（上传中）',body=body,target_commitish='main',release_status='pre'),'POST')
         print('Created GitCode release:',tag,flush=True)
     quoted=quote(tag,safe='')
+    checkpoint=Path('out')/('gitcode-verified-'+quote(tag,safe='')+'.json')
+    try:previous={e['name']:e for e in json.loads(checkpoint.read_text(encoding='utf-8')).get('files',[])}
+    except (OSError,ValueError,KeyError):previous={}
     verified=[]
     for name,entry in prepared['files'].items():
         release=client.api(base+'/releases/tags/'+quoted+'?v='+str(time.time_ns()))
@@ -103,15 +112,22 @@ def publish(jobs,tag,prepared=None):
                 if existing:break
                 time.sleep(2)
             if not existing:raise RuntimeError('Attachment callback not registered: '+name)
-        for attempt in range(3):
-            try:
-                digest,size=anonymous_digest(existing['browser_download_url'])
-                if digest==entry['sha256'] and size==entry['size']:break
-            except RuntimeError:
-                if attempt==2:raise
-            if attempt==2:raise RuntimeError('Remote attachment verification failed: '+name)
-            print('Retrying anonymous verification:',name,flush=True)
+        cached=previous.get(name,{})
+        if cached.get('sha256')==entry['sha256'] and cached.get('size')==entry['size'] and cached.get('url')==existing['browser_download_url'] and existing.get('digest')=='sha256:'+entry['sha256'] and existing.get('size')==entry['size']:
+            digest,size=entry['sha256'],entry['size']
+            print('Reusing verified GitCode download:',name,flush=True)
+        else:
+            for attempt in range(3):
+                try:
+                    digest,size=anonymous_digest(existing['browser_download_url'])
+                    if digest==entry['sha256'] and size==entry['size']:break
+                except RuntimeError:
+                    if attempt==2:raise
+                if attempt==2:raise RuntimeError('Remote attachment verification failed: '+name)
+                print('Retrying anonymous verification:',name,flush=True)
         verified.append(dict(name=name,sha256=digest,size=size,url=existing['browser_download_url']))
+        checkpoint.parent.mkdir(parents=True,exist_ok=True)
+        checkpoint.write_text(json.dumps(dict(tag=tag,files=verified),indent=2),encoding='utf-8')
         print('Verified GitCode upload/download:',name,flush=True)
     # Additional full manifest covers both Mac architectures and both libraries.
     client.api(base+'/releases/'+quoted,dict(name=title,body=body,release_status='latest'),'PATCH')
