@@ -6,7 +6,14 @@ from pathlib import Path
 import os
 from . import mapstore
 
-FLOOR_TEXT = {1: '1F', 2: '2F', -1: '地下室'}
+FLOOR_TEXT = {1: '1F', 2: '2F', -1: '地下室', -2: '负二层', -3: '负三层'}
+
+
+def floor_label(floor, scene='curse'):
+    """磷光症全是地下楼层，游戏里叫负一/二/三层；厄运之女的 -1 仍叫地下室。"""
+    if scene == 'linguang' and floor is not None and floor < 0:
+        return {-1: '负一层', -2: '负二层', -3: '负三层'}.get(floor, f'负{-floor}层')
+    return FLOOR_TEXT.get(floor, f'{floor}F')
 MODE_TEXT = {None: '', 'solo': '单人', 'duo': '多人', 'full':'展十全棺', 'speed':'展十速刷'}
 
 

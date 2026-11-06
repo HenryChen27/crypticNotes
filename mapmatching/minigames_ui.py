@@ -243,8 +243,15 @@ class GameControls(W.QWidget):
         self.shortcut_rows[action].toggle.setChecked(True);self.update_shortcut_labels();self.save_preferences()
 
     def shortcut_keys(self):
+        # Called from the 20ms tick; the answer only changes with the preferences.
         from .ui import HOTKEYS
-        return {HOTKEYS[k] for a in self.shortcut_buttons if self.preferences.get(a+'_enabled',True) and (k:=self.preferences.get(a+'_key')) in HOTKEYS}
+        signature=tuple((a,self.preferences.get(a+'_enabled',True),self.preferences.get(a+'_key')) for a in self.shortcut_buttons)
+        cached=getattr(self,'_shortcut_cache',None)
+        if cached is not None and cached[0]==signature:
+            return cached[1]
+        keys={HOTKEYS[k] for a in self.shortcut_buttons if self.preferences.get(a+'_enabled',True) and (k:=self.preferences.get(a+'_key')) in HOTKEYS}
+        self._shortcut_cache=(signature,keys)
+        return keys
 
     def handle_shortcuts(self,edges):
         if not self.running():return
@@ -299,7 +306,13 @@ class GameControls(W.QWidget):
         hidden=self.game_hidden if self.running() else False
         if self.running():
             try:
-                hidden=bool(json.loads((game_profile(self)/'window-state.json').read_text()).get('hidden'))
+                # Polled every 200ms: only parse when the launcher rewrote the file.
+                path=game_profile(self)/'window-state.json'
+                stamp=path.stat().st_mtime_ns
+                if stamp!=getattr(self,'_window_state_stamp',None):
+                    self._window_state_stamp=stamp
+                    self._window_state_hidden=bool(json.loads(path.read_text()).get('hidden'))
+                hidden=getattr(self,'_window_state_hidden',hidden)
             except (OSError,ValueError):
                 pass
         if hidden!=self.game_hidden:
@@ -510,6 +523,7 @@ class GameControls(W.QWidget):
         self.pending_game_index=None
         self.stop_scene_watch()
         self.window_timer.stop()
+        self._window_state_stamp=None
         self.game_hidden=False
         self.companion.module_tabs.buttons[0].show()
         self.companion.gear.set_game_background(False)

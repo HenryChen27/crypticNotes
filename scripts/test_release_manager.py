@@ -83,3 +83,12 @@ class ReleaseTests(unittest.TestCase):
                 manager.publish(Fake(),{'id':'test','files':{'sample.zip':'wrong'}},Path(d))
 
 if __name__=='__main__':unittest.main()
+
+class StaleSourceTests(unittest.TestCase):
+    def test_moved_maps_leave_the_public_tree_in_short_chunks(self):
+        exported=['maps/curse/lianghapi/hard/a.webp','scripts/release_manager.py','docs/releasing.md']
+        published=['maps/lianghapi/hard/a.webp','maps/curse/lianghapi/hard/a.webp','maps/hard/老图.jpg',
+                   'scripts/release_manager.py','.github/workflows/macos.yml','README.md','']
+        chunks=manager.stale_sources(exported,published,size=1)
+        self.assertEqual(chunks,[['maps/hard/老图.jpg'],['maps/lianghapi/hard/a.webp']])
+        self.assertEqual(manager.stale_sources(exported,exported),[])

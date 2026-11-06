@@ -18,6 +18,11 @@ class GameWindow : Form {
     TaskCompletionSource<string> safeSave;
     string lastCommand;
     readonly Timer commands=new Timer();
+    FileSystemWatcher commandWatcher;
+    readonly Timer autoClose=new Timer();
+    readonly Timer suspend=new Timer();
+    string lastAudio;
+    bool suspendSupported,loaded;
     FormWindowState visibleState=FormWindowState.Normal;
     WindowControl sizeControl,hideControl,soundControl;
     bool muted;
@@ -39,11 +44,37 @@ class GameWindow : Form {
                     else if(action=="safe-close"){autoCloseAt=null;Close();}
                     else if(action=="auto-hide"&&WindowState!=FormWindowState.Minimized){
                         visibleState=WindowState;autoCloseAt=DateTime.UtcNow.AddSeconds(5);WindowState=FormWindowState.Minimized;
+                        autoClose.Stop();autoClose.Start();
                     }
                 }
             }
         }catch(Exception){}
         if(autoCloseAt.HasValue&&DateTime.UtcNow>=autoCloseAt.Value&&WindowState==FormWindowState.Minimized&&!closing){autoCloseAt=null;Close();}
+    }
+    // The command file is replaced atomically (temp -> window-command.json); any directory event for that name triggers one read on the UI thread.
+    void WatchCommands(){
+        try{
+            commandWatcher=new FileSystemWatcher(profile,"window-command.json"){NotifyFilter=NotifyFilters.FileName|NotifyFilters.LastWrite|NotifyFilters.Size|NotifyFilters.CreationTime};
+            FileSystemEventHandler changed=(s,e)=>QueueCommandRead();
+            commandWatcher.Created+=changed;commandWatcher.Changed+=changed;commandWatcher.Deleted+=changed;
+            commandWatcher.Renamed+=(s,e)=>QueueCommandRead();
+            commandWatcher.Error+=(s,e)=>QueueCommandRead();
+            commandWatcher.EnableRaisingEvents=true;
+        }catch(Exception){commandWatcher=null;commands.Interval=100;}
+    }
+    void QueueCommandRead(){try{if(IsHandleCreated&&!IsDisposed)BeginInvoke(new Action(ReadWindowCommands));}catch(Exception){}}
+    async Task SuspendWebView(){
+        // Never suspend before the page finished loading: a suspended navigation never reaches NavigationCompleted, so "ready" would never be written.
+        if(!suspendSupported||!loaded||view.CoreWebView2==null||IsDisposed||closing||WindowState!=FormWindowState.Minimized)return;
+        try{
+            view.Visible=false; // TrySuspendAsync requires an invisible controller; the form is minimized so nothing is shown anyway.
+            await view.CoreWebView2.TrySuspendAsync();
+        }catch(Exception){}
+    }
+    void ResumeWebView(){
+        suspend.Stop();
+        try{if(suspendSupported&&view.CoreWebView2!=null&&!IsDisposed&&view.CoreWebView2.IsSuspended)view.CoreWebView2.Resume();}catch(Exception){}
+        try{if(!view.Visible)view.Visible=true;}catch(Exception){}
     }
     void SetMuted(bool value){value=value||masterMuted;muted=value;if(view.CoreWebView2!=null)view.CoreWebView2.IsMuted=value;if(soundControl!=null){soundControl.Muted=value;soundControl.Invalidate();}}
     FrameBar titleBar;
@@ -54,7 +85,7 @@ class GameWindow : Form {
         bool hiddenMuted=muted&&view.CoreWebView2.IsMuted;RestoreGame();bool restoredSound=!muted&&!view.CoreWebView2.IsMuted;soundControl.PerformClick();bool manualMuted=muted&&view.CoreWebView2.IsMuted;soundControl.PerformClick();return expanded&&restored&&hidden&&hiddenMuted&&restoredSound&&manualMuted&&!muted&&!view.CoreWebView2.IsMuted&&WindowState==FormWindowState.Normal;
     }
     void PublishState(){try{File.WriteAllText(Path.Combine(profile,"window-state.json"),"{\"hidden\":"+(WindowState==FormWindowState.Minimized?"true":"false")+"}");}catch(Exception){}}
-    void RestoreGame(){autoCloseAt=null;Show();WindowState=visibleState;SetMuted(false);Activate();PublishState();}
+    void RestoreGame(){autoCloseAt=null;ResumeWebView();Show();WindowState=visibleState;SetMuted(false);Activate();PublishState();}
     public GameWindow(string game, string data, string smoke, string title, string script) {
         root=Path.GetFullPath(game);profile=Path.GetFullPath(data);report=smoke;
         testScript=script;
@@ -92,12 +123,14 @@ class GameWindow : Form {
         hide.Click+=(s,e)=>{visibleState=WindowState;WindowState=FormWindowState.Minimized;};
         masterMuted=Array.IndexOf(Environment.GetCommandLineArgs(),"--muted")>=0;muted=masterMuted;
         ShowInTaskbar=true;
-        Resize+=(s,e)=>{bool minimized=WindowState==FormWindowState.Minimized;if(!minimized){visibleState=WindowState;autoCloseAt=null;}if(minimized!=wasMinimized){wasMinimized=minimized;SetMuted(minimized);}PublishState();};
+        Resize+=(s,e)=>{bool minimized=WindowState==FormWindowState.Minimized;if(!minimized){visibleState=WindowState;autoCloseAt=null;}if(minimized!=wasMinimized){wasMinimized=minimized;SetMuted(minimized);if(minimized){suspend.Stop();suspend.Start();}else{ResumeWebView();var refresh=SaveAudio();}}PublishState();};
         tray=new NotifyIcon {Icon=Icon,Text=title,Visible=true};
         var menu=new ContextMenuStrip();menu.Items.Add("显示小游戏",null,(s,e)=>RestoreGame());menu.Items.Add("保存并退出",null,(s,e)=>Close());
         tray.ContextMenuStrip=menu;tray.DoubleClick+=(s,e)=>RestoreGame();
-        commands.Interval=100;commands.Tick+=(s,e)=>ReadWindowCommands();
-        Shown+=(s,e)=>{PublishState();commands.Start();};
+        commands.Interval=2000;commands.Tick+=(s,e)=>ReadWindowCommands(); // slow fallback; the watcher does the real work
+        autoClose.Interval=5100;autoClose.Tick+=(s,e)=>{autoClose.Stop();ReadWindowCommands();};
+        suspend.Interval=500;suspend.Tick+=async(s,e)=>{suspend.Stop();await SuspendWebView();};
+        Shown+=(s,e)=>{WatchCommands();commands.Start();PublishState();}; // watcher first: the host may send a command as soon as window-state.json appears
         label.MouseDown+=(s,e)=>{if(e.Button==MouseButtons.Left){dragging=true;start=Cursor.Position;}};
         label.MouseMove+=(s,e)=>{if(dragging){Point next=Cursor.Position;Location=new Point(Left+next.X-start.X,Top+next.Y-start.Y);start=next;}};
         label.MouseUp+=(s,e)=>dragging=false;
@@ -108,11 +141,12 @@ class GameWindow : Form {
         view.Dock=DockStyle.Fill;Controls.Add(view);Controls.Add(bar);Controls.Add(grip);
         Shown+=async(s,e)=>await Initialize();
         save.Interval=1000;save.Tick+=async(s,e)=>await SaveAudio();
-        FormClosed+=(s,e)=>{save.Stop();commands.Stop();tray.Dispose();view.Dispose();};
+        FormClosed+=(s,e)=>{save.Stop();commands.Stop();autoClose.Stop();suspend.Stop();if(commandWatcher!=null){commandWatcher.Dispose();commandWatcher=null;}tray.Dispose();view.Dispose();};
         FormClosing+=async(s,e)=>{
             if(allowClose||view.CoreWebView2==null)return;
             e.Cancel=true;if(closing)return;closing=true;
             try {
+                ResumeWebView();
                 safeSave=new TaskCompletionSource<string>();
                 await view.CoreWebView2.ExecuteScriptAsync("window.__jellyfishHostSave(1)");
                 if(await Task.WhenAny(safeSave.Task,Task.Delay(10000))!=safeSave.Task)throw new Exception("保存超时");
@@ -131,7 +165,10 @@ class GameWindow : Form {
             await view.EnsureCoreWebView2Async(environment);
             var web=view.CoreWebView2;
             web.IsMuted=muted;
+            try{suspendSupported=CoreWebView2Environment.CompareBrowserVersions(environment.BrowserVersionString,"91.0.864.0")>=0;}catch(Exception){suspendSupported=false;}
             await web.AddScriptToExecuteOnDocumentCreatedAsync("window.__jellyfishHostPost=m=>chrome.webview.postMessage(m);"+File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"safe-exit.js")));
+            string animation=Path.Combine(AppDomain.CurrentDomain.BaseDirectory,"host-animation-cache.js");
+            if(File.Exists(animation))await web.AddScriptToExecuteOnDocumentCreatedAsync("window.__crypticPowerSaving="+(Array.IndexOf(Environment.GetCommandLineArgs(),"--power-saving")>=0?"true":"false")+";"+File.ReadAllText(animation));
             web.WindowCloseRequested+=(s,e)=>Close();
             if(testScript!=null)await web.AddScriptToExecuteOnDocumentCreatedAsync("window.__JELLYFISH_TEST=true");
             var serializer=new System.Web.Script.Serialization.JavaScriptSerializer();
@@ -171,12 +208,14 @@ class GameWindow : Form {
             };
             string audio=Path.Combine(profile,"audio.json");
             if(File.Exists(audio)) {
-                string literal=new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(File.ReadAllText(audio));
+                lastAudio=File.ReadAllText(audio);
+                string literal=new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(lastAudio);
                 await web.AddScriptToExecuteOnDocumentCreatedAsync("try{localStorage.setItem('jellyfish.audioSettings',"+literal+")}catch(e){}");
             }
             web.NavigationCompleted+=async(s,e)=>{
                 if(!e.IsSuccess){Fail("游戏资源加载失败："+e.WebErrorStatus);return;}
                 File.WriteAllText(Path.Combine(profile,"ready"),"ready");save.Start();
+                loaded=true;if(WindowState==FormWindowState.Minimized){suspend.Stop();suspend.Start();}
                 if(report!=null){
                     await Task.Delay(2500);
                     if(testScript!=null){
@@ -205,11 +244,11 @@ class GameWindow : Form {
         }catch(Exception e){Fail(e.ToString());}
     }
     async Task SaveAudio() {
-        if(view.CoreWebView2==null||IsDisposed)return;
+        if(view.CoreWebView2==null||IsDisposed||WindowState==FormWindowState.Minimized)return;
         try{
             string result=await view.CoreWebView2.ExecuteScriptAsync("localStorage.getItem('jellyfish.audioSettings')");
             string audio=new System.Web.Script.Serialization.JavaScriptSerializer().Deserialize<string>(result);
-            if(audio!=null&&audio.Length<4096)File.WriteAllText(Path.Combine(profile,"audio.json"),audio);
+            if(audio!=null&&audio.Length<4096&&audio!=lastAudio){File.WriteAllText(Path.Combine(profile,"audio.json"),audio);lastAudio=audio;}
         }catch(Exception){}
     }
     void SaveStorage(string json) {

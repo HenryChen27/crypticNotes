@@ -44,7 +44,7 @@ PACKAGES = {
 def input_fingerprint(platform, root=None):
     """Hash release inputs, not timestamps, build output or automatic versions."""
     root = root or ROOT
-    patterns = ['maps/lianghapi/**', 'maps/zhanshi/**', 'maps/providers.json', 'maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
+    patterns = ['maps/curse/**', 'maps/linguang/**', 'maps/lianghapi/**', 'maps/zhanshi/**', 'maps/providers.json', 'maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
                 'mapmatching/src/**', 'mapmatching/config.py', 'mapmatching/paths.py',
                 'mapmatching/__init__.py']
     if platform == 'android':
@@ -152,6 +152,18 @@ class GitHub:
         asset=next((a for a in release['assets'] if a['name']==name),None)
         return json.loads(self.download(asset['browser_download_url']+'?v='+str(time.time_ns()))) if asset else {}
 
+SYNCED=('mapmatching/','android/','maps/','scripts/','docs/','games/')
+
+def stale_sources(exported,published,size=80):
+    """Public files under the synced directories that the workspace no longer tracks.
+
+    A map moved with `git mv` (the library is now maps/<地图>/<作者>/<难度>) must
+    leave the public tree too, or every layout ever shipped piles up there.
+    Returned in chunks so the git command line stays short on Windows."""
+    keep=set(exported)
+    stale=sorted(n for n in published if n and n.startswith(SYNCED) and n not in keep)
+    return [stale[i:i+size] for i in range(0,len(stale),size)]
+
 def sync_sources(github):
     checkout=CHECKOUT
     if not (checkout/'.git').exists():
@@ -179,6 +191,8 @@ def sync_sources(github):
     if (ROOT/'macos-version.json').exists():extra.append('macos-version.json')
     for name in extra:
         target=checkout/name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(ROOT/name,target)
+    for chunk in stale_sources(files+extra,run(['git','ls-files','-z'],checkout,capture=True).split('\0')):
+        run(['git','rm','-q','--',*chunk],checkout)
     run(['git','add','mapmatching','android','maps','scripts','docs','games','README.md','.github/workflows/native-games.yml','.github/workflows/minigames.yml'],checkout)
     if (checkout/'macos-version.json').exists():run(['git','add','macos-version.json'],checkout)
     if run(['git','diff','--cached','--name-only'],checkout,capture=True).strip():

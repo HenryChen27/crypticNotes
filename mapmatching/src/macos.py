@@ -8,6 +8,7 @@ import Quartz
 from .ui_trace import trace
 
 _capture_window = None
+_last_permission = {}   # last logged permission / frame geometry, see capture()
 
 
 def _select_window(window_id, pid, rect):
@@ -89,7 +90,10 @@ def capture(rect):
     if w < 100 or h < 100:
         raise ValueError('游戏窗口过小或已最小化')
     permission = bool(Quartz.CGPreflightScreenCaptureAccess())
-    trace('mac_capture_permission',granted=permission,pid=os.getpid())
+    # Logged on change only: this runs on every capture, including the 0.8s guard.
+    if permission != _last_permission.get('granted'):
+        _last_permission['granted'] = permission
+        trace('mac_capture_permission',granted=permission,pid=os.getpid())
     if not permission:
         Quartz.CGRequestScreenCaptureAccess()
         raise PermissionError('当前进程没有屏幕录制权限；请授权当前版本的加页手记后完全退出并重新打开')
@@ -109,8 +113,11 @@ def capture(rect):
     if Quartz.CGImageGetBitsPerPixel(image) != 32 or Quartz.CGImageGetBitsPerComponent(image) != 8:
         raise ValueError('截图像素格式不是预期的 8 位 BGRA，请反馈截图日志')
     frame = bgra_buffer_to_bgr(raw, width, height, row_bytes)
-    trace('mac_capture_complete',backend='ScreenCaptureKit',window_id=window_id,
-          pid=pid,width=width,height=height,row_bytes=row_bytes,buffer_bytes=len(raw))
+    geometry = (window_id, pid, width, height, row_bytes)
+    if geometry != _last_permission.get('geometry'):
+        _last_permission['geometry'] = geometry
+        trace('mac_capture_complete',backend='ScreenCaptureKit',window_id=window_id,
+              pid=pid,width=width,height=height,row_bytes=row_bytes,buffer_bytes=len(raw))
     # CGWindow images use premultiplied BGRA on current Intel and Apple Silicon Macs.
     return frame
 

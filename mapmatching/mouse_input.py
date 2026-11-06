@@ -21,6 +21,7 @@ user32 = ctypes.WinDLL('user32', use_last_error=True)
 WM_INPUT = 0x00FF
 RID_INPUT = 0x10000003
 RIM_TYPEMOUSE = 0
+RIM_TYPEKEYBOARD = 1
 HID_USAGE_PAGE_GENERIC = 0x01
 HID_USAGE_GENERIC_MOUSE = 0x02
 RIDEV_INPUTSINK = 0x00000100
@@ -86,6 +87,96 @@ user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
 user32.GetAncestor.restype = wintypes.HWND
 
 
+# 鼠标包 48 字节、键盘包 40 字节（x64）；留余量。更大的只有 HID 报告，不是我们订阅的。
+RAW_INPUT_BUFFER = 96
+
+
+def read_raw_input(handle, buffer):
+    """一次 GetRawInputData 读进预分配缓冲；返回拷贝的字节数，装不下或失败返回 None。
+
+    原来每条消息先问长度、再 create_string_buffer、再读一次 —— 1000 Hz 鼠标下
+    每秒几千次分配。缓冲装不下的只会是 HID 报告，直接忽略即可。
+    """
+    size = wintypes.UINT(len(buffer))
+    copied = user32.GetRawInputData(wintypes.HANDLE(handle), RID_INPUT, buffer,
+                                    ctypes.byref(size), ctypes.sizeof(RAWINPUTHEADER))
+    if copied == 0xFFFFFFFF or copied < ctypes.sizeof(RAWINPUTHEADER):
+        return None
+    return copied
+
+
+class RawInputFilter(C.QAbstractNativeEventFilter):
+    """全进程唯一的 WM_INPUT 入口：读一次，按 dwType 分发给鼠标 / 键盘 watcher。
+
+    以前鼠标、键盘各装一个 filter，每条 WM_INPUT 都被两个 filter 完整读取；
+    而 Qt 又把同一条消息投递两次（先 windows_dispatcher_MSG，后窗口过程里的
+    windows_generic_MSG），于是每次鼠标移动触发 4 次读取。
+
+    这里**只在 generic 那一次读**：它来自窗口过程，在任何事件循环（包括原生
+    模态循环）里都会到达；dispatcher 那一次只在 Qt 自己的循环里有，且随后
+    必然还会以 generic 再来一次。watcher 的状态更新本就是幂等的，不依赖次数。
+    """
+    _instance = None
+
+    @classmethod
+    def shared(cls):
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    def __init__(self):
+        super().__init__()
+        self.mouse = None
+        self.keyboard = None
+        self._app = None
+        self._buffer = ctypes.create_string_buffer(RAW_INPUT_BUFFER)
+        self.last_error = None
+
+    def attach(self, mouse=None, keyboard=None):
+        if mouse is not None:
+            self.mouse = mouse
+        if keyboard is not None:
+            self.keyboard = keyboard
+        app = C.QCoreApplication.instance()
+        if self._app is None and app is not None:
+            app.installNativeEventFilter(self)
+            self._app = app
+
+    def detach(self, mouse=None, keyboard=None):
+        if mouse is not None and self.mouse is mouse:
+            self.mouse = None
+        if keyboard is not None and self.keyboard is keyboard:
+            self.keyboard = None
+        if self.mouse is None and self.keyboard is None and self._app is not None:
+            try:
+                self._app.removeNativeEventFilter(self)
+            except (RuntimeError, TypeError):
+                pass
+            self._app = None
+
+    def nativeEventFilter(self, eventType, message):
+        try:
+            if eventType == b'windows_generic_MSG':
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == WM_INPUT:
+                    self._read(int(msg.lParam))
+        except Exception as error:            # 绝不因为观察失败而打断 Qt 的事件派发
+            self.last_error = str(error)
+        return (False, 0)
+
+    def _read(self, handle):
+        copied = read_raw_input(handle, self._buffer)
+        if copied is None:
+            return
+        kind = RAWINPUTHEADER.from_buffer(self._buffer).dwType
+        if kind == RIM_TYPEMOUSE:
+            if self.mouse is not None:
+                self.mouse._mouse_packet(self._buffer, copied)
+        elif kind == RIM_TYPEKEYBOARD:
+            if self.keyboard is not None:
+                self.keyboard._keyboard_packet(self._buffer, copied)
+
+
 class MouseWatcher(C.QAbstractNativeEventFilter):
     """观察鼠标按键/滚轮；只用 `interacting()` 对外表态。
 
@@ -110,6 +201,7 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
         self._app = None
         self._poll_works = False
         self.last_error = None
+        self._buffer = ctypes.create_string_buffer(RAW_INPUT_BUFFER)
 
     # ── 生命周期 ───────────────────────────────────────────────
     def register(self, hwnd):
@@ -125,17 +217,14 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
         if not user32.RegisterRawInputDevices(ctypes.byref(device), 1, ctypes.sizeof(RAWINPUTDEVICE)):
             self.last_error = f'RegisterRawInputDevices 失败 (err={ctypes.get_last_error()})'
             return False
-        app.installNativeEventFilter(self)
+        RawInputFilter.shared().attach(mouse=self)
         self._app = app
         self.ok = True
         return True
 
     def release(self):
         if self._app is not None:
-            try:
-                self._app.removeNativeEventFilter(self)
-            except (RuntimeError, TypeError):
-                pass
+            RawInputFilter.shared().detach(mouse=self)
             self._app = None
         if self.ok:
             # RIDEV_REMOVE 按文档必须配 hwndTarget=NULL。
@@ -147,11 +236,10 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
 
     # ── 消息入口 ───────────────────────────────────────────────
     def nativeEventFilter(self, eventType, message):
-        # Qt 的 Windows 派发器会把同一条 WM_INPUT 投递两次
-        # （先 windows_dispatcher_MSG 后 windows_generic_MSG），所以下面所有状态
-        # 更新都必须是幂等的：按键存 set、滚轮存时间戳，绝不累加计数。
+        # 兼容入口：正常运行时不再单独装这个 filter，而是由 RawInputFilter
+        # 读一次再分发；直接调用时也只认 generic 那一次（见 RawInputFilter）。
         try:
-            if eventType in (b'windows_generic_MSG', b'windows_dispatcher_MSG'):
+            if eventType == b'windows_generic_MSG':
                 msg = wintypes.MSG.from_address(int(message))
                 if msg.message == WM_INPUT:
                     self._read(int(msg.lParam))
@@ -160,17 +248,15 @@ class MouseWatcher(C.QAbstractNativeEventFilter):
         return (False, 0)                     # PySide6 要求返回 (handled, result) 元组
 
     def _read(self, handle):
-        size = wintypes.UINT(0)
+        """一次读取（不再先问长度再开缓冲），只处理鼠标包。"""
+        copied = read_raw_input(handle, self._buffer)
+        if copied is None:
+            return
+        self._mouse_packet(self._buffer, copied)
+
+    def _mouse_packet(self, buffer, copied):
         header_size = ctypes.sizeof(RAWINPUTHEADER)
-        if user32.GetRawInputData(wintypes.HANDLE(handle), RID_INPUT, None,
-                                  ctypes.byref(size), header_size) != 0:
-            return
-        if size.value < header_size + ctypes.sizeof(RAWMOUSE):
-            return
-        # 按实际长度开缓冲：键盘/RAWHID 事件也可能落到这里，长度不定。
-        buffer = ctypes.create_string_buffer(size.value)
-        if user32.GetRawInputData(wintypes.HANDLE(handle), RID_INPUT, buffer,
-                                  ctypes.byref(size), header_size) != size.value:
+        if copied < header_size + ctypes.sizeof(RAWMOUSE):
             return
         raw = RAWINPUT.from_buffer(buffer)
         if raw.header.dwType != RIM_TYPEMOUSE:

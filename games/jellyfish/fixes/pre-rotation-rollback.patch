@@ -1,0 +1,108 @@
+diff --git a/js/config.js b/js/config.js
+index 1f06c15..1de3581 100644
+--- a/js/config.js
++++ b/js/config.js
+@@ -34,9 +34,8 @@ const CONFIG = {
+     gravity: { x: 0, y: 5.0 },
+     wallThickness: 40,
+     restitution: 0.08,
+-    friction: 0.035,
++    friction: 0.2,
+     frictionStatic: 0.8,
+-    angularDamping: 0.16, // rotational drag per 60Hz frame, independent of translation
+     frictionAir: 0.02,
+     density: 0.0012,
+   },
+diff --git a/js/game.js b/js/game.js
+index 858d84f..4da68f5 100644
+--- a/js/game.js
++++ b/js/game.js
+@@ -111,10 +111,7 @@
+         if (body.isStatic || body.isSleeping) continue;
+         body.velocity.x = body.position.x - body.positionPrev.x;
+         body.velocity.y = body.position.y - body.positionPrev.y;
+-        const angularRetention=Math.pow(1-CONFIG.PHYSICS.angularDamping,CONFIG.PHYSICS.fixedDelta/(1000/60));
+-        const angularDelta=(body.angle-body.anglePrev)*angularRetention;
+-        body.anglePrev=body.angle-angularDelta;
+-        body.angularVelocity = angularDelta;
++        body.angularVelocity = body.angle - body.anglePrev;
+         const speedScale = (1000 / 60) / CONFIG.PHYSICS.fixedDelta;
+         body.speed = Math.hypot(body.velocity.x, body.velocity.y) * speedScale;
+         body.angularSpeed = Math.abs(body.angularVelocity) * speedScale;
+diff --git a/tests/physics.cjs b/tests/physics.cjs
+index be2414d..783323e 100644
+--- a/tests/physics.cjs
++++ b/tests/physics.cjs
+@@ -6,7 +6,7 @@ const vm = require('node:vm');
+ const Matter = require('../js/matter.min.js');
+ const root = path.join(__dirname, '..');
+ 
+-function game(physicsOverrides={}) {
++function game(physicsOverrides={},settlingEnabled=true) {
+   let now = 1;
+   const context = vm.createContext({
+     Matter, console, performance: { now: () => now },
+@@ -22,9 +22,10 @@ function game(physicsOverrides={}) {
+   // Expose closure internals only in this test, and skip canvas drawing.
+   const source = fs.readFileSync(path.join(root, 'js/game.js'), 'utf8')
+     .replace('render(timestamp);', '')
++    .replace('settleSupportedPiles(step);',settlingEnabled?'settleSupportedPiles(step);':'')
+     .replace('  // --- Start ---', `
+       globalThis.testGame = { G, initPhysics, setupCollisionHandler,
+-        createJellyfishBody, addJellyfishItem, triggerMerge, dropJellyfish, loop, drawJellyfish };
++        createJellyfishBody, addJellyfishItem, triggerMerge, dropJellyfish, spawnRandomJellyfish, loop, drawJellyfish };
+       // --- Start ---`);
+   vm.runInContext(source, context);
+   const api = context.testGame;
+@@ -49,27 +50,6 @@ function game(physicsOverrides={}) {
+   return api;
+ }
+ 
+-{
+-  function propagatedRotation(overrides) {
+-    const api=game(overrides);
+-    const neighbours=[api.add(1050,1345,4),api.add(1379,1316,6)];
+-    const driver=api.add(1200,1333,5);
+-    api.advance(5,120);
+-    let rotation=0;
+-    for(let i=0;i<120;i++) {
+-      for(const item of [...neighbours,driver])Matter.Sleeping.set(item.body,false);
+-      Matter.Body.setAngularVelocity(driver.body,.15);
+-      const before=neighbours.map(item=>item.body.angle);
+-      api.advance(1/120,120);
+-      rotation+=neighbours.reduce((sum,item,j)=>sum+Math.abs(item.body.angle-before[j]),0);
+-    }
+-    return rotation;
+-  }
+-  const original=propagatedRotation({friction:.2,frictionStatic:.8,angularDamping:0});
+-  const reduced=propagatedRotation({});
+-  assert.ok(original>.01 && reduced<original*.5,`rotation transmission ${reduced} vs ${original}`);
+-  console.log(`Rotation transmission: ${(100*(1-reduced/original)).toFixed(1)}% lower in driven-contact test`);
+-}
+ 
+ 
+ {
+@@ -83,6 +63,23 @@ function game(physicsOverrides={}) {
+  console.log('Screenshot pile awake:',api.G.items.filter(i=>!i.body.isSleeping).map(i=>[i.level,i.body.speed,i.body.angularSpeed,i.body.motion]));
+  const poses=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));api.advance(3,120);
+  assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),poses,'screenshot pile must stop moving');
++ const fallen=api.add(1100,350,2);api.advance(.5,120);
++ assert.ok(fallen.body.position.y>350,'unsupported fish must fall');
++ api.advance(20,120);
++ const after=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));
++ api.advance(5,120);
++ assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),after,'disturbed screenshot pile must settle again');
++
++}
++
++{
++ const api=game();
++ api.spawnRandomJellyfish(10);api.advance(1,120);api.spawnRandomJellyfish(10);
++ api.advance(30,120);
++ const poses=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));
++ api.advance(5,120);
++ assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),poses,'C-key pile must stop moving');
++ console.log('C-key repeated spawning: settles and stays still');
+ }
+ 
+ for (const merge of [false, true, 'floor']) {

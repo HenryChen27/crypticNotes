@@ -11,6 +11,11 @@ def templates():
     return {name:cv2.imdecode(np.frombuffer((folder/(name+'.png')).read_bytes(),np.uint8),0)
             for name in ('close','zoom','overview')}
 
+@lru_cache(maxsize=32)
+def scaled_template(name, scale):
+    """The templates never change, so each scaled copy is computed once per process."""
+    return cv2.resize(templates()[name],None,fx=scale,fy=scale)
+
 def inspect_map_ui(pixels, excluded=None):
     h,w=pixels.shape[:2]
     if w<=h:return dict(visible=False,reason='portrait')
@@ -28,7 +33,7 @@ def inspect_map_ui(pixels, excluded=None):
                 continue
         best=0.
         for scale in (.43,.50,.56,.625,.69,.76,.85,1.):
-            sample=cv2.resize(template,None,fx=scale,fy=scale)
+            sample=scaled_template(name,scale)
             if min(sample.shape)<4 or sample.shape[0]>roi.shape[0] or sample.shape[1]>roi.shape[1]:continue
             best=max(best,float(cv2.minMaxLoc(cv2.matchTemplate(roi,sample,cv2.TM_CCOEFF_NORMED))[1]))
         scores[name]=best

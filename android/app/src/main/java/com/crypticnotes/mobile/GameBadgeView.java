@@ -27,6 +27,7 @@ final class GameBadgeView extends ImageView {
             float left=(getWidth()-size)/2f,top=(getHeight()-size)/2f;
             canvas.drawBitmap(fish,null,new RectF(left,top,left+size,top+size),ink);
         }else super.onDraw(canvas);
-        postInvalidateDelayed(200);
+        // No self-scheduled redraw: the icon only changes when the mini-game
+        // hides, shows or switches, and those paths call invalidate() themselves.
     }
 }

@@ -12,5 +12,8 @@ args=[str(compiler),'/nologo','/target:winexe','/platform:x64','/optimize+',
       str(root/'scripts/game_launcher/windows.cs')]
 subprocess.run(args,check=True)
 for path in runtime.iterdir():
-    if path.is_file() and (path.suffix=='.dll' or path.name=='safe-exit.js'):shutil.copy2(path,output/path.name)
+    if path.is_file() and path.suffix=='.dll':shutil.copy2(path,output/path.name)
+# Host scripts come from source, so a freshly edited launcher always ships the matching JS.
+for name in ('safe-exit.js','host-audio.js','host-animation-cache.js'):
+    shutil.copy2(root/'scripts/game_launcher'/name,output/name)
 print('Compiled local launcher only:',output/'GameLauncher.exe')

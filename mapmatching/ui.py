@@ -31,7 +31,7 @@ else:
     from .mouse_input import MouseWatcher
     from .keyboard_input import KeyboardWatcher
     import win32gui
-from .appearance import PetAnimation, SpeechBubble, reaction
+from .appearance import PetAnimation, SpeechBubble, reaction, PetBehavior
 from .panel_dialogs import own_dialog_open
 from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox
 
@@ -123,6 +123,11 @@ QScrollBar::handle:vertical { background: rgba(178,199,214,110); border-radius: 
 QScrollBar::handle:vertical:hover { background: rgba(203,220,232,175); }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
+/* 布偶右键菜单：同一套雾面配色，不用系统白底菜单。 */
+QMenu { background: rgba(20,28,37,242); color: #dbe5ec; border: 1px solid rgba(154,180,200,60); border-radius: 8px; padding: 6px; }
+QMenu::item { padding: 7px 22px 7px 16px; border-radius: 5px; }
+QMenu::item:selected { background: rgba(203,215,223,70); color: #eef4f8; }
+QMenu::separator { height: 1px; background: rgba(154,180,200,60); margin: 5px 8px; }
 '''
 
 
@@ -729,11 +734,17 @@ class DraggableGear(GearButton):
         self.match_timer=C.QTimer(self)
         self.match_timer.setInterval(33)
         self.match_timer.timeout.connect(self.update)
+        # A click opens the panel at once. Waiting out the double-click
+        # interval made every single click feel stuck; a double-click now
+        # simply folds the panel it just opened (retry() does that) and
+        # re-recognises.
         self.click_timer=C.QTimer(self)
         self.click_timer.setSingleShot(True)
         self.click_timer.timeout.connect(lambda: self.window.toggle_panel())
-        self.clicked.connect(lambda: self.click_timer.start(W.QApplication.doubleClickInterval()))
+        self.clicked.connect(lambda: self.window.toggle_panel())
         self.double_release=False
+        self.locked=False
+        self._drag_last=None
         self.exit_zone=ExitDropZone()
         self.exit_clock=C.QElapsedTimer()
         self.exit_timer=C.QTimer(self)
@@ -800,7 +811,7 @@ class DraggableGear(GearButton):
     def set_game_background(self, active):
         anchor=self.mapToGlobal(C.QPoint(self.width()//2,self.height()//2))
         self.game_background=bool(active)
-        self.setFixedSize((146 if active else 112),(176 if active else 132)) if self.pet.enabled else self.setFixedSize(46,46)
+        self.pet.apply_size()
         if hasattr(self.window,'place_gear'):
             self.window.adjustSize();self.window.layout().invalidate();self.window.layout().activate()
             self.window.place_gear(anchor-C.QPoint(self.width()//2,self.height()//2))
@@ -817,17 +828,18 @@ class DraggableGear(GearButton):
 
     def paintEvent(self,event):
         if self.pet.enabled:
-            self.pet.paint(origin=(7+(self.width()-112)/2,20+(self.height()-132)/2))
+            self.pet.paint()
         else:
             self.gear_rotation=(self.match_clock.elapsed() % 1800)/5. if self.matching else 0.
             super().paintEvent(event)
         if self.matching and self.pet.enabled and not getattr(self.window,'_update_starting',False):
+            s=self.pet.scale
             p=G.QPainter(self)
             p.setRenderHint(G.QPainter.Antialiasing)
             p.setRenderHint(G.QPainter.SmoothPixmapTransform)
-            p.translate(90,26)
+            p.translate(90*s+(self.width()-112*s)/2,26*s+(self.height()-132*s)/2)
             p.rotate(self.match_clock.elapsed()/8.)
-            p.drawPixmap(C.QRectF(-13,-13,26,26),self.waiting_icon,C.QRectF(self.waiting_icon.rect()))
+            p.drawPixmap(C.QRectF(-13*s,-13*s,26*s,26*s),self.waiting_icon,C.QRectF(self.waiting_icon.rect()))
             p.end()
         if self.game_background:
             p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
@@ -837,27 +849,47 @@ class DraggableGear(GearButton):
             p.end()
 
     def enterEvent(self,event):
-        if not self.matching:self.pet.play('curious')
+        behavior=getattr(self.window,'behavior',None)
+        # The wave has a cooldown: the doll sits next to the game's own top-right
+        # controls, and greeting every pass of the pointer was noise.
+        if not self.matching and (behavior is None or behavior.hover()):
+            self.pet.play('curious')
         super().enterEvent(event)
 
+    def context_menu(self,point):
+        """Right-click: the usual pet menu. Quitting is a menu item, never a click."""
+        window=self.window
+        menu=W.QMenu(self)
+        menu.addAction('重新识别',window.retry)
+        opened=getattr(window,'state',None) is not None and window.state.opened
+        menu.addAction('隐藏叠图' if opened else '显示叠图',
+                       (lambda: window.close_map(background=True)) if opened else (lambda: window.open_map('hide_hotkey_restore')))
+        menu.addAction('小游戏',lambda: window.show_module(1))
+        menu.addAction('设置',window.toggle_panel)
+        menu.addSeparator()
+        menu.addAction('退出',W.QApplication.instance().quit)
+        menu.exec(point)
+
     def mousePressEvent(self,event):
+        behavior=getattr(self.window,'behavior',None)
+        if behavior is not None:behavior.touched()
         if event.button()==C.Qt.RightButton:
             self.click_timer.stop()
             self.exit_timer.stop();self.exit_zone.hide()
-            event.accept();W.QApplication.instance().quit();return
+            event.accept();self.context_menu(event.globalPosition().toPoint());return
         if event.button()==C.Qt.LeftButton:
             if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<30:
                 self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
-            if not self.matching:self.pet.play('heart')
             # 全程 Qt 逻辑坐标：globalPosition/frameGeometry/move 三者同一套。
             self.press_global=event.globalPosition().toPoint()
             self.drag_start_pos=C.QPoint(self.window.pos())
             self.origin=self.press_global-self.window.frameGeometry().topLeft()
             self.moved=False
+            self._drag_last=(self.press_global.x(),time.monotonic())
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self,event):
-        if self.origin is None or not (event.buttons() & C.Qt.LeftButton):
+        if self.origin is None or not (event.buttons() & C.Qt.LeftButton) or self.locked:
             super().mouseMoveEvent(event)
             return
         point=event.globalPosition().toPoint()
@@ -868,15 +900,24 @@ class DraggableGear(GearButton):
             self.click_timer.stop()
             self.exit_timer.start()
             self.setDown(False)     # 拖拽中不再显示按下态
+            self.pet.begin_drag()
+        last_x,last_t=self._drag_last or (point.x(),time.monotonic())
+        now=time.monotonic()
+        if now-last_t>0:
+            self.pet.drag_moved((point.x()-last_x)/max(1.,(now-last_t)*1000))
+        self._drag_last=(point.x(),now)
         self.window.move(point-self.origin)
 
     def mouseReleaseEvent(self,event):
         dragging=self.moved
         self.origin=self.press_global=None
         self.moved=False
+        self._drag_last=None
         self.exit_timer.stop()
         self.exit_zone.hide()
         self.exit_clock.invalidate()
+        if dragging:
+            self.pet.end_drag()
         if self.double_release:
             self.double_release=False
             self.setDown(False)
@@ -886,6 +927,8 @@ class DraggableGear(GearButton):
             self.window.clamp_to_screen()
             self.window.save()
             return                  # 不调 super() => 不发 clicked
+        if event.button()==C.Qt.LeftButton and not self.matching:
+            self.pet.play('heart')  # on release, so a drag never starts with a hug
         super().mouseReleaseEvent(event)
 
 
@@ -1009,12 +1052,21 @@ class Companion(W.QWidget):
         from .minigames_ui import GameControls
         self.minigames = GameControls(self)
         minigames.addWidget(self.minigames)
+        # Which game map the player queued for. 磷光症 only has 展十's nightmare
+        # 十四棺 atlases so far, so choosing it fixes the rows below.
+        self.scene = ChalkChoice([('厄运之女','curse'),('磷光症','linguang')])
+        self.scene.setCurrentIndex(1 if self.settings.get('scene') == 'linguang' else 0)
+        scene_row=W.QHBoxLayout()
+        scene_label=W.QLabel('地图');scene_label.setFixedWidth(62)
+        scene_row.addWidget(scene_label);scene_row.addWidget(self.scene,1)
+        game.addLayout(scene_row)
         self.map_provider = ChalkChoice([('凉哈皮','lianghapi'),('展十','zhanshi')])
         self.map_provider.setCurrentIndex(1 if self.settings.get('map_provider') == 'zhanshi' else 0)
-        author_row=W.QHBoxLayout()
+        self.author_row=W.QWidget();author_row=W.QHBoxLayout(self.author_row)
+        author_row.setContentsMargins(0,0,0,0)
         author_label=W.QLabel('地图版本');author_label.setFixedWidth(62)
         author_row.addWidget(author_label);author_row.addWidget(self.map_provider,1)
-        game.addLayout(author_row)
+        game.addWidget(self.author_row)
         self.zhanshi_route = ChalkChoice([('全棺','full'),('速刷','speed')])
         self.zhanshi_route.setCurrentIndex(1 if self.settings.get('zhanshi_route') == 'speed' else 0)
         self.zhanshi_row=W.QWidget();route_layout=W.QHBoxLayout(self.zhanshi_row)
@@ -1127,6 +1179,30 @@ class Companion(W.QWidget):
         self.pet_enabled.toggled.connect(self.set_pet_enabled)
         pet_row.addWidget(self.pet_enabled)
         pet_row.addStretch()
+        # Desk-pet controls: how big, whether it fades when ignored, whether it
+        # keeps still, and whether it can be dragged at all.
+        self.pet_size_label = W.QLabel()
+        self.pet_size = ChalkSlider()
+        self.pet_size.setRange(75,150)
+        self.pet_size.setValue(max(75,min(150,int(round(float(self.settings.get('pet_scale',1.))*100)))))
+        self.pet_size.valueChanged.connect(lambda value: self.pet_size_label.setText(f'布偶大小    {value}%'))
+        self.pet_size_label.setText(f'布偶大小    {self.pet_size.value()}%')
+        self.pet_size.sliderReleased.connect(self.pet_settings_changed)
+        self.pet_size.valueChanged.connect(lambda _: None if self.pet_size.isSliderDown() else self.pet_settings_changed())
+        self.pet_fade = ChalkToggle(); self.pet_fade.setChecked(bool(self.settings.get('pet_fade',True)))
+        self.pet_fade.setToolTip('30 秒没有碰它就淡成七成，鼠标靠近恢复')
+        self.pet_quiet = ChalkToggle(); self.pet_quiet.setChecked(bool(self.settings.get('pet_quiet',False)))
+        self.pet_quiet.setToolTip('不做随机小动作、不打盹，只保留识别结果的反应')
+        self.pet_locked = ChalkToggle(); self.pet_locked.setChecked(bool(self.settings.get('pet_locked',False)))
+        self.pet_locked.setToolTip('锁定后不能拖动，点击和快捷键照常')
+        for toggle in (self.pet_fade,self.pet_quiet,self.pet_locked):
+            toggle.setFixedSize(88,28); toggle.setFont(pet_font)
+            toggle.toggled.connect(lambda _: self.pet_settings_changed())
+        self.pet_rows=[]
+        for text,toggle in (('空闲淡出：',self.pet_fade),('安静模式：',self.pet_quiet),('锁定位置：',self.pet_locked)):
+            row=W.QHBoxLayout(); row.addStretch()
+            label=W.QLabel(text); label.setStyleSheet('font-size:14px;'); row.addWidget(label)
+            row.addWidget(toggle); row.addStretch(); self.pet_rows.append(row)
         library.addWidget(enroll)
         import_button = ChalkButton('录入新地图')
         import_button.clicked.connect(self.import_map)
@@ -1168,6 +1244,10 @@ class Companion(W.QWidget):
         self.font_size.valueChanged.connect(lambda _:self.font_changed())
         size_row.addWidget(self.font_size);self.general_section.body.addLayout(size_row)
         self.general_section.body.addLayout(pet_row)
+        self.general_section.body.addWidget(self.pet_size_label)
+        self.general_section.body.addWidget(self.pet_size)
+        for row in self.pet_rows:
+            self.general_section.body.addLayout(row)
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
@@ -1180,9 +1260,14 @@ class Companion(W.QWidget):
         self.toast_timer = C.QTimer(self)
         self.toast_timer.setSingleShot(True)
         self.toast_timer.timeout.connect(self.toast.hide)
+        # Unprompted life: micro-actions, doze, idle fade, looking at the bubble.
+        self.behavior = PetBehavior(self.gear, self)
+        self.toast_timer.timeout.connect(self.behavior.bubble_hidden)
+        self.apply_pet_settings()
         self.timer = C.QTimer(self)
         self.timer.timeout.connect(self.tick)
         self.timer.start(20)
+        self.scene.currentIndexChanged.connect(self.context_changed)
         self.map_provider.currentIndexChanged.connect(self.context_changed)
         self.zhanshi_route.currentIndexChanged.connect(self.context_changed)
         self.difficulty.currentIndexChanged.connect(self.context_changed)
@@ -1223,7 +1308,6 @@ class Companion(W.QWidget):
             self.tray.setToolTip('加页手记地图插件')
             self.tray_menu = W.QMenu()
             self.tray_menu.addAction('显示布偶', lambda: show_floating(self))
-            self.tray_menu.addAction('显示布偶', lambda: show_floating(self))
             self.tray_menu.addAction('退出', W.QApplication.instance().quit)
             self.tray.setContextMenu(self.tray_menu)
             self.tray.show()
@@ -1255,7 +1339,7 @@ class Companion(W.QWidget):
 
     def matching_available(self):
         controls=getattr(self,'matching_controls',None)
-        return controls is None or (controls.task is None and controls.store.author_enabled('zhanshi' if self.map_provider.currentIndex()==1 else 'lianghapi'))
+        return controls is None or (controls.task is None and controls.store.author_enabled(Companion.provider(self)))
 
     def update_map_keys(self,persist=True):
         self.keys.toggle_key=HOTKEYS[self.hotkey] if self.enabled.isChecked() else 0
@@ -1388,13 +1472,32 @@ class Companion(W.QWidget):
         self.place_gear(target)
         return True
 
+    def scene_id(self):
+        return 'linguang' if getattr(self,'scene',None) is not None and self.scene.currentIndex() == 1 else 'curse'
+
+    def provider(self):
+        return 'zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi'
+
     def refresh_map_provider(self):
-        is_zhanshi = self.map_provider.currentIndex() == 1
+        from .src.context import scene_options
+        is_zhanshi = self.provider() == 'zhanshi'
+        options = scene_options(self.scene_id(), self.provider())
+        self.author_row.setVisible(True)
         self.difficulty_row.setVisible(True)
-        self.party_row.setVisible(not is_zhanshi and self.difficulty.currentIndex() == 1)
-        self.zhanshi_row.setVisible(is_zhanshi)
+        if options is not None:
+            # This author only has one difficulty for this map so far: show it, fixed.
+            difficulties, _ = options
+            self.difficulty.setCurrentIndex(1 if 'nightmare' in difficulties else 0)
+        self.difficulty.setEnabled(options is None)
+        self.party_row.setVisible(options is None and not is_zhanshi and self.difficulty.currentIndex() == 1)
+        self.zhanshi_row.setVisible(options is None and is_zhanshi)
 
     def context(self):
+        from .src.context import scene_options
+        options = scene_options(self.scene_id(), self.provider())
+        if options is not None:
+            difficulties, modes = options
+            return (difficulties[0], modes[0])
         if self.map_provider.currentIndex() == 1:
             return ('hard' if self.difficulty.currentIndex()==0 else 'nightmare','full' if self.zhanshi_route.currentIndex() == 0 else 'speed')
         return ('hard',None) if self.difficulty.currentIndex() == 0 else ('nightmare','solo' if self.party.currentIndex() == 0 else 'duo')
@@ -1404,7 +1507,45 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+
+    def show_module(self, index):
+        """Open the panel on a module tab (0 notes, 1 mini-games)."""
+        self.module_tabs.setCurrentIndex(index)
+        if not self.panel.isVisible():
+            self.toggle_panel()
+
+    def apply_pet_settings(self):
+        """Push the desk-pet preferences into the animation and behaviour."""
+        scale = max(.75, min(1.5, float(self.settings.get('pet_scale', 1.))))
+        if hasattr(self, 'pet_size'):
+            scale = self.pet_size.value()/100
+        self.gear.pet.set_scale(scale)
+        if hasattr(self, 'behavior'):
+            self.behavior.fade = bool(self.pet_fade.isChecked()) if hasattr(self, 'pet_fade') else bool(self.settings.get('pet_fade', True))
+            self.behavior.quiet = bool(self.pet_quiet.isChecked()) if hasattr(self, 'pet_quiet') else bool(self.settings.get('pet_quiet', False))
+            if self.behavior.quiet and self.behavior.sleeping:
+                self.behavior.wake()
+            if not self.behavior.fade:
+                self.gear.pet.opacity_target = 1.
+        self.gear.locked = bool(self.pet_locked.isChecked()) if hasattr(self, 'pet_locked') else bool(self.settings.get('pet_locked', False))
+        self.gear.setCursor(C.Qt.ArrowCursor if self.gear.locked else C.Qt.PointingHandCursor)
+
+    def pet_settings_changed(self):
+        # Keep the panel under the pointer while the mascot changes size.
+        expanded = self.panel.isVisible()
+        anchor_widget = self.panel if expanded else self.gear
+        anchor = anchor_widget.mapToGlobal(C.QPoint(0,0))
+        self.apply_pet_settings()
+        self.adjustSize()
+        self.layout().invalidate()
+        self.layout().activate()
+        if expanded:
+            self.move(self.pos()+anchor-self.panel.mapToGlobal(C.QPoint(0,0)))
+        else:
+            self.place_gear(anchor)
+        self.clamp_to_screen()
+        self.save()
 
     def set_pet_enabled(self, enabled):
         # Preserve the settings panel under the pointer, rather than the differently
@@ -1552,6 +1693,9 @@ class Companion(W.QWidget):
         self.toast.move(x,y)
         self.toast.point_at(anchor+C.QPoint(self.gear.width()//2,24), self.gear.pet.enabled)
         show_floating(self.toast)
+        behavior=getattr(self,'behavior',None)
+        if behavior is not None:
+            behavior.bubble_shown('right' if x > anchor.x() else 'left')
         self.toast_timer.start(TOAST_MS)
 
     def choose_screenshot(self):
@@ -1568,7 +1712,9 @@ class Companion(W.QWidget):
         # 登记表都在里面（见 mapstore）。旧版把自建图写进 LocalAppData 是因为
         # 内置图只读、两者本来就是两棵树；现在没有内置/自建之分，只留一棵，
         # 免得「管理界面改的那份」和「匹配实际读的那份」不是同一份。
-        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self,provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi')
+        if self.scene_id() != 'curse':
+            self.notify('磷光症地图目前由内置图集提供，暂不支持手动录入');return
+        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self,provider=self.provider())
         if dialog.exec()==W.QDialog.Accepted:
             self.cached_candidate=None
             self.stop_worker()
@@ -1666,8 +1812,9 @@ class Companion(W.QWidget):
         size=self.font_size.value() if hasattr(self,'font_size') else int(self.settings.get('font_size',16))
         self.setStyleSheet(STYLE.replace('__FONT__',css_font(self.font_mode)).replace('__ARROW__',ARROW).replace('font-size: 16px;',f'font-size: {size}px;'))
         if hasattr(self,'toast'):
+            # The bubble follows the panel's font and sits two steps smaller.
             self.toast.setStyleSheet('QLabel {color:#dbe5ec;background:transparent;border:0;'
-                                     'font-size:13px;font-family:'+css_font(self.font_mode)+';}')
+                                     f'font-size:{max(12,size-2)}px;font-family:'+css_font(self.font_mode)+';}')
 
     def font_changed(self):
         self.apply_font(self.font_choice.currentData())
@@ -1954,7 +2101,7 @@ class Companion(W.QWidget):
         if self.process is None:
             parent,child = mp.Pipe()
             self.connection = parent
-            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context(),'zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi'),daemon=True)
+            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context(),self.provider(),self.scene_id()),daemon=True)
             self.process.start()
             self.worker_deadline = time.monotonic() + 60
             child.close()
@@ -2037,6 +2184,9 @@ class Companion(W.QWidget):
         if snapshot is not None:
             snapshot[2].stop()
             self._window_snapshot = None
+        if sys.platform == 'win32':
+            Companion.stop_window_watch(self)   # unbound: tests pass a bare namespace
+            self._window_watch_failed=None
         self.force_floor=None
         dismiss=getattr(self,'dismiss_manual_offer',None)
         if dismiss is not None:
@@ -2200,23 +2350,38 @@ class Companion(W.QWidget):
         rect=self.capture_rect()
         results=self.visibility_results
         obstructed=getattr(self,'visibility_obstructed',False)
+        hwnd = getattr(self, '_capture_window_hwnd', None)
+        watch = self.window_watch(hwnd) if sys.platform == 'win32' and hwnd else None
         def inspect():
             visible=None
             try:
                 from .src.map_visibility import inspect_map_ui
-                hwnd = getattr(self, '_capture_window_hwnd', None)
                 if sys.platform == 'win32' and hwnd:
-                    from .window_map_capture import WindowSnapshot
-                    shot = WindowSnapshot(hwnd)
-                    try:
-                        deadline = time.monotonic()+2
-                        while shot.result is None and shot.error is None and time.monotonic()<deadline:
-                            time.sleep(.02)
-                        if shot.result is None:
-                            raise RuntimeError(shot.error or 'window capture timeout')
-                        image = shot.result[0]
-                    finally:
-                        shot.stop()
+                    # A live session re-sends only on change, so any frame it
+                    # holds is current; 10 s without one means it went quiet
+                    # for a bad reason and gets replaced below.
+                    frame = watch.latest(10.0) if watch is not None else None
+                    if frame is None and watch is not None and time.monotonic()-watch.started < 2.5:
+                        # The session is still warming up: no verdict this round
+                        # rather than a second native session next to it.
+                        results.put((token,None));return
+                    if frame is not None:
+                        image = frame[0]
+                    else:
+                        if watch is not None and watch.error is None:
+                            watch.error = 'no frames'   # window_watch() builds a new one next round
+                        trace('window_watch_stale',hwnd=hwnd,error=getattr(watch,'error',None))
+                        from .window_map_capture import WindowSnapshot
+                        shot = WindowSnapshot(hwnd)
+                        try:
+                            deadline = time.monotonic()+2
+                            while shot.result is None and shot.error is None and time.monotonic()<deadline:
+                                time.sleep(.02)
+                            if shot.result is None:
+                                raise RuntimeError(shot.error or 'window capture timeout')
+                            image = shot.result[0]
+                        finally:
+                            shot.stop()
                 else:
                     image = native.capture(rect)
                 evidence=inspect_map_ui(image)
@@ -2239,9 +2404,48 @@ class Companion(W.QWidget):
         else:
             launch()
 
+    def window_watch(self, hwnd):
+        """The long-lived capture session behind the visibility guard, for one window.
+
+        Created on first use while a map is open and dropped in close_map(), so
+        no session outlives the overlay. A failure to start (slot busy, driver)
+        is remembered for that hwnd so the guard falls back to snapshots rather
+        than retrying every 0.8 s.
+        """
+        from .window_map_capture import WindowWatch
+        current=getattr(self,'_window_watch',None)
+        if current is not None and current.hwnd==int(hwnd) and current.active and current.error is None:
+            return current
+        self.stop_window_watch()
+        if getattr(self,'_window_watch_failed',None)==int(hwnd):
+            return None
+        try:
+            watch=WindowWatch(hwnd)
+            watch.started=time.monotonic()
+        except Exception as error:
+            trace('window_watch_unavailable',hwnd=int(hwnd),error=str(error))
+            self._window_watch_failed=int(hwnd)
+            return None
+        self._window_watch=watch
+        return watch
+
+    def stop_window_watch(self):
+        watch=getattr(self,'_window_watch',None)
+        self._window_watch=None
+        if watch is not None:
+            watch.stop()
+
     def tick(self):
         saving=hasattr(self,'power_saving') and self.power_saving.isChecked()
-        if hasattr(self,'timer'):self.timer.setInterval(40 if saving else 20)
+        # 20 ms only while something is in flight (map open, capture, match,
+        # mini-game shortcuts). Idle, the Raw Input edges are already queued in
+        # `pending_edges`, so a 60 ms poll adds at most 40 ms to the first key
+        # and halves the wakeups of a companion that is just sitting there.
+        active=(self.state.opened or getattr(self,'busy',False) or getattr(self,'_capturing',False)
+                or getattr(self,'opening',False) or getattr(self,'pending',None) is not None
+                or (hasattr(self,'minigames') and self.minigames.running()))
+        if hasattr(self,'timer'):
+            self.timer.setInterval((40 if saving else 20) if active else (80 if saving else 60))
         # Capture cancellation must never leave only a tray icon behind.
         if not self.state.opened and not getattr(self,'_shutdown_done',False):
             if getattr(self,'_capture_hidden',False):self.restore_capture_companion()
@@ -2421,7 +2625,8 @@ class Companion(W.QWidget):
                                     self.overlay.display(layer,self.rect_at_capture,self.opacity.value()/100)
                                 trace('overlay_displayed',token=token,map_id=candidate.map_id,floor=candidate.floor,
                                       foreground=win32gui.GetForegroundWindow(),target=self.target)
-                                floor_label='地下室' if candidate.floor==-1 else f'{candidate.floor}F'
+                                from .src.map_admin import floor_label as floor_text
+                                floor_label=floor_text(candidate.floor, Companion.scene_id(self))
                                 self.notify(f'{candidate.map_id.split("/")[-1]} · {floor_label}\n'
                                             f'{message} · {elapsed:.0f} ms')
                             elif details.get('diagnostics',{}).get('manual_offer'):
@@ -2488,6 +2693,8 @@ class Companion(W.QWidget):
         if snapshot is not None:
             snapshot[2].stop()
             self._window_snapshot = None
+        if sys.platform == 'win32':
+            self.stop_window_watch()
         self.dismiss_manual_offer()
         self.gear.exit_timer.stop()
         self.gear.exit_zone.close()

@@ -2,3 +2,4 @@
 from .player import PetAnimation
 from .speech import SpeechBubble
 from .events import reaction
+from .behavior import PetBehavior

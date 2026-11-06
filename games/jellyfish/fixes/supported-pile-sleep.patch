@@ -1,0 +1,135 @@
+diff --git a/js/game.js b/js/game.js
+index 858d84f..f041388 100644
+--- a/js/game.js
++++ b/js/game.js
+@@ -236,6 +236,56 @@
+     return G.items.find(it => it.body === body);
+   }
+ 
++  function settleSupportedPiles(step) {
++    const items=G.items.filter(i=>i.bodyInWorld&&!i.isMerging);
++    const byBody=new Map(items.map(i=>[i.body,i]));
++    const neighbours=new Map(items.map(i=>[i.body,[]]));
++    const anchors=new Set();
++    for(const pair of G.engine.pairs.list) {
++      if(!pair.isActive)continue;
++      const a=pair.bodyA.parent,b=pair.bodyB.parent;
++      if(byBody.has(a)&&byBody.has(b)){neighbours.get(a).push(b);neighbours.get(b).push(a);}
++      if(byBody.has(a)&&b.label==='floor')anchors.add(a);
++      if(byBody.has(b)&&a.label==='floor')anchors.add(b);
++    }
++    for(const item of items) {
++      const body=item.body,radius=Math.max(item.w,item.h)/2;
++      if(Math.hypot(body.position.x-item.previousPose.x,body.position.y-item.previousPose.y)>1.5) {
++        item.stillPose=null;item.settleSample=null;
++      }
++      const sample=item.settleSample||(item.settleSample={time:0,count:0,x:0,y:0,angle:0});
++      sample.time+=step;sample.count++;sample.x+=body.position.x;sample.y+=body.position.y;sample.angle+=body.angle;
++      if(sample.time>=250) {
++        const x=sample.x/sample.count,y=sample.y/sample.count,angle=sample.angle/sample.count;
++        const still=item.stillPose;
++        if(!still||Math.hypot(x-still.x,y-still.y)>1.5
++          ||(!body.circleRadius&&Math.abs(angle-still.angle)*radius>1.5)) {
++          item.stillPose={x,y,angle,elapsed:0};
++        }else still.elapsed+=sample.time;
++        sample.time=0;sample.count=0;sample.x=0;sample.y=0;sample.angle=0;
++      }
++      if(body.isSleeping)anchors.add(body);
++    }
++    const visited=new Set();
++    for(const item of items) {
++      if(visited.has(item.body))continue;
++      const island=[],queue=[item.body];let grounded=false,quiet=true;
++      while(queue.length) {
++        const body=queue.pop();if(visited.has(body))continue;
++        visited.add(body);island.push(body);
++        grounded=grounded||anchors.has(body);
++        quiet=quiet&&(body.isSleeping||(byBody.get(body).stillPose?.elapsed||0)>=1500);
++        for(const next of neighbours.get(body))if(!visited.has(next))queue.push(next);
++      }
++      // Sleep only supported contact islands whose actual poses stay stable.
++      // Incoming impacts and merges still wake them through the normal engine.
++      if(grounded&&quiet)for(const body of island) {
++        if(!body.isSleeping)Sleeping.set(body,true);
++        byBody.get(body).previousPose={x:body.position.x,y:body.position.y,angle:body.angle};
++      }
++    }
++  }
++
+   function enforceContainerBoundary() {
+     const C=CONFIG.CONTAINER;
+     // Normal collision slop is harmless. Only correct an actual wall escape,
+@@ -350,6 +400,7 @@
+     for (const item of G.items) {
+       if (item.bodyInWorld && !item.isMerging && item.body.isSleeping) {
+         Sleeping.set(item.body, false);
++        item.stillPose=null;item.settleSample=null;
+       }
+     }
+     for (const item of [itemA, itemB]) {
+@@ -1386,6 +1437,7 @@
+         Engine.update(G.engine, step);
+         updateMergeAnimations(step);
+         enforceContainerBoundary();
++        settleSupportedPiles(step);
+         G.physicsAccumulator -= step;
+       }
+ 
+diff --git a/tests/physics.cjs b/tests/physics.cjs
+index be2414d..e28d631 100644
+--- a/tests/physics.cjs
++++ b/tests/physics.cjs
+@@ -6,7 +6,7 @@ const vm = require('node:vm');
+ const Matter = require('../js/matter.min.js');
+ const root = path.join(__dirname, '..');
+ 
+-function game(physicsOverrides={}) {
++function game(physicsOverrides={},settlingEnabled=true) {
+   let now = 1;
+   const context = vm.createContext({
+     Matter, console, performance: { now: () => now },
+@@ -22,6 +22,7 @@ function game(physicsOverrides={}) {
+   // Expose closure internals only in this test, and skip canvas drawing.
+   const source = fs.readFileSync(path.join(root, 'js/game.js'), 'utf8')
+     .replace('render(timestamp);', '')
++    .replace('settleSupportedPiles(step);',settlingEnabled?'settleSupportedPiles(step);':'')
+     .replace('  // --- Start ---', `
+       globalThis.testGame = { G, initPhysics, setupCollisionHandler,
+         createJellyfishBody, addJellyfishItem, triggerMerge, dropJellyfish, loop, drawJellyfish };
+@@ -51,7 +52,7 @@ function game(physicsOverrides={}) {
+ 
+ {
+   function propagatedRotation(overrides) {
+-    const api=game(overrides);
++    const api=game(overrides,false);
+     const neighbours=[api.add(1050,1345,4),api.add(1379,1316,6)];
+     const driver=api.add(1200,1333,5);
+     api.advance(5,120);
+@@ -65,7 +66,7 @@ function game(physicsOverrides={}) {
+     }
+     return rotation;
+   }
+-  const original=propagatedRotation({friction:.2,frictionStatic:.8,angularDamping:0});
++  const original=propagatedRotation({friction:.2,frictionStatic:.8,angularDamping:0,allowCircleRotation:true});
+   const reduced=propagatedRotation({});
+   assert.ok(original>.01 && reduced<original*.5,`rotation transmission ${reduced} vs ${original}`);
+   console.log(`Rotation transmission: ${(100*(1-reduced/original)).toFixed(1)}% lower in driven-contact test`);
+@@ -80,9 +81,18 @@ function game(physicsOverrides={}) {
+  [2,1011,1392,1.55],[2,1596,1392,1.5],[2,960,1365,1.6],[3,861,1359,0],[1,1743,1391,0],[1,1006,1393,0],[1,1743,884,0]];
+  for(const [level,x,y,angle] of layout){const i=api.add(x,y,level);Matter.Body.setAngle(i.body,angle);}
+  api.advance(30,120);
++ for(const item of api.G.items)Matter.Sleeping.set(item.body,false);
++ api.advance(10,120);
+  console.log('Screenshot pile awake:',api.G.items.filter(i=>!i.body.isSleeping).map(i=>[i.level,i.body.speed,i.body.angularSpeed,i.body.motion]));
+  const poses=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));api.advance(3,120);
+  assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),poses,'screenshot pile must stop moving');
++ const fallen=api.add(1100,350,2);api.advance(.5,120);
++ assert.ok(fallen.body.position.y>350,'unsupported fish must fall');
++ api.advance(20,120);
++ const after=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));
++ api.advance(5,120);
++ assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),after,'disturbed screenshot pile must settle again');
++
+ }
+ 
+ for (const merge of [false, true, 'floor']) {

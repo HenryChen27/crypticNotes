@@ -29,8 +29,9 @@ def build():
     if record['map_id'] in ids:
      target=maps/'evidence'/record['array'];target.parent.mkdir(exist_ok=True);shutil.copy2(source/'evidence'/record['array'],target)
    # Shared recognition descriptors contain no other author's original images.
+   # They describe 厄运之女 only: other game maps match on the author's own atlas.
    if provider=='zhanshi':
-    canonical=[e for e in manifest['references'] if e.get('provider','lianghapi')=='lianghapi' and e['difficulty']=='nightmare']
+    canonical=[e for e in manifest['references'] if e.get('provider','lianghapi')=='lianghapi' and e['difficulty']=='nightmare' and e.get('scene','curse')=='curse']
     canonical_ids={e['map_id'] for e in canonical};common=maps/'recognition';common.mkdir()
     write_json(common/'floors.json',dict(schema_version=2,references=canonical))
     records=[e for e in index['references'] if e['map_id'] in canonical_ids]

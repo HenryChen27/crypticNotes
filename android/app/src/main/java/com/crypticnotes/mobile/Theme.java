@@ -270,14 +270,16 @@ public final class Theme {
 
         public void setOpacity(float value) { opacity = value; invalidateSelf(); }
 
+        private final Paint paint = new Paint(SCALE);
+
         @Override public void draw(Canvas canvas) {
             Rect b = getBounds();
             if (b.width() <= 0 || b.height() <= 0) return;
             float alpha = Math.max(0f, Math.min(1f, opacity));
-            int save = alpha >= .999f ? -1 : canvas.saveLayerAlpha(null, Math.round(255 * alpha));
+            // One bitmap, so paint alpha equals a layer alpha: no offscreen buffer.
+            paint.setAlpha(Math.round(255 * alpha));
             Bitmap bitmap = chalk(context, b.width(), b.height(), mode, roughness, shape, leftEdge, rightEdge);
-            canvas.drawBitmap(bitmap, null, b, SCALE);
-            if (save >= 0) canvas.restoreToCount(save);
+            canvas.drawBitmap(bitmap, null, b, paint);
         }
 
         @Override public void setAlpha(int alpha) { setOpacity(alpha / 255f); }
@@ -541,8 +543,12 @@ public final class Theme {
             canvas.drawBitmap(chalk(getContext(), track.width(), track.height(), Chalk.DARK, 1f, "rect", true, true),
                     null, track, SCALE);
             Rect filled = new Rect(track.left, track.top, Math.max(track.left + 1, Math.round(knobX)), track.bottom);
-            canvas.drawBitmap(chalk(getContext(), filled.width(), filled.height(), Chalk.NORMAL, 1f, "rect", true, true),
-                    null, filled, SCALE);
+            // One full-width texture, clipped: a texture per knob position
+            // regenerated on every drag event and evicted the button textures.
+            // The clipped right end sits under the knob, so no feather is lost.
+            Bitmap fill = chalk(getContext(), track.width(), track.height(), Chalk.NORMAL, 1f, "rect", true, true);
+            Rect fillSource = new Rect(0, 0, Math.max(1, Math.round(filled.width() * fill.getWidth() / (float) track.width())), fill.getHeight());
+            canvas.drawBitmap(fill, fillSource, filled, SCALE);
             int knob = Math.round(21 * dp(getContext()));
             Rect circle = new Rect(Math.round(knobX - knob / 2f), mid - knob / 2,
                     Math.round(knobX + knob / 2f), mid + knob / 2);

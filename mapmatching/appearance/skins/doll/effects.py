@@ -47,12 +47,15 @@ def symbol(kind):
     return path
 
 
-def paint_effects(p,mood,t,duration,effect_scale=1.):
-    if mood in ('curious', 'idle', 'matching') or not 0<t<1:
+def paint_effects(p,mood,t,duration,effect_scale=1.,avoid=None):
+    """`avoid` is the side a speech bubble occupies ('left'/'right'): symbols
+    then rise on the other side instead of across the text."""
+    if mood in ('curious', 'idle', 'matching', 'doze', 'tilt', 'shift', 'stretch', 'wake', 'land') or not 0<t<1:
         return
     p.save();p.resetTransform();p.scale(effect_scale,effect_scale)
     heart=mood in ('heart','happy')
     seconds=t*duration/1000
+    columns=(87,22) if avoid is None else ((22,40) if avoid=='right' else (87,70))
     # Staggered births: several hearts can coexist and fade independently.
     for i in range(9 if heart else 2):
         age=(seconds-i*(.31 if heart else .45))/(.95 if heart else 1.15)
@@ -60,7 +63,7 @@ def paint_effects(p,mood,t,duration,effect_scale=1.):
             continue
         fade=min(1,age/.15)*(1-age)**.7*min(1,(1-t)/.12)
         p.save()
-        p.translate((87 if i%2==0 else 22)+3*math.sin(age*4+i),36-24*age)
+        p.translate(columns[i%2]+3*math.sin(age*4+i),36-24*age)
         p.rotate((-13 if i%2 else 11)+5*math.sin(age*5))
         scale=(.55+.25*math.sin(math.pi*age)) if heart else .7
         p.scale(scale,scale);p.setOpacity(fade)

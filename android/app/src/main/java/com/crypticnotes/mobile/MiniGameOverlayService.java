@@ -53,7 +53,7 @@ public class MiniGameOverlayService extends Service {
     @Override public void onCreate(){
         super.onCreate();
         activeGameId=getSharedPreferences("mobile",0).getString("active_game","jellyfish");
-        current=this;running=true;hidden=false;
+        current=this;running=true;hidden=false;refreshBadge();
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("mini-game","小游戏",NotificationManager.IMPORTANCE_LOW));
         startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("小游戏正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setContentIntent(PendingIntent.getForegroundService(this,0,new Intent(this,MiniGameOverlayService.class).setAction("show"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).setOngoing(true).build());
@@ -174,16 +174,30 @@ public class MiniGameOverlayService extends Service {
         setHostMuted(true);
         hidden=true;
         if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}
+        // Detaching the view stops drawing, but JS timers and audio kept running
+        // for as long as the game stayed minimised. Pause the page itself.
+        pauseWeb(true);
+        refreshBadge();
     }
     void showGame(){
         handler.removeCallbacks(autoClose);
+        pauseWeb(false);
         setHostMuted(false);
         hidden=false;
         if(shell!=null){
             clampPosition();shell.setVisibility(View.VISIBLE);
             registerWindow();
         }
+        refreshBadge();
     }
+    private boolean webPaused;
+    /** Save paths run JavaScript, so they resume the page first (see saveAndClose). */
+    private void pauseWeb(boolean pause){
+        if(web==null||webPaused==pause)return;
+        webPaused=pause;
+        try{if(pause)web.onPause();else web.onResume();}catch(Exception e){android.util.Log.w("CrypticNotes","Mini-game pause toggle failed",e);}
+    }
+    private static void refreshBadge(){CaptureService capture=CaptureService.current;if(capture!=null)capture.refreshBadge();}
     private void registerWindow(){
         if(windowRegistered||shell==null||windows==null)return;
         windows.addView(shell,params);windowRegistered=true;
@@ -195,10 +209,15 @@ public class MiniGameOverlayService extends Service {
         super.onConfigurationChanged(c);
         if(params!=null){resize();if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);requestHighRefreshRate();}
     }
-    private void requestHighRefreshRate(){
+    /** Package-private so the home screen can re-apply a changed preference. */
+    void requestHighRefreshRate(){
+        if(params==null||shell==null||web==null)return;
         Display display=windows.getDefaultDisplay();Display.Mode current=display.getMode();float rate=display.getRefreshRate();
         for(Display.Mode mode:display.getSupportedModes())if(mode.getPhysicalWidth()==current.getPhysicalWidth()&&mode.getPhysicalHeight()==current.getPhysicalHeight())rate=Math.max(rate,mode.getRefreshRate());
-        if(getSharedPreferences("mobile",0).getBoolean("power_saving",false))rate=Math.min(rate,60f);
+        // 60Hz unless the player opts in: the panel's top mode doubled the
+        // WebView's frame work and was the largest single heat source here.
+        android.content.SharedPreferences prefs=getSharedPreferences("mobile",0);
+        if(prefs.getBoolean("power_saving",false)||!prefs.getBoolean("game_high_refresh",false))rate=Math.min(rate,60f);
         params.preferredRefreshRate=rate;
         if(android.os.Build.VERSION.SDK_INT>=35)web.setRequestedFrameRate(rate);
         if(shell.isAttachedToWindow())windows.updateViewLayout(shell,params);
@@ -209,17 +228,27 @@ public class MiniGameOverlayService extends Service {
         int[] location=new int[2];shell.getLocationOnScreen(location);
         return new android.graphics.Rect(location[0],location[1],location[0]+shell.getWidth(),location[1]+shell.getHeight());
     }
+    /** Scratch for {@link #sceneOverlaySignature}: called every 1.5s, so allocated once. */
+    private android.graphics.Bitmap signatureBitmap;
+    private android.graphics.Canvas signatureCanvas;
+    private final int[] signatureLocation=new int[2];
     int[] sceneOverlaySignature(int screenWidth,int screenHeight){
         if(shell==null||hidden||!shell.isAttachedToWindow())return null;
-        android.graphics.Bitmap bitmap=null;
         try{
-            bitmap=android.graphics.Bitmap.createBitmap(160,90,android.graphics.Bitmap.Config.ARGB_8888);
-            android.graphics.Canvas canvas=new android.graphics.Canvas(bitmap);
-            canvas.scale(160f/screenWidth,90f/screenHeight);
-            int[] location=new int[2];shell.getLocationOnScreen(location);
-            canvas.translate(location[0],location[1]);shell.draw(canvas);
-            int[] result=new int[14400];bitmap.getPixels(result,0,160,0,0,160,90);return result;
-        }catch(Exception e){return null;}finally{if(bitmap!=null)bitmap.recycle();}
+            if(signatureBitmap==null){
+                signatureBitmap=android.graphics.Bitmap.createBitmap(160,90,android.graphics.Bitmap.Config.ARGB_8888);
+                signatureCanvas=new android.graphics.Canvas(signatureBitmap);
+            }
+            signatureBitmap.eraseColor(0);
+            android.graphics.Canvas canvas=signatureCanvas;
+            int save=canvas.save();
+            try{
+                canvas.scale(160f/screenWidth,90f/screenHeight);
+                shell.getLocationOnScreen(signatureLocation);
+                canvas.translate(signatureLocation[0],signatureLocation[1]);shell.draw(canvas);
+            }finally{canvas.restoreToCount(save);}
+            int[] result=new int[14400];signatureBitmap.getPixels(result,0,160,0,0,160,90);return result;
+        }catch(Exception e){return null;}
     }
     private synchronized void write(String json)throws Exception{
         if(json==null||json.length()>1024*1024)throw new IOException("存档过大");JSONObject data=new JSONObject(json);Iterator<String> keys=data.keys();while(keys.hasNext()){String key=keys.next();if(!key.startsWith("jellyfish.")||!(data.get(key) instanceof String))throw new IOException("无效存档");}
@@ -252,17 +281,19 @@ public class MiniGameOverlayService extends Service {
     void saveAndClose(){
         if(closing||web==null)return;closing=true;
         cancelReturn();if(swipeBounds!=null)restoreSwipe();shell.setPreviewing(false);
+        pauseWeb(false);  // the save handshake is JavaScript; a paused page would never answer
         handler.postDelayed(saveTimeout,10000);
         web.evaluateJavascript("(()=>{if(typeof window.__jellyfishHostSave!=='function')return 'bridge_missing';window.__jellyfishHostSave(1);return 'started'})()",result->{if(closing&&"\"bridge_missing\"".equals(result))closeFailed("关闭接口未加载，请更新小游戏后重试");});
     }
     private void closeFailed(String reason){
         handler.removeCallbacks(saveTimeout);closing=false;nextGame=null;closeSessionAfterSave=false;
         if(web!=null)web.evaluateJavascript("window.__jellyfishHostFrozen=false",null);
+        if(hidden)pauseWeb(true);
         android.util.Log.e("CrypticNotes","Mini-game close failed: "+reason);
         // Never steal focus back from the main game after an automatic hide.
         Toast.makeText(this,(hidden?"小游戏保持后台，":"")+"保存未完成："+reason+"。请更新小游戏后重试",Toast.LENGTH_LONG).show();
     }
-    @Override public void onDestroy(){current=null;running=false;hidden=false;cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();
+    @Override public void onDestroy(){current=null;running=false;hidden=false;refreshBadge();if(signatureBitmap!=null){signatureBitmap.recycle();signatureBitmap=null;signatureCanvas=null;}cancelReturn();handler.removeCallbacksAndMessages(null);if(screenReceiver!=null)unregisterReceiver(screenReceiver);if(shell!=null){shell.removeCallbacks(applyLayout);if(windowRegistered){windows.removeViewImmediate(shell);windowRegistered=false;}}if(web!=null){web.removeJavascriptInterface("NativeGame");web.destroy();web=null;}super.onDestroy();
         if(savedExitConfirmed&&closeSessionAfterSave){
             CaptureService capture=CaptureService.current;
             if(capture!=null)capture.stopSelf();

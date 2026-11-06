@@ -145,18 +145,18 @@ class AuthorRouteMatcher:
 
 class LazyAuthorAtlas:
     """Keep metadata for the catalog, and evidence for at most one route atlas."""
-    def __init__(self,index,matcher_type,*,difficulty,mode,provider):
-        from .mapstore import read_manifest
+    def __init__(self,index,matcher_type,*,difficulty,mode,provider,scene='curse'):
+        from .mapstore import read_manifest,entry_scene
         from .reference import Reference
         from .context import SessionContext
-        SessionContext(difficulty,mode,provider)
+        SessionContext(difficulty,mode,provider,scene)
         self.index=index;self.matcher_type=matcher_type
-        self.difficulty=difficulty;self.mode=mode;self.provider=provider
+        self.difficulty=difficulty;self.mode=mode;self.provider=provider;self.scene=scene
         self.floor_hint=None;self.manual_scale_bounds=None
         self.loaded=None;self.loaded_id=None
         self.catalog=[Reference(e['map_id'],e['difficulty'],e['mode'],e['source'],None,None,
             e.get('regions',[]),e.get('exclude_regions',[]),e.get('terrain_id'),e.get('recognition_map_id'))
-            for e in read_manifest(index) if e.get('provider','lianghapi')==provider
+            for e in read_manifest(index) if e.get('provider','lianghapi')==provider and entry_scene(e)==scene
             and e['difficulty']==difficulty and e['mode']==mode]
         if not self.catalog:raise ValueError('当前地图库没有展十地图，请更新地图识别模块')
     @property
@@ -167,7 +167,7 @@ class LazyAuthorAtlas:
         if self.loaded is None or self.loaded_id!=map_id:
             self.loaded=None
             self.loaded=self.matcher_type(self.index,difficulty=self.difficulty,mode=self.mode,
-                provider=self.provider,map_ids=[map_id] if map_id is not None else None)
+                provider=self.provider,map_ids=[map_id] if map_id is not None else None,scene=self.scene)
             self.loaded_id=map_id
         self.loaded.floor_hint=self.floor_hint
         self.loaded.manual_scale_bounds=self.manual_scale_bounds

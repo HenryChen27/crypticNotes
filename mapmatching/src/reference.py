@@ -34,6 +34,7 @@ class Reference:
     exclusions: list[list[int]] = field(default_factory=list)
     terrain_id: str | None = None
     recognition_map_id: str | None = None
+    style: str | None = None      # 'zhanshi-v1': black-background author atlas
 
 
 def build(maps: Path, remove_annotations: bool = True) -> None:
@@ -50,5 +51,5 @@ def build(maps: Path, remove_annotations: bool = True) -> None:
     mapstore.build_index(maps, force=True)
 
 
-def load(directory: Path, *, difficulty: str | None = None, mode: str | None = None, provider: str = 'lianghapi', map_ids=None, include_distance=True) -> list[Reference]:
-    return mapstore.load_references(directory, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids, include_distance=include_distance)
+def load(directory: Path, *, difficulty: str | None = None, mode: str | None = None, provider: str = 'lianghapi', map_ids=None, include_distance=True, scene: str = mapstore.DEFAULT_SCENE) -> list[Reference]:
+    return mapstore.load_references(directory, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids, include_distance=include_distance, scene=scene)

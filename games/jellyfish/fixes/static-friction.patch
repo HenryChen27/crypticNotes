@@ -1,0 +1,38 @@
+diff --git a/js/config.js b/js/config.js
+index 9e350af..1f06c15 100644
+--- a/js/config.js
++++ b/js/config.js
+@@ -35,7 +35,7 @@ const CONFIG = {
+     wallThickness: 40,
+     restitution: 0.08,
+     friction: 0.035,
+-    frictionStatic: 0.1,
++    frictionStatic: 0.8,
+     angularDamping: 0.16, // rotational drag per 60Hz frame, independent of translation
+     frictionAir: 0.02,
+     density: 0.0012,
+diff --git a/tests/physics.cjs b/tests/physics.cjs
+index c275874..be2414d 100644
+--- a/tests/physics.cjs
++++ b/tests/physics.cjs
+@@ -71,6 +71,20 @@ function game(physicsOverrides={}) {
+   console.log(`Rotation transmission: ${(100*(1-reduced/original)).toFixed(1)}% lower in driven-contact test`);
+ }
+ 
++
++{
++ const api=game();
++ const layout=[[9,1200,1234,0],[9,1477,751,.7],[8,1014,970,0],[7,1642,1156,-.2],
++ [6,1650,961,.1],[6,1477,1317,.2],[6,1372,999,.4],[3,1231,937,.5],[3,1699,814,-.2],[3,1512,1053,.2],
++ [4,1459,1156,.2],[4,880,796,0],[4,970,1288,0],[4,1695,1314,0],[5,893,1170,0],
++ [2,1011,1392,1.55],[2,1596,1392,1.5],[2,960,1365,1.6],[3,861,1359,0],[1,1743,1391,0],[1,1006,1393,0],[1,1743,884,0]];
++ for(const [level,x,y,angle] of layout){const i=api.add(x,y,level);Matter.Body.setAngle(i.body,angle);}
++ api.advance(30,120);
++ console.log('Screenshot pile awake:',api.G.items.filter(i=>!i.body.isSleeping).map(i=>[i.level,i.body.speed,i.body.angularSpeed,i.body.motion]));
++ const poses=api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle]));api.advance(3,120);
++ assert.deepEqual(api.G.items.map(i=>JSON.stringify([i.body.position,i.body.angle])),poses,'screenshot pile must stop moving');
++}
++
+ for (const merge of [false, true, 'floor']) {
+   const api = game();
+   const sounds = [];

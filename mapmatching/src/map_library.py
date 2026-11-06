@@ -55,16 +55,19 @@ def validate_name(name):
     return name
 
 
-def _target_for(maps, source, name, difficulty, mode, provider='lianghapi'):
+def library_directory(maps, difficulty, mode, provider='lianghapi', scene='curse'):
+    """`maps/<地图>/<作者>/<难度>[/<路线>]` -- the one layout every map lives in."""
+    directory=Path(maps)/scene/provider/difficulty
+    return directory/mode if mode else directory
+
+
+def _target_for(maps, source, name, difficulty, mode, provider='lianghapi', scene='curse'):
     """Return a safe import destination; compression may change the suffix."""
     suffix=Path(source).suffix.lower()
     if suffix not in SUFFIXES:
         raise ValueError('只支持 PNG / JPG / WebP / BMP 格式的地图')
     if Path(source).resolve().is_relative_to(maps.resolve()):return Path(source).resolve()
-    directory=maps/provider/difficulty
-    if mode:
-        directory=directory/mode
-    return directory/f'{name}{suffix}'
+    return library_directory(maps,difficulty,mode,provider,scene)/f'{name}{suffix}'
 
 
 def _fingerprints(maps):
@@ -74,17 +77,19 @@ def _fingerprints(maps):
             {v for e in entries for v in (e.get('pixel_sha256'), e.get('storage',{}).get('original_pixel_sha256')) if v})
 
 
-def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi'):
+def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi', scene='curse'):
     root=Path(root).resolve()
-    SessionContext(difficulty,mode,provider)
+    SessionContext(difficulty,mode,provider,scene)
     name=validate_name(name)
     maps=mapstore.maps_dir(root)
     source=Path(source).resolve()
     original=read_image(source)
     h,w=original.shape[:2]
     validate_regions(regions,w,h,difficulty)
+    # 厄运之女 keeps its historical ids (identity, not path); other maps use the full path form.
     map_id=f'{difficulty}/'+(f'{mode}/' if mode else '')+name
     if provider == 'zhanshi':map_id='zhanshi/'+map_id
+    if scene != 'curse':map_id=f'{scene}/{provider}/{difficulty}/'+(f'{mode}/' if mode else '')+name
     library=mapstore.live_entries(maps)
     disabled=mapstore.read_disabled(maps)
     if any(e['map_id']==map_id for e in library+disabled):
@@ -97,10 +102,9 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
         raise ValueError('这个模式下已有相同图片的地图，请勿重复录入')
     encoded,suffix,pixels,ratios=compact(original,raw,source.suffix)
     converted=encoded!=raw
-    target=_target_for(maps,source,name,difficulty,mode,provider)
+    target=_target_for(maps,source,name,difficulty,mode,provider,scene)
     if converted:
-        directory=maps/provider/difficulty
-        if mode: directory=directory/mode
+        directory=library_directory(maps,difficulty,mode,provider,scene)
         target=directory/f'{name}{suffix}'
         # Never overwrite a user's input, even if it is already inside maps/.
         if target.resolve()==source:
@@ -139,6 +143,7 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi')
         if converted:
             entry['storage']=dict(policy=POLICY,original_size=[w,h],original_sha256=digest,original_pixel_sha256=pixel,resize=list(ratios))
         entry['provider']=provider
+        if scene != 'curse':entry['scene']=scene
         if provider == 'zhanshi':entry['reference_style']='zhanshi-v1'
         recognition_path=None
         try:

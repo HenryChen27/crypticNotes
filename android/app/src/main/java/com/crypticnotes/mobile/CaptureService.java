@@ -251,10 +251,37 @@ public class CaptureService extends Service {
     private long checkingSince = 0;
     private boolean manualRetry = false;
     private static final class PendingMatch {
-        final byte[] frame; final int[] pixels; final int floor, generation, serial;
-        PendingMatch(byte[] frame,int[] pixels,int floor,int generation,int serial){
+        final RawFrame frame; final int[] pixels; final int floor, generation, serial;
+        PendingMatch(RawFrame frame,int[] pixels,int floor,int generation,int serial){
             this.frame=frame;this.pixels=pixels;this.floor=floor;this.generation=generation;this.serial=serial;
         }
+    }
+    /**
+     * A frame as the Bitmap holds it: RGBA bytes plus the row stride.
+     *
+     * This is what the PNG round trip used to carry to Python and back out of
+     * {@code cv2.imdecode}. PNG is lossless, so the matcher sees the same bytes;
+     * what is gone is a full-frame encode on this side and a decode on the other,
+     * on every gate heartbeat and every match.
+     */
+    static final class RawFrame {
+        final byte[] bytes; final int width, height, stride;
+        RawFrame(byte[] bytes,int width,int height,int stride){this.bytes=bytes;this.width=width;this.height=height;this.stride=stride;}
+    }
+    /** Copies the pixels out; the caller still owns (and recycles) the Bitmap. */
+    private static RawFrame rawFrame(Bitmap bitmap){
+        ByteBuffer buffer=ByteBuffer.allocate(bitmap.getRowBytes()*bitmap.getHeight());
+        bitmap.copyPixelsToBuffer(buffer);
+        return new RawFrame(buffer.array(),bitmap.getWidth(),bitmap.getHeight(),bitmap.getRowBytes());
+    }
+    /** Only for the opt-in diagnostic dump, which wants a viewable file. */
+    private static byte[] png(RawFrame frame){
+        Bitmap bitmap=Bitmap.createBitmap(frame.width,frame.height,Bitmap.Config.ARGB_8888);
+        try{
+            bitmap.copyPixelsFromBuffer(ByteBuffer.wrap(RgbaRows.packed(ByteBuffer.wrap(frame.bytes),frame.width,frame.height,frame.stride).array()));
+            ByteArrayOutputStream output=new ByteArrayOutputStream();
+            return bitmap.compress(Bitmap.CompressFormat.PNG,100,output)?output.toByteArray():null;
+        }catch(Exception e){return null;}finally{bitmap.recycle();}
     }
     private PendingMatch pendingLatestMatch;
     private boolean startPendingMatch(){
@@ -416,8 +443,8 @@ public class CaptureService extends Service {
         try{inspect.execute(()->{
             boolean visible=false;
             try{
-                byte[] bytes=encode(frame);
-                if(bytes!=null)visible=new JSONObject(bridge.callAttr("inspect",bytes,excluded).toString()).optBoolean("visible");
+                RawFrame bytes=encode(frame);
+                if(bytes!=null)visible=new JSONObject(bridge.callAttr("inspect",bytes.bytes,excluded,bytes.width,bytes.height,bytes.stride).toString()).optBoolean("visible");
             }catch(Exception error){android.util.Log.w("CrypticNotes","Idle controls inspection failed",error);}
             final boolean opened=visible;
             main.post(()->{
@@ -499,6 +526,8 @@ public class CaptureService extends Service {
         if(Build.VERSION.SDK_INT>=34)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
     }
     boolean hasProjection(){return projection!=null;}
+    /** The ball shows the game icon while a mini-game is hidden; redraw when that changes. */
+    void refreshBadge(){if(badgeEmblem!=null)badgeEmblem.invalidate();}
     void openGame(String id){
         if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         gameOnly=true;generation++;clearOverlay();setSpinning(false);updateCaptureOutput();refreshTapRegion();
@@ -560,7 +589,11 @@ public class CaptureService extends Service {
             android.util.Log.i("CrypticNotes", "Overlay attached; initialization started");
             setStatus(S_IDLE, preparationText);
             String difficulty = intent.getStringExtra("difficulty"), mode = intent.getStringExtra("mode");
-            final String provider=getSharedPreferences("mobile",0).getString("map_provider","lianghapi");
+            String requestedScene=intent.getStringExtra("scene");
+            if(requestedScene!=null)getSharedPreferences("mobile",0).edit().putString("scene",requestedScene).apply();
+            scene=MapLibraryChoice.sceneOf(getSharedPreferences("mobile",0));
+            final String provider=MapLibraryChoice.providerOf(getSharedPreferences("mobile",0));
+            final String startScene=scene;
             if(provider.equals("lianghapi"))getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
             compute.execute(() -> {
                 try {
@@ -569,7 +602,7 @@ public class CaptureService extends Service {
                     MatchingModuleStore.python(this);
                     bridge = Python.getInstance().getModule("mobile_bridge");
                     preparationStatus("正在准备地图特征…");
-                    int mapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider).toInt();
+                    int mapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider, startScene).toInt();
                     loadedMapCount=mapCount;
                     android.util.Log.i("CrypticNotes","Recognition library loaded: maps="+mapCount+", difficulty="+difficulty+", mode="+mode);
                     if(mapCount==0)throw new IOException("当前难度或模式未加载到地图，请检查地图库下载是否完成");
@@ -1397,33 +1430,34 @@ public class CaptureService extends Service {
                 int viewedFloor=0;
                 if(!verifyOnly){
                     try {
-                        byte[] header=encodeFloorHeader(bitmap);
-                        if(header!=null)viewedFloor=bridge.callAttr("read_floor_header",header,sourceWidth,sourceHeight).toInt();
+                        RawFrame header=encodeFloorHeader(bitmap);
+                        if(header!=null)viewedFloor=bridge.callAttr("read_floor_header",header.bytes,sourceWidth,sourceHeight,header.width,header.height,header.stride).toInt();
                     }catch(Exception error){android.util.Log.w("CrypticNotes","Floor header reading failed",error);}
                 }
                 if(captureSerial!=matchRequests.get()){
                     bitmap.recycle();main.post(()->{checking=false;if(!destroyed)repoll(0);});return;
                 }
                 final int detectedFloor=viewedFloor;
-                byte[] frame = encode(bitmap);      // takes ownership, off the main thread
+                RawFrame frame = encode(bitmap);      // takes ownership, off the main thread
                 boolean ok = false, visible = false;
                 if (frame != null) {
                     try {
-                        String inspection=bridge.callAttr("inspect", frame, excluded).toString();
+                        String inspection=bridge.callAttr("inspect", frame.bytes, excluded, frame.width, frame.height, frame.stride).toString();
                         lastGateResult=inspection;
                         visible = new JSONObject(inspection).getBoolean("visible");
                         if(explicitAttempt)android.util.Log.i("CrypticNotes","Manual screenshot inspection: "+inspection+", source="+sourceWidth+"x"+sourceHeight);
                         if(new File(getFilesDir(),"recognition-diagnostic.flag").isFile()){
                             android.util.Log.i("CrypticNotes","Capture inspection: "+inspection+", excluded="+java.util.Arrays.toString(excluded)+", freshFrames="+freshCaptureCount);
                             File diagnostic=new File(getCacheDir(),"recognition-frame.png");
-                            if(!diagnostic.exists())try(FileOutputStream saved=new FileOutputStream(diagnostic)){saved.write(frame);}
+                            byte[] encoded=diagnostic.exists()?null:png(frame);
+                            if(encoded!=null)try(FileOutputStream saved=new FileOutputStream(diagnostic)){saved.write(encoded);}
                             try(FileOutputStream saved=new FileOutputStream(new File(getCacheDir(),"recognition-inspection.json"))){saved.write((inspection+"\n"+java.util.Arrays.toString(excluded)).getBytes(java.nio.charset.StandardCharsets.UTF_8));}
                         }
                         ok = true;
                     } catch (Exception ignored) {
                     }
                 }
-                final byte[] bytes = frame;
+                final RawFrame bytes = frame;
                 final boolean passed = visible, ran = ok;
                 main.post(() -> {
                     checking = false;
@@ -1498,27 +1532,25 @@ public class CaptureService extends Service {
      * PNG encode on the main thread is a long stall right where the next hide
      * window needs the main thread responsive.
      */
-    private static byte[] encodeFloorHeader(Bitmap bitmap){
+    private static RawFrame encodeFloorHeader(Bitmap bitmap){
         int w=bitmap.getWidth(),left=(int)(.55*w),right=(int)(.94*w);
         Bitmap header=Bitmap.createBitmap(bitmap,left,0,right-left,Math.max(1,bitmap.getHeight()/4));
         try{
-            ByteArrayOutputStream output=new ByteArrayOutputStream();
-            return header.compress(Bitmap.CompressFormat.PNG,100,output)?output.toByteArray():null;
-        }finally{if(header!=bitmap)header.recycle();}
+            return rawFrame(header);
+        }catch(Exception e){return null;}finally{if(header!=bitmap)header.recycle();}
     }
 
-    private static byte[] encode(Bitmap bitmap) {
+    /** Downscale to the matching width and hand the pixels over; releases the Bitmap. */
+    private static RawFrame encode(Bitmap bitmap) {
         try {
             Bitmap source = bitmap;
             if (bitmap.getWidth() > 1440) {
                 source = Bitmap.createScaledBitmap(bitmap, 1440,
                         Math.round(bitmap.getHeight() * 1440f / bitmap.getWidth()), true);
             }
-            ByteArrayOutputStream output = new ByteArrayOutputStream();
-            byte[] bytes = source.compress(Bitmap.CompressFormat.PNG, 100, output)
-                    ? output.toByteArray() : null;
+            RawFrame frame = rawFrame(source);
             if (source != bitmap) source.recycle();
-            return bytes;
+            return frame;
         } catch (Exception e) {
             return null;
         } finally {
@@ -1543,7 +1575,7 @@ public class CaptureService extends Service {
     private boolean mapPanelOpen = false;
     private volatile int memoryEpoch = 0;
 
-    private void runMatch(byte[] frame, int[] framePixels, int viewedFloor) {
+    private void runMatch(RawFrame frame, int[] framePixels, int viewedFloor) {
         busy = true;
         busySince = SystemClock.elapsedRealtime();
         lastMatch = busySince;
@@ -1553,7 +1585,7 @@ public class CaptureService extends Service {
         final int token = generation;
         final int requestEpoch = memoryEpoch;
         final int requestSerial = matchRequests.get();
-        android.util.Log.i("CrypticNotes","Recognition started: token="+token+", frameBytes="+frame.length+", capture="+width+"x"+height+", viewedFloor="+viewedFloor);
+        android.util.Log.i("CrypticNotes","Recognition started: token="+token+", frame="+frame.width+"x"+frame.height+", capture="+width+"x"+height+", viewedFloor="+viewedFloor);
         final int forceFloor=pendingForceFloor;
         pendingForceFloor=0; // Consent is consumed by exactly this request.
         compute.execute(() -> {
@@ -1561,11 +1593,14 @@ public class CaptureService extends Service {
             JSONObject offer=null;
             String label = "识别失败，请重试";
             try {
-                File file = new File(getCacheDir(), "overlay.png");
+                File file = new File(getCacheDir(), "overlay.rgba");
                 // gated=True: capture() already confirmed the panel is open on
                 // this exact frame, so the adapter need not re-run the gate.
+                // The overlay comes back as premultiplied RGBA, the layout the
+                // Bitmap uses in memory, instead of a PNG to decode.
                 JSONObject result = new JSONObject(
-                        bridge.callAttr("match", frame, file.toString(), true, false, token, forceFloor, viewedFloor, matchRequests, requestSerial).toString());
+                        bridge.callAttr("match", frame.bytes, file.toString(), true, false, token, forceFloor, viewedFloor, matchRequests, requestSerial,
+                                frame.width, frame.height, frame.stride, "raw").toString());
                 if (requestSerial != matchRequests.get() || result.optBoolean("cancelled")) {
                     android.util.Log.i("CrypticNotes", "Recognition superseded: request="+requestSerial);
                     main.post(() -> { busy=false; if(!startPendingMatch() && !destroyed)repoll(0); });
@@ -1582,7 +1617,7 @@ public class CaptureService extends Service {
                         boolean committed=bridge.callAttr("commit_match", token).toBoolean();
                         if(committed) android.util.Log.i("CrypticNotes", "Recognition memory committed: token="+token+", epoch="+requestEpoch+", map="+result.optString("map_id")+", floor="+result.optInt("floor"));
                     }
-                    layer = BitmapFactory.decodeFile(file.toString());
+                    layer = readLayer(file, result.optInt("layer_width"), result.optInt("layer_height"));
                 }
                 if (offer != null) android.util.Log.i("CrypticNotes", "Cross-floor consent offered: "+offer);
                 String message = result.optString("message");
@@ -1645,6 +1680,25 @@ public class CaptureService extends Service {
         });
     }
 
+    /** Premultiplied RGBA written by the adapter -> the overlay Bitmap, with no codec in between. */
+    private static Bitmap readLayer(File file, int width, int height) {
+        if (width <= 0 || height <= 0) return BitmapFactory.decodeFile(file.toString());
+        byte[] bytes;
+        try (FileInputStream in = new FileInputStream(file)) {
+            bytes = new byte[width * height * 4];
+            int read = 0;
+            while (read < bytes.length) {
+                int n = in.read(bytes, read, bytes.length - read);
+                if (n < 0) break;
+                read += n;
+            }
+            if (read != bytes.length) return null;
+        } catch (IOException e) { return null; }
+        Bitmap layer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+        layer.copyPixelsFromBuffer(ByteBuffer.wrap(bytes));
+        return layer;
+    }
+
     /**
      * "南-三缺一门 · 1F · 请核对路口" -- one short line.
      *
@@ -1652,14 +1706,16 @@ public class CaptureService extends Service {
      * caveat that the fit is provisional is carried by the message itself, which
      * the adapter keeps to a few characters.
      */
-    private static String describe(JSONObject result, String message) {
+    private String describe(JSONObject result, String message) {
         String name = result.optString("name");
         if (name.isEmpty()) name = result.optString("map_id");
         StringBuilder label = new StringBuilder(name);
         if (result.has("floor") && !result.isNull("floor")) {
             int floor = result.optInt("floor");
-            label.append(" · ").append(floor == 1 ? "1F" : floor == 2 ? "2F"
-                    : floor == -1 ? "地下室" : floor + "F");
+            // 磷光症 is all basements, named 负一/二/三层 in the game.
+            String text = scene.equals("linguang") && floor < 0 ? "负" + (-floor) + "层"
+                    : floor == 1 ? "1F" : floor == 2 ? "2F" : floor == -1 ? "地下室" : floor + "F";
+            label.append(" · ").append(text);
         }
         if (!message.isEmpty()) label.append(" · ").append(message);
         return label.toString();
@@ -1727,11 +1783,10 @@ public class CaptureService extends Service {
             Image.Plane plane = image.getPlanes()[0];
             ByteBuffer bytes = plane.getBuffer();
             bytes.rewind();
-            int paddedWidth = plane.getRowStride() / plane.getPixelStride();
-            Bitmap padded = Bitmap.createBitmap(paddedWidth, height, Bitmap.Config.ARGB_8888);
-            padded.copyPixelsFromBuffer(bytes);
-            Bitmap full = Bitmap.createBitmap(padded, 0, 0, width, height);
-            if (full != padded) padded.recycle();
+            // Pack the valid rows straight into a tight Bitmap: one copy instead
+            // of a padded full-screen Bitmap plus a cropped duplicate.
+            Bitmap full = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+            full.copyPixelsFromBuffer(RgbaRows.packed(bytes, width, height, plane.getRowStride()));
             int[] sampled=signature(full);
             latestViewport.remember(reader,sampled);
             if(overlay==null||overlay.getVisibility()!=View.VISIBLE){
@@ -1868,8 +1923,8 @@ public class CaptureService extends Service {
         panel.addView(applied);
         Theme.ChalkChoice.Listener apply = i -> {
             boolean nightmare = difficulty.getIndex() == 1;
-            difficultyRow.setVisibility(View.VISIBLE);
-            party.setVisibility(!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
+            difficultyRow.setVisibility(libraryChoice.isLinguang() ? View.GONE : View.VISIBLE);
+            party.setVisibility(!libraryChoice.isLinguang()&&!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
             routeRow.setVisibility(party.getVisibility());
             applyRecognition(libraryChoice.difficulty(nightmare ? "nightmare" : "hard"),
                     libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"), applied);
@@ -1877,7 +1932,7 @@ public class CaptureService extends Service {
         difficulty.setListener(apply);
         party.setListener(apply);
         libraryChoice.changed=()->apply.onChanged(0);
-        difficultyRow.setVisibility(View.VISIBLE);
+        difficultyRow.setVisibility(libraryChoice.isLinguang() ? View.GONE : View.VISIBLE);
         if(libraryChoice.isZhanshi())routeRow.setVisibility(View.GONE);
 
         // Overlay opacity. Live, because it is a display setting and the whole
@@ -1983,7 +2038,9 @@ public class CaptureService extends Service {
      */
     private void applyRecognition(String difficulty, String mode, TextView applied) {
         if(gameOnly||bridge==null){applied.setText("小游戏模式不进行地图识别");return;}
-        final String provider=getSharedPreferences("mobile",0).getString("map_provider","lianghapi");
+        scene=MapLibraryChoice.sceneOf(getSharedPreferences("mobile",0));
+        final String provider=MapLibraryChoice.providerOf(getSharedPreferences("mobile",0));
+        final String applyScene=scene;
         getSharedPreferences("mobile",0).edit().putString("difficulty",difficulty).apply();
         if(provider.equals("lianghapi"))getSharedPreferences("mobile", 0).edit().putString("mode", mode).apply();
         final int token = ++applyToken;
@@ -1994,7 +2051,7 @@ public class CaptureService extends Service {
         compute.execute(() -> {
             String error = null;
             try {
-                loadedMapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider).toInt();
+                loadedMapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider, applyScene).toInt();
             } catch (Exception e) {
                 error = e.getMessage();
             }
@@ -2013,7 +2070,11 @@ public class CaptureService extends Service {
         });
     }
 
-    private static String difficultyLabel(String difficulty, String mode) {
+    /** Which game map the matcher was built for; see MapLibraryChoice. */
+    private volatile String scene="curse";
+
+    private String difficultyLabel(String difficulty, String mode) {
+        if(scene.equals("linguang")) return "磷光症 · "+("nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"凉哈皮 · 困难");
         return (difficulty.equals("nightmare") ? "噩梦" : "困难")
                 + " · " + (mode.equals("full") ? "展十全棺" : mode.equals("speed") ? "展十速刷" : mode.equals("duo") ? "多人路线" : "单人路线");
     }

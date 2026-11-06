@@ -76,7 +76,7 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
         raise ValueError('Invalid pose')
     from .map_style import floor_selection
     alpha = floor_selection(original.shape,region)*255
-    if reference.map_id.startswith('zhanshi/'):
+    if getattr(reference, 'style', None) == 'zhanshi-v1' or reference.map_id.startswith('zhanshi/'):
         # Same black-pixel test, using OpenCV's vectorized implementation.
         # A NumPy channel reduction on a 4K atlas dominated render time.
         black=cv2.inRange(original[:,:,:3],(0,0,0),(24,24,24))
@@ -135,7 +135,13 @@ def composite(screenshot, layer, opacity=.30):
     return np.rint(screenshot*(1-alpha)+layer[:,:,:3]*alpha).clip(0,255).astype(np.uint8)
 
 
-def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floor_hint=None):
+def floor_tabs_readable(matcher):
+    """The tab reader knows the 1/2/-1 buttons of 厄运之女 only. A library whose
+    floors are all basements (磷光症: -1/-2/-3) would get a misread '2' for '-2'."""
+    return any(region['floor'] in (1, 2) for ref in matcher.references for region in ref.regions)
+
+
+def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floor_hint=None, floor_tabs=True):
     """Try one-map registration first, then reacquire only when it fails.
 
     The cache is a provisional identity, never an old screen-space transform.
@@ -155,7 +161,10 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
                 None,'未确认地图已展开，已停止叠图')
     from .matcher import MapMatcher
     from .floor_tabs import inspect_floor_tabs
-    floor_reading = inspect_floor_tabs(pixels) if floor_hint is None else dict(floor=floor_hint, reason='caller_floor_tabs')
+    if not floor_tabs:
+        floor_reading = dict(floor=None, reason='no_tab_reader_for_this_library')
+    else:
+        floor_reading = inspect_floor_tabs(pixels) if floor_hint is None else dict(floor=floor_hint, reason='caller_floor_tabs')
     if hasattr(matcher, 'floor_hint'):
         matcher.floor_hint = floor_reading['floor']
         if isinstance(matcher, MultiplayerFallback):
@@ -301,7 +310,7 @@ class SharedTerrainMatcher:
         return self.primary.match(pixels)
 
 
-def worker(connection, root, difficulty, mode, provider='lianghapi'):
+def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curse'):
     """Persistent, event-driven process. Parent can terminate active work."""
     from pathlib import Path
     import time
@@ -322,22 +331,27 @@ def worker(connection, root, difficulty, mode, provider='lianghapi'):
         if not (index/'index.json').exists():
             from .reference import build
             build(index)
-        if provider == 'zhanshi' and difficulty == 'nightmare':
+        if scene != 'curse':
+            # Another game map has no second author's atlas to borrow identity
+            # from and no solo/duo pairing: one plain matcher over its own atlases.
+            matcher = MapMatcher(index, difficulty=difficulty, mode=mode, provider=provider, scene=scene)
+        elif provider == 'zhanshi' and difficulty == 'nightmare':
             from .author_matcher import LazyAuthorAtlas
             matcher=LazyAuthorAtlas(index,MapMatcher,difficulty=difficulty,mode=mode,provider=provider)
         else:
             matcher = MapMatcher(index, difficulty=difficulty, mode=mode, provider=provider)
-        if provider == 'zhanshi' and difficulty == 'nightmare':
+        if scene == 'curse' and provider == 'zhanshi' and difficulty == 'nightmare':
             from .author_matcher import AuthorRouteMatcher,terrain_recognizer
             recognizer=terrain_recognizer(index,MapMatcher)
             matcher=AuthorRouteMatcher(matcher,recognizer)
-        if difficulty == 'nightmare' and provider == 'lianghapi':
+        if scene == 'curse' and difficulty == 'nightmare' and provider == 'lianghapi':
             other_mode = 'duo' if mode == 'solo' else 'solo'
             matcher = SharedTerrainMatcher(matcher,
                 lambda: MapMatcher(index, difficulty='nightmare', mode=other_mode))
-        if difficulty == 'nightmare' and mode == 'duo':
+        if scene == 'curse' and difficulty == 'nightmare' and mode == 'duo':
             matcher = MultiplayerFallback(
                 matcher, lambda: MapMatcher(index, difficulty='nightmare', mode='solo'))
+        floor_tabs = floor_tabs_readable(matcher)
         connection.send(('ready', None))
         while True:
             request = connection.recv()
@@ -354,7 +368,7 @@ def worker(connection, root, difficulty, mode, provider='lianghapi'):
                 message='画面或楼层已变化，请重新识别后确认'
             else:
                 result,candidate,message = match_with_cache(matcher,pixels,cached,
-                    require_map_ui=options.get('source') == 'screen')
+                    require_map_ui=options.get('source') == 'screen', floor_tabs=floor_tabs)
             centered_offer = None
             confirmed=options.get('confirmed_candidate')
             if confirmed is not None and options.get('force_floor') is None:

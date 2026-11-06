@@ -16,6 +16,12 @@ def templates():
             for name in ('close','overview')}
 
 
+@lru_cache(maxsize=32)
+def scaled_template(name, scale):
+    """The templates never change, so each scaled copy is computed once per process."""
+    return cv2.resize(templates()[name],None,fx=scale,fy=scale)
+
+
 def inspect_map_ui(pixels):
     h,w = pixels.shape[:2]
     gray = cv2.cvtColor(pixels[:,:,:3],cv2.COLOR_BGR2GRAY)
@@ -28,7 +34,7 @@ def inspect_map_ui(pixels):
         roi = gray[:int(h*.40),int(w*.65):] if name=='close' else gray[int(h*.65):,int(w*.55):]
         best = 0.
         for scale in (.65,.75,.85,.925,1.,1.075,1.15,1.3,1.5):
-            sample = cv2.resize(t,None,fx=scale,fy=scale)
+            sample = scaled_template(name,scale)
             if min(sample.shape)<3 or any(a>b for a,b in zip(sample.shape,roi.shape)):
                 continue
             best = max(best,float(cv2.minMaxLoc(cv2.matchTemplate(roi,sample,cv2.TM_CCOEFF_NORMED))[1]))

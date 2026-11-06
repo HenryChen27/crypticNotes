@@ -46,6 +46,7 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     var saveDeadline:DispatchWorkItem?
     var commands:Timer?
     var lastCommand=""
+    var lastAudio:String?
     var masterMuted=CommandLine.arguments.contains("--muted")
     var fullButton:WindowControl!
     func publishState(_ hidden:Bool){view?.evaluateJavaScript("window.__jellyfishSetMuted&&window.__jellyfishSetMuted(\(hidden || masterMuted))",completionHandler:nil);try? "{\"hidden\":\(hidden)}".write(to:profile.appendingPathComponent("window-state.json"),atomically:true,encoding:.utf8)}
@@ -60,6 +61,10 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         if let source=try? String(contentsOf:bridge,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"window.__jellyfishHostPost=m=>webkit.messageHandlers.game.postMessage(m);"+source,injectionTime:.atDocumentStart,forMainFrameOnly:true))
         }
+        let animation=Bundle.main.bundleURL.deletingLastPathComponent().appendingPathComponent("host-animation-cache.js")
+        if let source=try? String(contentsOf:animation,encoding:.utf8){
+            config.userContentController.addUserScript(WKUserScript(source:"window.__crypticPowerSaving=\(CommandLine.arguments.contains("--power-saving"));"+source,injectionTime:.atDocumentStart,forMainFrameOnly:true))
+        }
         if let saved=try? String(contentsOf:profile.appendingPathComponent("local-storage.json"),encoding:.utf8),
            let encoded=try? JSONSerialization.data(withJSONObject:[saved]),let literal=String(data:encoded,encoding:.utf8){
             config.userContentController.addUserScript(WKUserScript(source:"try{Object.entries(JSON.parse(\(literal)[0])).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}",injectionTime:.atDocumentStart,forMainFrameOnly:true))
@@ -67,6 +72,7 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
         if let audio=try? String(contentsOf:profile.appendingPathComponent("audio.json"),encoding:.utf8),
            let encoded=try? JSONSerialization.data(withJSONObject:[audio]),
            let literal=String(data:encoded,encoding:.utf8){
+            lastAudio=audio
             config.userContentController.addUserScript(WKUserScript(source:"try{localStorage.setItem('jellyfish.audioSettings',\(literal)[0])}catch(e){}",injectionTime:.atDocumentStart,forMainFrameOnly:true))
         }
         let area=NSScreen.main!.visibleFrame
@@ -158,8 +164,9 @@ final class Host:NSObject,NSApplicationDelegate,WKNavigationDelegate,NSWindowDel
     }
     func webViewDidClose(_ webView:WKWebView){close()}
     func saveAudio(){
-        view.evaluateJavaScript("localStorage.getItem('jellyfish.audioSettings')"){result,error in
-            if let text=result as? String,text.utf8.count<4096{try? text.write(to:profile.appendingPathComponent("audio.json"),atomically:true,encoding:.utf8)}
+        view.evaluateJavaScript("localStorage.getItem('jellyfish.audioSettings')"){[weak self] result,error in
+            guard let self=self,let text=result as? String,text.utf8.count<4096,text != self.lastAudio else{return}
+            if (try? text.write(to:profile.appendingPathComponent("audio.json"),atomically:true,encoding:.utf8)) != nil{self.lastAudio=text}
         }
     }
     func windowWillClose(_ notification:Notification){timer?.invalidate();commands?.invalidate();view.stopLoading();NSApp.terminate(nil)}

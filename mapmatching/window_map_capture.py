@@ -5,7 +5,8 @@ import time
 import cv2
 
 _capture_denied=False
-_capture_slots=threading.BoundedSemaphore(2)
+# Two short snapshots may overlap with one long-lived WindowWatch (map open).
+_capture_slots=threading.BoundedSemaphore(3)
 
 def capture_denied(error):
     text=str(error).lower()
@@ -35,7 +36,8 @@ def normalize_frame(pixels, rect):
     w, h = rect[2:]
     if w < 100 or h < 100:
         raise ValueError('游戏窗口过小')
-    pixels = pixels[:, :, :3].copy()
+    # Same bytes as the strided numpy copy, several times faster on a full frame.
+    pixels = cv2.cvtColor(pixels, cv2.COLOR_BGRA2BGR)
     if pixels.shape[:2] != (h, w):
         pixels = cv2.resize(pixels, (w, h), interpolation=cv2.INTER_LINEAR)
     return pixels
@@ -139,6 +141,106 @@ class WindowSnapshot:
     def stop(self):
         # Never join a native capture thread on the Qt GUI thread.
         self._stop_requested.set()
+
+
+class WindowWatch:
+    """One long-lived capture session that keeps the latest frame of a window.
+
+    The visibility guard used to open a new Windows.Graphics.Capture session
+    (D3D device, frame pool, native thread, release thread) every 0.8 s for
+    the whole time a map was open, and tear it down after one frame. This keeps
+    a single session and lets the library throttle delivery; readers take the
+    most recent frame. Same window, same pixels, no per-check setup.
+    """
+    def __init__(self, hwnd, interval_ms=700):
+        ensure_capture_allowed()
+        from windows_capture import WindowsCapture
+        if not _capture_slots.acquire(blocking=False):raise RuntimeError('截图资源仍在回收，请稍后重试')
+        self.hwnd=int(hwnd)
+        self.lock=threading.Lock()
+        self.frame=None
+        self.frame_at=0.
+        self.error=None
+        self.active=True
+        self.control=None
+        try:
+            self.capture=WindowsCapture(window_hwnd=self.hwnd,cursor_capture=False,draw_border=False,
+                                        secondary_window=False,minimum_update_interval=int(interval_ms))
+        except Exception as exc:
+            _capture_slots.release()
+            if capture_denied(exc):
+                global _capture_denied
+                _capture_denied=True
+                raise PermissionError('截图授权未完成，请允许权限后点击重新识别') from exc
+            raise
+
+        @self.capture.event
+        def on_frame_arrived(frame, control):
+            if not self.active:
+                control.stop();return
+            try:
+                rect=frame_rect(self.hwnd)
+                pixels=normalize_frame(frame.frame_buffer,rect)
+                with self.lock:
+                    self.frame=(pixels,rect)
+                    self.frame_at=time.monotonic()
+            except Exception as exc:
+                self.error=str(exc)
+
+        @self.capture.event
+        def on_closed():
+            self.error='游戏窗口已关闭'
+
+        try:
+            self.control=self.capture.start_free_threaded()
+        except Exception as exc:
+            self.active=False
+            self.capture.frame_handler=None;self.capture.closed_handler=None;self.capture.capture=None
+            self.capture=None;_capture_slots.release()
+            if capture_denied(exc):
+                _capture_denied=True
+                raise PermissionError('截图授权未完成，请允许权限后点击重新识别') from exc
+            raise
+
+    def latest(self, max_age):
+        """The newest frame, or None if none arrived within `max_age` seconds.
+
+        Windows.Graphics.Capture only emits a frame when the window's content
+        changed, so an old frame of a live session is still the current picture
+        (a static window gives no frames at all). `max_age` is therefore a
+        sanity bound against a session that silently stopped delivering, not a
+        freshness requirement; callers pass several seconds.
+        """
+        with self.lock:
+            frame,at=self.frame,self.frame_at
+        if frame is None or not self.active or self.error is not None or time.monotonic()-at>max_age:
+            return None
+        return frame
+
+    def stop(self):
+        """Non-blocking: the native thread is joined off the GUI thread."""
+        if not self.active:
+            return
+        self.active=False
+        control,capture=self.control,self.capture
+        self.control=None;self.capture=None
+        def release():
+            joined=False
+            try:
+                if control is not None:
+                    control.stop();control.wait()
+                joined=True
+            except Exception as exc:
+                self.error=str(exc)
+            finally:
+                if not joined:
+                    from .src.ui_trace import trace
+                    trace('window_watch_release_failed',error=self.error)
+                    return      # Keep the slot: a native thread may still be live.
+                if capture is not None:
+                    capture.frame_handler=None;capture.closed_handler=None;capture.capture=None
+                _capture_slots.release()
+        threading.Thread(target=release,daemon=True,name='watch-release').start()
 
 
 def capture_now(hwnd, timeout=2):

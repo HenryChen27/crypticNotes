@@ -25,26 +25,27 @@ class SpeechBubble(W.QLabel):
         self.update()
 
     def paintEvent(self, event):
+        # Same chalk surface as the settings panel's controls (feathered,
+        # grainy, no hard outline), so the bubble reads as the doll's own
+        # voice rather than a system tooltip. The tail is a short hand-drawn
+        # wedge in the surface's own ink.
+        from ..theme import chalk_texture
         p = G.QPainter(self)
         p.setRenderHint(G.QPainter.Antialiasing)
-        rect = C.QRectF(8, 1, self.width()-17, self.height()-2)
-        path = G.QPainterPath()
-        path.addRoundedRect(rect, 11, 11)
+        p.setRenderHint(G.QPainter.SmoothPixmapTransform)
+        rect = C.QRect(8, 1, self.width()-17, self.height()-2)
+        p.drawImage(rect, chalk_texture(rect.width(), rect.height(), 'deep', 1.0, 'rounded'))
         if self.tail:
-            triangle = G.QPainterPath()
-            x = rect.left() if self.tail == 'left' else rect.right()
-            tip = 1 if self.tail == 'left' else self.width()-2
-            triangle.moveTo(x, self.tail_y-6)
-            triangle.lineTo(tip, self.tail_y)
-            triangle.lineTo(x, self.tail_y+6)
-            triangle.closeSubpath()
-            path = path.united(triangle)
-        gradient = G.QLinearGradient(0, 0, 0, self.height())
-        gradient.setColorAt(0, G.QColor(45,61,73,248))
-        gradient.setColorAt(1, G.QColor(22,33,43,248))
-        p.setBrush(gradient)
-        p.setPen(G.QPen(G.QColor(153,177,190,150), 1))
-        p.drawPath(path)
+            wedge = G.QPainterPath()
+            x = rect.left()+3 if self.tail == 'left' else rect.right()-3
+            tip = 0 if self.tail == 'left' else self.width()-1
+            wedge.moveTo(x, self.tail_y-7)
+            wedge.quadTo((x+tip)/2, self.tail_y-3, tip, self.tail_y)
+            wedge.quadTo((x+tip)/2, self.tail_y+2, x, self.tail_y+5)
+            wedge.closeSubpath()
+            p.setPen(C.Qt.NoPen)
+            p.setBrush(G.QColor(19, 32, 43, 232))
+            p.drawPath(wedge)
         p.end()
         super().paintEvent(event)
 

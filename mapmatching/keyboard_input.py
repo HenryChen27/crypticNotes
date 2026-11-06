@@ -3,7 +3,7 @@ import ctypes
 import time
 from ctypes import wintypes
 from PySide6 import QtCore as C
-from .mouse_input import (MouseWatcher,RAWINPUTDEVICE,RAWINPUTHEADER,user32,
+from .mouse_input import (MouseWatcher,RawInputFilter,RAWINPUTDEVICE,RAWINPUTHEADER,user32,
                          RID_INPUT,RIDEV_INPUTSINK,RIDEV_REMOVE)
 
 
@@ -31,6 +31,13 @@ class KeyboardWatcher(MouseWatcher):
         if now - self.last_report < 5.0:
             return
         self.last_report = now
+        # An idle machine produced an identical line every 5s. Only write when
+        # a counter, the foreground window or the registration state moved.
+        state = (foreground, self.hwnd, self.ok, self.messages, self.received,
+                 self.read_errors, self.shortcut_events, self.last_error)
+        if state == getattr(self, '_last_health', None):
+            return
+        self._last_health = state
         from .src.ui_trace import trace
         watched = {self.keys.toggle_key, self.keys.hide_key, self.keys.close_key}
         trace('keyboard_health', schema=2, foreground=foreground, target=self.hwnd,
@@ -80,37 +87,38 @@ class KeyboardWatcher(MouseWatcher):
             self.ok=False
             self.last_error='RegisterRawInputDevices: '+str(ctypes.get_last_error())
             return False
-        if self._app is None:
-            app.installNativeEventFilter(self)
+        # 不再自己装 filter：共用 RawInputFilter，一条 WM_INPUT 只读一次。
+        RawInputFilter.shared().attach(keyboard=self)
         self._app=app;self.ok=True;self.hwnd=hwnd;self.last_error=None
         return True
 
     def release(self):
         if self._app is not None:
-            self._app.removeNativeEventFilter(self);self._app=None
+            RawInputFilter.shared().detach(keyboard=self);self._app=None
         if self.ok:
             device=RAWINPUTDEVICE(1,6,RIDEV_REMOVE,None)
             user32.RegisterRawInputDevices(ctypes.byref(device),1,ctypes.sizeof(device))
         self.ok=False
 
     def _read(self,handle):
+        """直接调用时的入口（测试与兼容）：一次读取，只处理键盘包。"""
         self.messages += 1
-        size=wintypes.UINT(0);hs=ctypes.sizeof(RAWINPUTHEADER)
-        result=user32.GetRawInputData(wintypes.HANDLE(handle),RID_INPUT,None,ctypes.byref(size),hs)
-        if result!=0:
+        size=wintypes.UINT(len(self._buffer));hs=ctypes.sizeof(RAWINPUTHEADER)
+        result=user32.GetRawInputData(wintypes.HANDLE(handle),RID_INPUT,self._buffer,ctypes.byref(size),hs)
+        if result==0xFFFFFFFF:
             self._read_failed('size',result,size.value)
             return
-        if size.value<hs:
-            self._read_failed('header_size',0,size.value)
+        if result<hs:
+            self._read_failed('header_size',result,size.value)
             return
-        buffer=ctypes.create_string_buffer(size.value)
-        result=user32.GetRawInputData(wintypes.HANDLE(handle),RID_INPUT,buffer,ctypes.byref(size),hs)
-        if result!=size.value:
-            self._read_failed('data',result,size.value)
-            return
-        if RAWINPUTHEADER.from_buffer(buffer).dwType!=1:return
-        if size.value<hs+ctypes.sizeof(RAWKEYBOARD):
-            self._read_failed('keyboard_size',result,size.value)
+        if RAWINPUTHEADER.from_buffer(self._buffer).dwType!=1:return
+        self._keyboard_packet(self._buffer,result,counted=True)
+
+    def _keyboard_packet(self,buffer,copied,counted=False):
+        if not counted:self.messages += 1
+        hs=ctypes.sizeof(RAWINPUTHEADER)
+        if copied<hs+ctypes.sizeof(RAWKEYBOARD):
+            self._read_failed('keyboard_size',copied,copied)
             return
         self.received += 1
         key=RAWKEYBOARD.from_buffer(buffer,hs)

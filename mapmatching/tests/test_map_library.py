@@ -25,13 +25,13 @@ REGIONS=[dict(floor=-1,bbox=[0,0,300,240]),dict(floor=1,bbox=[0,150,300,300])]
 
 class LibraryTests(unittest.TestCase):
     def test_register_roundtrip(self):
-        """登记一张图 = 原图进 maps/<难度>/<人数>/ + floors.json 多一条 + 索引挂上。"""
+        """登记一张图 = 原图进 maps/<地图>/<作者>/<难度>/<人数>/ + floors.json 多一条 + 索引挂上。"""
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)
             source,image=_fixture(root)
             entry=add_map(root,source,'地下通路','nightmare','duo',REGIONS)
             self.assertEqual(entry['map_id'],'nightmare/duo/地下通路')
-            target=root/'maps/lianghapi/nightmare/duo/地下通路.png'
+            target=root/'maps/curse/lianghapi/nightmare/duo/地下通路.png'   # 地图/作者/难度/路线
             # 原图是被**复制**过去的，且逐字节不变（重编码会让 benchmark 的
             # sha256 配对静默失效）。
             self.assertTrue(target.exists())

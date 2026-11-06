@@ -65,7 +65,9 @@ def capture(rect):
         bitmap.CreateCompatibleBitmap(dc,w,h)
         memory.SelectObject(bitmap)
         memory.BitBlt((0,0),(w,h),dc,(x,y),win32con.SRCCOPY)
-        return np.frombuffer(bitmap.GetBitmapBits(True),np.uint8).reshape(h,w,4)[:,:,:3].copy()
+        import cv2
+        # GetBitmapBits already copied once; convert in place of a second strided copy.
+        return cv2.cvtColor(np.frombuffer(bitmap.GetBitmapBits(True),np.uint8).reshape(h,w,4),cv2.COLOR_BGRA2BGR)
     finally:
         memory.DeleteDC()
         dc.DeleteDC()

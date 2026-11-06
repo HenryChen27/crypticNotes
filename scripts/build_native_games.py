@@ -72,6 +72,7 @@ def main():
         build_macos.sign(app,identity,keychain);build_macos.verify(app,identity)
     shutil.copy2(ROOT/'scripts/game_launcher/safe-exit.js',runtime/'safe-exit.js')
     shutil.copy2(ROOT/'scripts/game_launcher/host-audio.js',runtime/'host-audio.js')
+    shutil.copy2(ROOT/'scripts/game_launcher/host-animation-cache.js',runtime/'host-animation-cache.js')
     (runtime/'package.json').write_text(json.dumps({'id':'game-launcher','platform':key,'version':GAME_VERSION}),encoding='utf-8')
     game=out/'jellyfish';game.mkdir(parents=True,exist_ok=True)
     # The source is authoritative, including removed/replaced resources.

@@ -35,6 +35,52 @@ final class MatchingModuleStore {
     }
     boolean updateAvailable()throws Exception{return !info().getString("sha256").equals(hash());}
     static synchronized void python(Context c){if(!Python.isStarted())Python.start(new AndroidPlatform(c));}
+
+    /**
+     * Merge a scene package shipped inside the APK (`assets/bundled/<scene>.zip`
+     * + `.json`, see scripts/bundle_android_maps.py) into the installed library.
+     *
+     * Test builds only: release builds carry no such asset and this returns at
+     * once. Runs once per package hash; author packages are not touched.
+     * @return the status line to show, or null when nothing was installed
+     */
+    static synchronized String installBundled(Context context,MiniGameStore.Progress progress){
+        Context c=context.getApplicationContext();String[] names;
+        try{names=c.getAssets().list("bundled");}catch(IOException e){return null;}
+        if(names==null)return null;
+        String installed=null;
+        for(String name:names){
+            if(!name.endsWith(".json"))continue;
+            try{
+                JSONObject spec;
+                try(InputStream in=c.getAssets().open("bundled/"+name)){spec=new JSONObject(new String(MiniGameStore.bytes(in,64*1024),java.nio.charset.StandardCharsets.UTF_8));}
+                String scene=spec.getString("scene"),sha=spec.getString("sha256");
+                if(!scene.matches("[a-z]+")||!sha.matches("[0-9a-f]{64}"))continue;
+                if(sha.equals(c.getSharedPreferences("mobile",0).getString("bundledHash_"+scene,"")))continue;
+                if(progress!=null)progress.update("正在安装内置地图：" +spec.optString("name",scene)+"…");
+                File stage=new File(c.getCacheDir(),"bundled-"+UUID.randomUUID());stage.mkdirs();
+                try{
+                    MessageDigest hash=MessageDigest.getInstance("SHA-256");int count=0;long unpacked=0;
+                    String base=new File(stage,"maps").getCanonicalPath()+File.separator;
+                    byte[] raw;try(InputStream in=c.getAssets().open("bundled/"+spec.getString("asset"))){raw=MiniGameStore.bytes(in,300*1024*1024);}
+                    hash.update(raw);StringBuilder digest=new StringBuilder();for(byte b:hash.digest())digest.append(String.format(Locale.ROOT,"%02x",b&255));
+                    if(!sha.equals(digest.toString()))throw new IOException("内置地图包校验失败");
+                    try(ZipInputStream in=new ZipInputStream(new ByteArrayInputStream(raw))){ZipEntry e;byte[] b=new byte[65536];while((e=in.getNextEntry())!=null){String entryName=e.getName().replace('\\','/');File target=new File(stage,entryName);if(!entryName.startsWith("maps/")||entryName.contains("..")||entryName.contains(":")||!target.getCanonicalPath().startsWith(base)||++count>5000)throw new IOException("无效地图文件路径");if(e.isDirectory()){target.mkdirs();continue;}target.getParentFile().mkdirs();try(OutputStream out=new FileOutputStream(target)){int n;while((n=in.read(b))!=-1){unpacked+=n;if(unpacked>600L*1024*1024)throw new IOException("内置地图包过大");out.write(b,0,n);}}}}
+                    python(c);
+                    int added=Python.getInstance().getModule("mobile_modules").callAttr("install_scene",c.getFilesDir().toString(),new File(stage,"maps").toString(),scene,spec.toString()).toInt();
+                    for(String provider:new String[]{"lianghapi","zhanshi"})if(spec.optJSONArray("providers")!=null&&spec.optJSONArray("providers").toString().contains("\""+provider+"\""))
+                        c.getSharedPreferences("mobile",0).edit().putBoolean("matchingEnabled",true).putBoolean("matchingEnabled_"+provider,true).apply();
+                    c.getSharedPreferences("mobile",0).edit().putString("bundledHash_"+scene,sha).apply();
+                    installed="已安装内置地图："+spec.optString("name",scene)+"（"+added+" 张）";
+                    android.util.Log.i("CrypticNotes","Bundled scene installed: "+scene+", maps="+added);
+                }finally{MapCatalog.invalidate();remove(stage);}
+            }catch(Exception error){
+                android.util.Log.e("CrypticNotes","Bundled scene install failed: "+name,error);
+                installed="内置地图安装失败："+error.getMessage();
+            }
+        }
+        return installed;
+    }
     void download(MiniGameStore.Progress progress)throws Exception{
         JSONObject spec=info();String sha=spec.getString("sha256");long expected=spec.getLong("size");
         if(installed()&&sha.equals(hash()))return;

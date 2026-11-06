@@ -16,7 +16,10 @@ def bgra_buffer_to_bgr(raw, width, height, row_bytes):
         raise ValueError(f'截图数据不完整：需要至少 {needed} 字节，实际 {len(raw)} 字节')
     frame = np.ndarray((height, width, 4), dtype=np.uint8,
                        buffer=raw, strides=(row_bytes, 4, 1))
-    return frame[:, :, :3].copy()
+    import cv2
+    # Same bytes as the strided numpy copy, several times faster on a full frame.
+    return cv2.cvtColor(np.ascontiguousarray(frame), cv2.COLOR_BGRA2BGR) if row_bytes != width*4 \
+        else cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
 
 def await_callback(start, timeout=5):

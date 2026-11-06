@@ -140,6 +140,9 @@ public class MainActivity extends Activity {
         difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         LinearLayout difficultyRow=choiceRow(fieldLabel("难度"), difficulty);
         settings.addView(difficultyRow, matchWrap());
+        // 磷光症 has only nightmare 十四棺 so far: the row above gives way to a note.
+        View sceneNote = Theme.helpLabel(this, "磷光症", "凉哈皮目前只有困难，展十只有噩梦十四棺；难度跟随所选作者，其余待作者更新。楼层按负一/负二/负三层识别。");
+        settings.addView(sceneNote, matchWrap());
         settings.addView(libraryChoice.detachRoute(), matchWrap());
         TextView routeLabel = fieldLabel("参考路线");
         party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
@@ -158,8 +161,12 @@ public class MainActivity extends Activity {
         routeRow.setVisibility(party.getVisibility());
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
         libraryChoice.changed=()->{
-            difficultyRow.setVisibility(View.VISIBLE);
-            routeRow.setVisibility(!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
+            boolean linguang=libraryChoice.isLinguang();
+            difficultyRow.setVisibility(linguang?View.GONE:View.VISIBLE);
+            sceneNote.setVisibility(linguang?View.VISIBLE:View.GONE);
+            routeRow.setVisibility(!linguang&&!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
+            routeLabel.setVisibility(routeRow.getVisibility());
+            party.setVisibility(routeRow.getVisibility());
         };
         libraryChoice.changed.run();
 
@@ -207,6 +214,14 @@ public class MainActivity extends Activity {
         powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
         more.addView(choiceRow(Theme.helpLabel(this,"省电模式","正常每秒、省电每两秒短暂检查低分辨率地图控件；确认展开后才启动完整识图。不会拦截触摸。省电进一步降低展开期间检查频率和小游戏动画开销。"),powerSaving,120),matchWrap());
         powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
+        Theme.ChalkChoice highRefresh=new Theme.ChalkChoice(this,new String[]{"关","开"});
+        highRefresh.setIndex(getSharedPreferences("mobile",0).getBoolean("game_high_refresh",false)?1:0);
+        more.addView(choiceRow(Theme.helpLabel(this,"小游戏高刷新率","开启后小游戏窗口按屏幕最高刷新率运行，更顺滑但更耗电、更热；默认 60 帧。省电模式下始终 60 帧。"),highRefresh,120),matchWrap());
+        highRefresh.setListener(i -> {
+            getSharedPreferences("mobile",0).edit().putBoolean("game_high_refresh",i==1).apply();
+            MiniGameOverlayService game=MiniGameOverlayService.current;
+            if(game!=null)game.requestHighRefreshRate();
+        });
         Theme.ChalkChoice feedback = new Theme.ChalkChoice(this,new String[]{"关","开"});
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
         more.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
@@ -322,6 +337,16 @@ public class MainActivity extends Activity {
         });
         uiReady=true;
         if(resumed)refreshResumedUi();
+        // Test builds may carry a game map inside the APK (assets/bundled); merge
+        // it into the library once per package. Release builds have no asset.
+        new Thread(() -> {
+            String note = MatchingModuleStore.installBundled(this, text -> runOnUiThread(() -> { if (!isDestroyed()) status.setText(text); }));
+            if (note != null) runOnUiThread(() -> {
+                if (isDestroyed()) return;
+                status.setText(note);
+                if (libraryChoice != null) { libraryChoice.refresh(); libraryChoice.changed.run(); }
+            });
+        }, "bundled-maps").start();
         android.util.Log.i("CrypticNotes","Main UI constructed: elapsedMs="+(SystemClock.uptimeMillis()-startupAt));
     }
 
@@ -422,7 +447,7 @@ public class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("pendingGame",pendingGame);}
 
     private void startCapture() {
-        if(!new MatchingModuleStore(this,getSharedPreferences("mobile",0).getString("map_provider","lianghapi")).installed()){
+        if(!new MatchingModuleStore(this,libraryChoice.provider()).installed()){
             status.setText("请先下载所选作者的地图库，再开始共享");return;
         }
         pendingGame=null;
@@ -531,7 +556,8 @@ public class MainActivity extends Activity {
         stopService(new Intent(this, CaptureService.class));
         Intent service = new Intent(this, CaptureService.class)
                 .putExtra("projection", data).putExtra("result", result)
-                .putExtra("provider", getSharedPreferences("mobile",0).getString("map_provider","lianghapi"))
+                .putExtra("provider", libraryChoice.provider())
+                .putExtra("scene", libraryChoice.scene())
                 .putExtra("difficulty", libraryChoice.difficulty(difficulty.getIndex() == 0 ? "hard" : "nightmare"))
                 .putExtra("mode", libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"))
                 .putExtra("opacity", opacity)

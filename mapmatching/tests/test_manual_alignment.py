@@ -155,16 +155,19 @@ class PetGestureTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_double_click_cancels_single_click_and_retries_once(self):
+    def test_single_click_opens_at_once_and_double_click_retries_once(self):
+        # A click no longer waits out the double-click interval: the panel opens
+        # immediately, and a double-click retries once (retry() folds the panel).
         from mapmatching.ui import DraggableGear,W,C,G
         parent=W.QWidget();parent.toggle_panel=Mock();parent.retry=Mock()
         button=DraggableGear(parent)
-        button.clicked.emit();self.assertTrue(button.click_timer.isActive())
+        button.clicked.emit();self.assertFalse(button.click_timer.isActive())
+        parent.toggle_panel.assert_called_once()
         event=G.QMouseEvent(C.QEvent.MouseButtonDblClick,C.QPointF(20,20),C.QPointF(20,20),
                            C.Qt.LeftButton,C.Qt.LeftButton,C.Qt.NoModifier)
         button.mouseDoubleClickEvent(event)
         self.assertFalse(button.click_timer.isActive())
-        parent.toggle_panel.assert_not_called();parent.retry.assert_called_once()
+        parent.retry.assert_called_once()
         button.exit_zone.close();button.pet.timer.stop()
 
     def test_popup_timeout_ignores_without_accepting_and_stops_timer(self):

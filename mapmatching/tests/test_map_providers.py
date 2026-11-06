@@ -27,7 +27,9 @@ class ProviderTests(unittest.TestCase):
   for e in entries:
    self.assertEqual(hashlib.sha256((ROOT/e['source']).read_bytes()).hexdigest(),e['sha256'])
    if e.get('provider')!='zhanshi':continue
-   self.assertEqual({r['floor'] for r in e['regions']},{1,2} if e['difficulty']=='hard' else {1,2,-1})
+   # 磷光症 is all basements (负一/二/三层); 厄运之女 keeps 1/2 plus a basement in nightmare.
+   expected={-1,-2,-3} if e.get('scene')=='linguang' else {1,2} if e['difficulty']=='hard' else {1,2,-1}
+   self.assertEqual({r['floor'] for r in e['regions']},expected)
    masks=[floor_selection((round(e['size'][1]*1000/e['size'][0]),1000),r,1000/e['size'][0]).astype(bool) for r in e['regions']]
    self.assertTrue(all(m.sum()>1000 for m in masks))
    # Display margins may overlap; no floor geometry may leak through.

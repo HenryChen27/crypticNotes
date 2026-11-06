@@ -239,7 +239,9 @@ final class SharedScreenRecorder {
                     if(size==0) break;
                 }
                 drainAudio(false);
-                handler.postDelayed(this,10);
+                // 20ms is 3840 bytes at 48kHz stereo, far below one 8192-byte
+                // buffer; timestamps come from the frame count, not the wakeup.
+                handler.postDelayed(this,20);
             } catch(Exception e) {
                 // Keep the video even when playback permission is revoked.
                 audioStarted=false;

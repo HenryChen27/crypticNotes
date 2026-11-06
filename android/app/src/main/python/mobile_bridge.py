@@ -19,26 +19,31 @@ _pending_candidate = None
 _root = None
 _names = {}
 _originals = {}
+_scene = 'curse'
 
-def initialize(root, difficulty, mode, provider='lianghapi'):
-    global _matcher, _cached, _confirmed, _root, _names, _pending_candidate
+def initialize(root, difficulty, mode, provider='lianghapi', scene='curse'):
+    global _matcher, _cached, _confirmed, _root, _names, _pending_candidate, _scene
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
     _root = Path(root)
+    _scene = scene
     _cached = None
     _confirmed = None
     _pending_candidate = None
     _originals.clear()
-    if provider=='zhanshi' and difficulty=='nightmare':
+    if scene!='curse':
+        # 磷光症等其他地图：只有自己的图集，没有第二作者的地形库可借身份。
+        _matcher=MapMatcher(_root/'maps',difficulty=difficulty,mode=mode,provider=provider,scene=scene)
+    elif provider=='zhanshi' and difficulty=='nightmare':
         from mapmatching.src.author_matcher import LazyAuthorAtlas
         _matcher=LazyAuthorAtlas(_root/'maps',MapMatcher,difficulty=difficulty,mode=mode,provider=provider)
     else:
         _matcher = MapMatcher(_root/'maps',difficulty=difficulty,mode=mode if difficulty=='nightmare' or provider=='zhanshi' else None,provider=provider)
-    if provider=='zhanshi' and difficulty=='nightmare':
+    if scene=='curse' and provider=='zhanshi' and difficulty=='nightmare':
         from mapmatching.src.author_matcher import AuthorRouteMatcher,terrain_recognizer
         recognizer=terrain_recognizer(_root/'maps',MapMatcher)
         _matcher=AuthorRouteMatcher(_matcher,recognizer)
-    if difficulty=='nightmare' and mode=='duo':
+    if scene=='curse' and difficulty=='nightmare' and mode=='duo':
         _matcher = MultiplayerFallback(_matcher,lambda:MapMatcher(_root/'maps',difficulty='nightmare',mode='solo'))
     # Display names for the on-screen status strip; `map_id` alone is not readable.
     manifest=json.loads((_root/'maps/floors.json').read_text(encoding='utf-8'))
@@ -63,16 +68,33 @@ PHONE_TEXT = {
 def _phone(message):
     return PHONE_TEXT.get(message, message)
 
-def decode(data):
+def decode_raw(data, width, height, stride=0):
+    """`Bitmap.copyPixelsToBuffer` bytes (RGBA, `stride` bytes per row) -> BGR.
+
+    Replaces the PNG round trip the client used to do on every frame. PNG is
+    lossless, so the pixels handed to the gate and the matcher are the same
+    bytes they always were; only the encode/decode work is gone.
+    """
+    width,height=int(width),int(height)
+    stride=int(stride) or width*4
+    buffer=np.frombuffer(bytes(data),np.uint8)
+    if width<=0 or height<=0 or stride<width*4 or len(buffer)<(height-1)*stride+width*4:
+        raise ValueError('原始像素长度与尺寸不符')
+    frame=np.ndarray((height,width,4),np.uint8,buffer=buffer,strides=(stride,4,1))
+    return cv2.cvtColor(frame,cv2.COLOR_RGBA2BGR)
+
+def decode(data, width=0, height=0, stride=0):
+    if width:
+        return decode_raw(data,width,height,stride)
     return cv2.imdecode(np.frombuffer(bytes(data),np.uint8),cv2.IMREAD_COLOR)
 
-def inspect(data, excluded=None):
-    pixels=decode(data)
+def inspect(data, excluded=None, width=0, height=0, stride=0):
+    pixels=decode(data,width,height,stride)
     return json.dumps(inspect_map_ui(pixels, excluded))
 
-def read_floor_header(data, width, height):
+def read_floor_header(data, width, height, header_width=0, header_height=0, header_stride=0):
     """Read native-resolution HUD independently of the reduced matching image."""
-    header=decode(data)
+    header=decode(data,header_width,header_height,header_stride)
     if header is None or width<=0 or height<=0 or width>8192 or height>8192:
         return 0
     left=int(.55*width)
@@ -97,21 +119,37 @@ def commit_match(token):
 
 
 def match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0,
-          request_counter=None, request_serial=0):
+          request_counter=None, request_serial=0, width=0, height=0, stride=0, layer_format='png'):
     try:
         with request_scope(request_counter, request_serial):
-            return _match(data, output, gated, remember, token, force_floor, viewed_floor)
+            return _match(data, output, gated, remember, token, force_floor, viewed_floor,
+                          width, height, stride, layer_format)
     except Superseded:
         return json.dumps(dict(ok=False, cancelled=True, message='正在重新识别…'))
 
 
-def _match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0):
+def premultiplied_rgba(layer):
+    """BGRA overlay -> the premultiplied RGBA bytes `Bitmap.copyPixelsFromBuffer` expects.
+
+    `BitmapFactory` premultiplies when decoding the PNG we used to write; this
+    is the same conversion done here (Skia's round-to-nearest), so the bitmap
+    the overlay window draws is unchanged.
+    """
+    rgba=cv2.cvtColor(np.ascontiguousarray(layer),cv2.COLOR_BGRA2RGBA)
+    alpha=rgba[:,:,3:4].astype(np.uint32)
+    rgb=rgba[:,:,:3].astype(np.uint32)
+    rgba[:,:,:3]=((rgb*alpha+128)*257>>16).astype(np.uint8)
+    return rgba
+
+
+def _match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0,
+           width=0, height=0, stride=0, layer_format='png'):
     """Register the open map. `gated=True` when the caller already ran the
     map-panel gate on this exact frame, which saves a second decode and a
     second gate pass (~40-80ms) on the hot re-registration path."""
     global _cached, _confirmed, _pending_candidate
     checkpoint()
-    pixels=decode(data)
+    pixels=decode(data,width,height,stride)
     checkpoint()
     if not gated:
         visibility=inspect_map_ui(pixels)
@@ -124,7 +162,8 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     x,X=int(.41*w),int(.86*w)
     map_pixels=np.zeros_like(pixels)
     map_pixels[y:Y,x:X]=pixels[y:Y,x:X]
-    floor = int(viewed_floor) if viewed_floor in (-1,1,2) else selected_floor(pixels)
+    # The tab reader only knows 厄运之女's 1/2/-1 buttons; 磷光症's -1/-2/-3 would misread.
+    floor = None if _scene!='curse' else int(viewed_floor) if viewed_floor in (-1,1,2) else selected_floor(pixels)
     if isinstance(_matcher, MultiplayerFallback):
         _matcher.primary.floor_hint = floor
         # Ensure the lazily created solo matcher gets this frame's floor too.
@@ -183,8 +222,13 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     checkpoint()
     layer=(centered_floor_layer(pixels.shape,_originals[reference.source],reference,floor,scale=_confirmed.pose.scale)
            if centered else raw_layer(pixels.shape,_originals[reference.source],reference,candidate,full_view=True))
-    ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
-    if not ok:raise ValueError('Overlay encoding failed')
+    layer_size={}
+    if layer_format=='raw':
+        encoded=premultiplied_rgba(layer)
+        layer_size=dict(layer_width=int(layer.shape[1]),layer_height=int(layer.shape[0]))
+    else:
+        ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
+        if not ok:raise ValueError('Overlay encoding failed')
     checkpoint()
     Path(output).write_bytes(encoded.tobytes())
     checkpoint()
@@ -199,4 +243,4 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     if candidate.mode=='solo' and _matcher.__class__ is MultiplayerFallback:
         message='多人暂无专用路线'
     return json.dumps(dict(ok=True,message=_phone(message),map_id=candidate.map_id,
-                           name=_label(candidate.map_id),floor=candidate.floor))
+                           name=_label(candidate.map_id),floor=candidate.floor,**layer_size))

@@ -280,7 +280,15 @@ def build_index(maps, *, force: bool = False) -> None:
                                        remove_annotations=REMOVE_ANNOTATIONS, references=records))
 
 
-def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', map_ids=None, include_distance=True) -> list:
+DEFAULT_SCENE = 'curse'   # 厄运之女；没有 scene 字段的旧条目都属于它
+
+
+def entry_scene(entry: dict) -> str:
+    """哪张游戏地图。`curse`=厄运之女（所有旧条目），`linguang`=磷光症。"""
+    return entry.get('scene') or DEFAULT_SCENE
+
+
+def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', map_ids=None, include_distance=True, scene=DEFAULT_SCENE) -> list:
     from .reference import Reference      # 延迟导入：reference 在函数体里反向引用本模块
     maps = Path(maps)
     payload = _read_json(maps/'index.json', None)
@@ -295,6 +303,9 @@ def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', m
         if map_ids is not None and entry['map_id'] not in map_ids:
             continue
         if entry.get('provider', 'lianghapi') != provider:
+            continue
+        # 不同游戏地图的图永远不混在一个候选池里：磷光症的截图不该去搜厄运之女。
+        if entry_scene(entry) != scene:
             continue
         if difficulty is not None and entry['difficulty'] != difficulty:
             continue
@@ -312,7 +323,8 @@ def load_references(maps, *, difficulty=None, mode=None, provider='lianghapi', m
             result.append(Reference(entry['map_id'], entry['difficulty'], entry['mode'],
                                     entry['source'], evidence, a['distance'] if include_distance else None,
                                     entry.get('regions', []), entry.get('exclude_regions', []),
-                                    entry.get('terrain_id'), entry.get('recognition_map_id')))
+                                    entry.get('terrain_id'), entry.get('recognition_map_id'),
+                                    entry.get('reference_style')))
     return result
 
 

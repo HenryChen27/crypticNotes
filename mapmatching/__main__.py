@@ -23,12 +23,16 @@ def main() -> None:
     match.add_argument('screenshot', type=Path)
     match.add_argument('--index', type=Path, default=DEFAULT_MAPS)
     match.add_argument('--difficulty', choices=['hard', 'nightmare'], required=True)
-    match.add_argument('--mode', choices=['solo', 'duo'])
+    match.add_argument('--mode', choices=['solo', 'duo', 'full', 'speed'])
+    match.add_argument('--provider', choices=['lianghapi', 'zhanshi'], default='lianghapi')
+    match.add_argument('--scene', choices=['curse', 'linguang'], default='curse', help='厄运之女 / 磷光症')
     match.add_argument('--output', type=Path)
     preview = commands.add_parser('preview', help='Explicit offline candidate overlay; does not approve a lock')
     preview.add_argument('screenshot', type=Path)
     preview.add_argument('--difficulty', choices=['hard','nightmare'], required=True)
-    preview.add_argument('--mode', choices=['solo','duo'])
+    preview.add_argument('--mode', choices=['solo','duo','full','speed'])
+    preview.add_argument('--provider', choices=['lianghapi', 'zhanshi'], default='lianghapi')
+    preview.add_argument('--scene', choices=['curse', 'linguang'], default='curse', help='厄运之女 / 磷光症')
     preview.add_argument('--index', type=Path, default=DEFAULT_MAPS)
     preview.add_argument('--root', type=Path, default=Path(__file__).resolve().parents[1])
     preview.add_argument('--output', type=Path, required=True)
@@ -40,10 +44,10 @@ def main() -> None:
         print('Reference index built')
         return
     try:
-        SessionContext(args.difficulty, args.mode)
+        SessionContext(args.difficulty, args.mode, args.provider, args.scene)
     except ValueError as error:
         parser.error(str(error))
-    matcher = MapMatcher(args.index, difficulty=args.difficulty, mode=args.mode)
+    matcher = MapMatcher(args.index, difficulty=args.difficulty, mode=args.mode, provider=args.provider, scene=args.scene)
     pixels = read_image(args.screenshot)
     matched = matcher.match(pixels)
     if args.command == 'preview':

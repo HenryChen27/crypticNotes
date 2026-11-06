@@ -6,7 +6,7 @@ from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from functools import lru_cache
 
 
-@lru_cache(maxsize=48)
+@lru_cache(maxsize=256)   # 48 was evicted by the settings panel's many widget sizes
 def chalk_texture(width,height,bright=False,roughness=1.0,shape='rect',left_edge=True,right_edge=True):
     """Cached fine grain with a broken, feathered edge, painted at 2x."""
     import numpy as np

@@ -1,6 +1,44 @@
-# 两套地图库
+# 地图库：地图 → 作者 → 难度
 
 默认使用凉哈皮。设置中的“地图版本”可切换为展十，展十提供噩梦全棺和速刷两种参考路线。
+
+## 目录层级（2026-11-06 起）
+
+```
+maps/
+├─ curse/                    厄运之女
+│  ├─ lianghapi/{normal,hard,nightmare/{solo,duo}}/
+│  └─ zhanshi/{normal,hard,nightmare}/{full,speed}/
+├─ linguang/                 磷光症
+│  ├─ lianghapi/{normal,hard,nightmare/{solo,duo}}/
+│  └─ zhanshi/{normal,hard,nightmare}/{full,speed}/
+├─ _unindexed/  _overview/   同前
+├─ recognition-inputs/  evidence/  index.json   派生物与底稿，不分层
+└─ floors.json  disabled.json  providers.json
+```
+
+每个作者在每张地图下的全部难度槽位都已建好（空目录放 `.gitkeep`），作者补图时直接放进对应
+目录再登记即可。目前已有：厄运之女（凉哈皮困难/噩梦，展十困难/噩梦）、磷光症（凉哈皮困难 14 张，
+展十噩梦十四棺 15 张）。`datasets/tools/restructure_maps.py` 负责把旧的 `maps/<作者>/...` 搬到
+这个层级；厄运之女的 `map_id` 不变（它是身份不是路径），磷光症的 `map_id` 就是
+`linguang/<作者>/<难度>[/<路线>]/<名字>`。界面「录入新地图」也按这个层级存放。
+
+## 第二张游戏地图：磷光症（2026-11-06）
+
+设置里新增「地图」选择：厄运之女（默认，原有全部图库）/ 磷光症。登记条目用 `scene` 字段区分
+（缺省即 `curse`=厄运之女），`mapstore.load_references` 按 scene 过滤，两张游戏地图的图**永远不会**
+进同一个候选池。磷光症的难度跟随作者：凉哈皮目前只有困难（14 张，`linguang/lianghapi/hard/<入口>/地图N`，
+三层纵向排列，由 `datasets/tools/import_linguang_lianghapi.py` 按空行切分，标题缩略图和图例进 `exclude_regions`），
+展十只有噩梦「十四棺图」（15 张，`linguang/zhanshi/nightmare/full/N`，负一层左上、负二层右上、负三层下方，
+由 `datasets/tools/import_linguang.py` 按固定版式分区）。版式不符的图会被拒绝而不是猜；
+选区预览分别在 `datasets/evaluation/linguang-lianghapi-import/` 和 `datasets/evaluation/linguang-import/`。
+`mapmatching/src/context.py` 的 `SCENE_CONTEXTS` 记录每位作者已有的难度，作者补图后在那里放开。
+
+磷光症的楼层按钮是 −1/−2/−3，现有的楼层读取器只认 1/2 和带负号的 1，会把 −2 读成 2，所以
+`live.worker` 对全是地下层的图库关闭楼层读取（`floor_tabs_readable`），只靠几何定层。
+安卓面板同样有「地图」选择，桥接 `mobile_bridge.initialize` 按 `scene` 加载并关闭楼层提示。
+两位作者的发布包（`IdentityVMapAssistant-Maps-<作者>.zip`，由 `scripts/build_matching_module.py` 打包）
+包含该作者在两张游戏地图下的全部图，客户端更新作者图库即可得到磷光症；安装会按 `map_id` 替换旧条目并删掉旧路径文件。
 
 ```
 maps/
