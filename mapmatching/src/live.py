@@ -135,10 +135,26 @@ def composite(screenshot, layer, opacity=.30):
     return np.rint(screenshot*(1-alpha)+layer[:,:,:3]*alpha).clip(0,255).astype(np.uint8)
 
 
+def tab_reader(matcher):
+    """Which floor-button reader fits this library: the horizontal 1/2/-1 pair
+    of 厄运之女, or the vertical −1…−4 column of 磷光症 (floors all below
+    ground). Neither reader recognises the other one's buttons, so a library
+    is read by exactly one of them; None when the floors fit neither."""
+    from .floor_tabs import inspect_floor_tabs, inspect_basement_tabs
+    floors = {region['floor'] for ref in matcher.references for region in ref.regions}
+    if floors & {1, 2}:
+        return inspect_floor_tabs
+    if floors and all(floor < 0 for floor in floors):
+        return inspect_basement_tabs
+    return None
+
+
 def floor_tabs_readable(matcher):
-    """The tab reader knows the 1/2/-1 buttons of 厄运之女 only. A library whose
-    floors are all basements (磷光症: -1/-2/-3) would get a misread '2' for '-2'."""
-    return any(region['floor'] in (1, 2) for ref in matcher.references for region in ref.regions)
+    return tab_reader(matcher) is not None
+
+
+def library_floors(matcher):
+    return {region['floor'] for ref in matcher.references for region in ref.regions}
 
 
 def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floor_hint=None, floor_tabs=True):
@@ -159,12 +175,29 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
             return (MatchResult(reason='map_ui_not_confirmed',diagnostics=dict(
                 map_ui=visibility,identity_search_performed=False,pipeline='screen_gate')),
                 None,'未确认地图已展开，已停止叠图')
-    from .matcher import MapMatcher
-    from .floor_tabs import inspect_floor_tabs
-    if not floor_tabs:
+    from .matcher import MapMatcher, MatchResult
+    from .floor_tabs import inspect_floor_tabs, inspect_basement_tabs
+    # `floor_tabs`: True = the 1/2/-1 reader, False = none, or a reader function
+    # (see `tab_reader`); the worker passes the one that fits its library.
+    read = floor_tabs if callable(floor_tabs) else inspect_floor_tabs if floor_tabs else None
+    if read is None:
         floor_reading = dict(floor=None, reason='no_tab_reader_for_this_library')
+    elif floor_hint is not None:
+        floor_reading = dict(floor=floor_hint, reason='caller_floor_tabs',
+                             reader='basement' if read is inspect_basement_tabs else 'standard')
     else:
-        floor_reading = inspect_floor_tabs(pixels) if floor_hint is None else dict(floor=floor_hint, reason='caller_floor_tabs')
+        floor_reading = read(pixels)
+    if floor_reading.get('reader') == 'basement' and floor_reading['floor'] is not None \
+            and floor_reading['floor'] not in library_floors(matcher):
+        # The game shows a basement the authors never drew (−4): nothing to
+        # overlay, and a search over the other floors could only mislead.
+        floor = floor_reading['floor']
+        return (MatchResult(reason='floor_not_in_library',diagnostics=dict(
+            floor_tabs=floor_reading,identity_search_performed=False,pipeline='floor_gate')),
+            None,f'负{-floor}层没有参考图，请切回负一到负三层')
+    if floor_reading.get('reader') == 'basement':
+        from .floor_tabs import hide_floor_column
+        pixels = hide_floor_column(pixels, floor_reading)
     if hasattr(matcher, 'floor_hint'):
         matcher.floor_hint = floor_reading['floor']
         if isinstance(matcher, MultiplayerFallback):
@@ -351,7 +384,7 @@ def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curs
         if scene == 'curse' and difficulty == 'nightmare' and mode == 'duo':
             matcher = MultiplayerFallback(
                 matcher, lambda: MapMatcher(index, difficulty='nightmare', mode='solo'))
-        floor_tabs = floor_tabs_readable(matcher)
+        floor_tabs = tab_reader(matcher)
         connection.send(('ready', None))
         while True:
             request = connection.recv()
@@ -363,7 +396,12 @@ def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curs
             start = time.perf_counter()
             if options.get('force_floor') is not None and options.get('confirmed_candidate') is not None:
                 from .matcher import MatchResult
-                result=MatchResult(reason='manual_alignment_pending')
+                from .floor_tabs import inspect_basement_tabs
+                # No search ran, but the manual-offer helpers still need to know
+                # which floor-button reader this library uses.
+                result=MatchResult(reason='manual_alignment_pending',diagnostics=dict(floor_tabs=dict(
+                    floor=None,reason='manual_alignment_pending',
+                    reader='basement' if floor_tabs is inspect_basement_tabs else 'standard')))
                 candidate=None
                 message='画面或楼层已变化，请重新识别后确认'
             else:
@@ -371,7 +409,9 @@ def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curs
                     require_map_ui=options.get('source') == 'screen', floor_tabs=floor_tabs)
             centered_offer = None
             confirmed=options.get('confirmed_candidate')
-            if confirmed is not None and options.get('force_floor') is None:
+            # A basement the authors never drew has nothing to offer: keep the
+            # floor gate's message instead of asking to overlay a blank floor.
+            if confirmed is not None and options.get('force_floor') is None and result.reason != 'floor_not_in_library':
                 from .manual_alignment import blank_floor_offer, automatic_cross_floor_reliable
                 cross_offer=blank_floor_offer(pixels,confirmed,result.to_dict())
                 if cross_offer is not None and (candidate is None or

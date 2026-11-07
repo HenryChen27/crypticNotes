@@ -29,14 +29,39 @@ maps/
 （缺省即 `curse`=厄运之女），`mapstore.load_references` 按 scene 过滤，两张游戏地图的图**永远不会**
 进同一个候选池。磷光症的难度跟随作者：凉哈皮目前只有困难（14 张，`linguang/lianghapi/hard/<入口>/地图N`，
 三层纵向排列，由 `datasets/tools/import_linguang_lianghapi.py` 按空行切分，标题缩略图和图例进 `exclude_regions`），
-展十只有噩梦「十四棺图」（15 张，`linguang/zhanshi/nightmare/full/N`，负一层左上、负二层右上、负三层下方，
-由 `datasets/tools/import_linguang.py` 按固定版式分区）。版式不符的图会被拒绝而不是猜；
-选区预览分别在 `datasets/evaluation/linguang-lianghapi-import/` 和 `datasets/evaluation/linguang-import/`。
+展十有噩梦「十四棺图」（15 张，`linguang/zhanshi/nightmare/full/N`，负一层左上、负二层右上、负三层下方，
+由 `datasets/tools/import_linguang.py` 按固定版式分区）和困难「十六棺图」（12 张，`linguang/zhanshi/hard/full/N`，
+2026-11-08 由 `datasets/tools/import_linguang_zhanshi_hard.py` 导入，版式相同，作者按负一层/负二层形状命名的目录与文件名
+保留在条目 `name` 里；同目录下两张教学图按尺寸跳过）。版式不符的图会被拒绝而不是猜；
+选区预览分别在 `datasets/evaluation/linguang-lianghapi-import/`、`linguang-import/` 和 `linguang-zhanshi-hard-import/`。
+磷光症全部 41 张图（含已移除的地图9）都走和手动录入一样的存储策略 `webp-2048-q90-v1`（最长边 2048、WebP 质量 90），
+显示图合计约 5.6 MB；识别特征另存，不进发布包的显示图体积。
 `mapmatching/src/context.py` 的 `SCENE_CONTEXTS` 记录每位作者已有的难度，作者补图后在那里放开。
 
-磷光症的楼层按钮是 −1/−2/−3，现有的楼层读取器只认 1/2 和带负号的 1，会把 −2 读成 2，所以
-`live.worker` 对全是地下层的图库关闭楼层读取（`floor_tabs_readable`），只靠几何定层。
-安卓面板同样有「地图」选择，桥接 `mobile_bridge.initialize` 按 `scene` 加载并关闭楼层提示。
+磷光症的楼层按钮是右侧竖排的 −1/−2/−3/−4，与厄运之女横排的 1/2/−1 不同，由 `floor_tabs.inspect_basement_tabs`
+单独读取（2026-11-07）：找出唯一一个高亮方块，再沿同一列找齐四行带减号的暗标签，按高亮所在的行号得出楼层；
+列不完整（缩放把细的「1」抹掉）、高亮里没有标签、两处高亮时一律返回未知而不是猜。`live.tab_reader` 按图库楼层
+选读取器（有 1/2 层用横排读取器，全是地下层用竖排读取器），两种读取器互不认对方的按钮。读到的楼层只作候选提示和
+跨层「直接叠图」的依据；读到图库没有的负四层时直接提示「负4层没有参考图」，不再去其它楼层硬搜，也不弹直接叠图。
+这列按钮落在手机地图视口之内（厄运之女的横排在视口上方），高亮方块本身就是一块低饱和亮斑，空楼层时足以凑出一个假配准，
+所以读到列之后桌面与桥接都用 `hide_floor_column` 把它抹黑再提特征；桌面端的手动跨层（`cross_floor_candidate`）也改为
+先按 `phone_viewport` 裁到视口，与正常识别看同一块像素，右缘的导航/缩放/定位图标不再冒充地图结构。
+双端跨层流程（查看 −3 弹「直接叠图」、强制后居中或配准、查看 −4 拒绝）有回归 `tests/test_basement_tabs.py::CrossFloorTests`。
+PC 客户端（16:9，右上角是 ESC 提示而不是关闭叉）同样能读：亮度步长封顶、暗标签门槛放低、只认落在按钮格点上的行，
+顶部的昵称/水印文字不会被当成一行；桌面端「地图已展开」门槛补了「全览图标 + 竖排楼层列」这条兜底，PC 端没有关闭叉也能过。
+PC 样本是 B 站视频截帧裁下的按钮列（`tests/fixtures/linguang-tabs/pc-viewing-2.png`），回归 `PcClientTests`。
+安卓面板同样有「地图」选择，桥接 `mobile_bridge.initialize` 按 `scene` 加载，`CaptureService` 的楼层表头裁到半屏高
+以覆盖竖排按钮，桥接按 `scene` 选读取器。回归用的按钮列裁片在 `mapmatching/tests/fixtures/linguang-tabs/`，
+三张原始手机截图和叠图复盘在 `datasets/evaluation/20261107-linguang-phone/`。
+
+两位作者的磷光症图**不是同一批版型**：展十的 15 张噩梦十四棺图与凉哈皮的 14 张困难图两两交叉比对（`datasets/evaluation/
+20261107-linguang-phone/cross-author-floor-table.json`）没有任何一层能对上，所以噩梦十四棺只有展十有图，困难则凉哈皮和展十各有一套（展十困难十六棺 2026-11-08 加入），
+选错作者或难度只会得到「地图对齐证据不足」。`SCENE_CONTEXTS` 里展十现在是 `('hard','nightmare')`，桌面和安卓的难度
+选择在「磷光症 · 展十」下放开为困难/噩梦，凉哈皮仍固定困难。
+展十困难与凉哈皮困难交叉比对（`datasets/evaluation/20261107-linguang-phone/cross-author-floor-table-hard.json`）证明两套困难图
+是同一批版型：展十 1–7、9、11、12 分别对应凉哈皮 地图14、11、6、5、12、8、2、4、3、7，展十 8、10 和凉哈皮 地图1、地图13 各自只有一方画了。凉哈皮的 `左直线/地图9` 与 `地图8` 地形和路线逐像素相同（只有标题缩略图不同），
+两条同地形条目会让识别永远判为「两张地图过于相似」，已在 2026-11-07 用 `set_map_enabled` 移入 `disabled.json`
+（本机），发布包只打 `floors.json` 里的条目，客户端更新作者图库后旧条目会被清掉。
 两位作者的发布包（`IdentityVMapAssistant-Maps-<作者>.zip`，由 `scripts/build_matching_module.py` 打包）
 包含该作者在两张游戏地图下的全部图，客户端更新作者图库即可得到磷光症；安装会按 `map_id` 替换旧条目并删掉旧路径文件。
 

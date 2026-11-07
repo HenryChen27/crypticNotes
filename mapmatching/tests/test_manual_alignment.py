@@ -155,19 +155,33 @@ class PetGestureTests(unittest.TestCase):
         from PySide6.QtWidgets import QApplication
         cls.app=QApplication.instance() or QApplication([])
 
-    def test_single_click_opens_at_once_and_double_click_retries_once(self):
-        # A click no longer waits out the double-click interval: the panel opens
-        # immediately, and a double-click retries once (retry() folds the panel).
+    def test_click_waits_one_interval_and_double_click_cancels_it(self):
+        # A click arms the panel for one double-click interval; a double-click
+        # inside that window cancels the panel and retries once, so the panel
+        # never flashes open on a double-click.
         from mapmatching.ui import DraggableGear,W,C,G
         parent=W.QWidget();parent.toggle_panel=Mock();parent.retry=Mock()
         button=DraggableGear(parent)
-        button.clicked.emit();self.assertFalse(button.click_timer.isActive())
-        parent.toggle_panel.assert_called_once()
+        button.clicked.emit();self.assertTrue(button.click_timer.isActive())
+        parent.toggle_panel.assert_not_called()
         event=G.QMouseEvent(C.QEvent.MouseButtonDblClick,C.QPointF(20,20),C.QPointF(20,20),
                            C.Qt.LeftButton,C.Qt.LeftButton,C.Qt.NoModifier)
         button.mouseDoubleClickEvent(event)
         self.assertFalse(button.click_timer.isActive())
-        parent.retry.assert_called_once()
+        parent.retry.assert_called_once();parent.toggle_panel.assert_not_called()
+        # Left alone, the armed click opens the panel when the interval runs
+        # out, and the pet does its trick then (never on the release itself).
+        with patch.object(button.pet,'play') as play:
+            button.clicked.emit();play.assert_not_called()
+            button.click_timer.timeout.emit()
+            parent.toggle_panel.assert_called_once();play.assert_called_once_with('heart')
+        # While the trick is still playing a click still toggles the panel,
+        # but the trick is not restarted.
+        button.click_timer.stop()
+        button.pet.enabled=True;button.pet.mood='heart';button.pet.clock.start()
+        with patch.object(button.pet,'play') as play:
+            button.single_click();play.assert_not_called()
+        self.assertEqual(parent.toggle_panel.call_count,2)
         button.exit_zone.close();button.pet.timer.stop()
 
     def test_popup_timeout_ignores_without_accepting_and_stops_timer(self):
@@ -181,42 +195,52 @@ class PetGestureTests(unittest.TestCase):
         self.assertFalse(popup.timer.isActive());self.assertFalse(popup.isVisible())
         popup.close()
 
-    def test_dwell_resets_when_pointer_leaves(self):
+    def test_slot_arms_with_the_pointer_and_never_quits_on_its_own(self):
+        # The corner slot only arms while the pointer is inside it; leaving
+        # disarms it, and no amount of hovering quits the app by itself.
         from mapmatching.ui import DraggableGear,W,C,G
         parent=W.QWidget();parent.toggle_panel=Mock();parent.retry=Mock()
         button=DraggableGear(parent);button.moved=True
         button.exit_zone.locate=Mock();button.exit_zone.setGeometry(100,100,190,90)
-        with patch.object(G.QCursor,'pos',return_value=C.QPoint(150,150)):
-            button.check_exit_zone()
-        self.assertTrue(button.exit_clock.isValid())
-        with patch.object(G.QCursor,'pos',return_value=C.QPoint(10,10)):
-            button.check_exit_zone()
-        self.assertFalse(button.exit_clock.isValid())
+        with patch.object(self.app,'quit') as quit_app, patch.object(button.pet,'play') as play:
+            with patch.object(G.QCursor,'pos',return_value=C.QPoint(150,150)):
+                button.check_exit_zone()
+            self.assertTrue(button.exit_zone.armed)
+            play.assert_called_once_with('puzzled')
+            with patch.object(G.QCursor,'pos',return_value=C.QPoint(10,10)):
+                button.check_exit_zone()
+            self.assertFalse(button.exit_zone.armed)
+            quit_app.assert_not_called()
         button.moved=False;button.check_exit_zone()
         self.assertFalse(button.exit_zone.isVisible());self.assertFalse(button.exit_timer.isActive())
         button.exit_zone.close();button.pet.timer.stop()
 
-    def test_exit_after_half_second_restores_position_before_quit(self):
+    def test_release_inside_slot_restores_position_before_quit(self):
         from mapmatching.ui import DraggableGear,W,C,G
-        parent=W.QWidget();parent.move(30,60)
+        parent=W.QWidget();parent.move(30,60);parent.clamp_to_screen=Mock();parent.save=Mock()
         button=DraggableGear(parent)
-        event=G.QMouseEvent(C.QEvent.MouseButtonPress,C.QPointF(20,20),C.QPointF(50,80),
-                           C.Qt.LeftButton,C.Qt.LeftButton,C.Qt.NoModifier)
-        button.mousePressEvent(event)
+        press=G.QMouseEvent(C.QEvent.MouseButtonPress,C.QPointF(20,20),C.QPointF(50,80),
+                            C.Qt.LeftButton,C.Qt.LeftButton,C.Qt.NoModifier)
+        button.mousePressEvent(press)
         original=C.QPoint(parent.pos())
         parent.move(150,150);button.moved=True
-        button.exit_zone.locate=Mock();button.exit_zone.setGeometry(100,100,190,90)
+        button.exit_zone.locate=Mock();button.exit_zone.setGeometry(100,100,190,90);button.exit_zone.show()
+        release=G.QMouseEvent(C.QEvent.MouseButtonRelease,C.QPointF(20,20),C.QPointF(150,150),
+                              C.Qt.LeftButton,C.Qt.NoButton,C.Qt.NoModifier)
         positions=[]
-        with patch.object(G.QCursor,'pos',return_value=C.QPoint(150,150)), \
-             patch.object(button,'exit_clock') as clock, \
-             patch.object(self.app,'quit',side_effect=lambda: positions.append(C.QPoint(parent.pos()))) as quit_app:
-            clock.isValid.return_value=True
-            clock.elapsed.return_value=499
-            button.check_exit_zone();quit_app.assert_not_called()
-            self.assertNotEqual(parent.pos(),original)
-            clock.elapsed.return_value=500
-            button.check_exit_zone();quit_app.assert_called_once()
-        self.assertEqual(positions,[original])
+        with patch.object(self.app,'quit',side_effect=lambda: positions.append(C.QPoint(parent.pos()))) as quit_app:
+            # Let go outside the slot: just a move, nothing quits.
+            with patch.object(G.QCursor,'pos',return_value=C.QPoint(10,10)):
+                button.check_exit_zone()
+            button.mouseReleaseEvent(release);quit_app.assert_not_called()
+            self.assertEqual(parent.pos(),C.QPoint(150,150))
+            # Drag again, this time let go inside the armed slot.
+            button.mousePressEvent(press);parent.move(150,150);button.moved=True;button.exit_zone.show()
+            with patch.object(G.QCursor,'pos',return_value=C.QPoint(150,150)):
+                button.check_exit_zone()
+            self.assertTrue(button.exit_zone.armed)
+            button.mouseReleaseEvent(release);quit_app.assert_called_once()
+        self.assertEqual(positions,[C.QPoint(150,150)])
         self.assertIsNone(button.origin)
         button.exit_zone.close();button.pet.timer.stop()
 

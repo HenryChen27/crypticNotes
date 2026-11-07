@@ -41,10 +41,11 @@ final class MapLibraryChoice extends LinearLayout {
     View detachRoute(){removeView(routeRow);return routeRow;}
     static String sceneOf(SharedPreferences prefs){return prefs.getString("scene","curse");}
     static String providerOf(SharedPreferences prefs){return prefs.getString("map_provider","lianghapi");}
-    /** The one difficulty an author offers for 磷光症 so far, or null when the player chooses. */
+    /** The one difficulty an author offers for 磷光症 so far, or null when the player chooses
+     *  (凉哈皮 has only 困难; 展十 has 困难 十六棺 and 噩梦 十四棺, both with route "full"). */
     static String fixedDifficulty(String scene,String provider){
         if(!scene.equals("linguang"))return null;
-        return provider.equals("zhanshi")?"nightmare":"hard";
+        return provider.equals("zhanshi")?null:"hard";
     }
     boolean isLinguang(){return scene.getIndex()==1;}
     String scene(){return isLinguang()?"linguang":"curse";}

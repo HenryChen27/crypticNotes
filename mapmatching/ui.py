@@ -31,9 +31,10 @@ else:
     from .mouse_input import MouseWatcher
     from .keyboard_input import KeyboardWatcher
     import win32gui
-from .appearance import PetAnimation, SpeechBubble, reaction, PetBehavior
+from .appearance import PetAnimation, SpeechBubble, reaction, PetBehavior, create_pet, skin_name, SKINS
 from .panel_dialogs import own_dialog_open
-from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox
+from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox,HandRule,reveal
+from .line_icons import KeyCap
 
 BG = 'rgba(20,28,37,234)'
 # Bundled faces, registered app-locally; nothing is installed system-wide.
@@ -44,6 +45,17 @@ FONT_FILES = ('DFPOP1-W5.ttf','EssayText-Italic.ttf','HYDiWRGJ.ttf')
 FONT_FALLBACK = 'PingFang SC' if sys.platform == 'darwin' else 'Microsoft YaHei UI'
 FONT_CACHE = []
 ARROW = (Path(__file__).resolve().parent/'assets/chevron.png').as_posix()
+
+
+def exclude_from_capture(window):
+    """Keep `window` on screen but out of every screen grab (Windows 10 2004+).
+    Returns False where unsupported, and the caller hides before capturing."""
+    if sys.platform != 'win32':
+        return False
+    try:
+        return bool(native.exclude_from_capture(int(window.winId())))
+    except Exception:
+        return False
 
 
 def show_floating(window):
@@ -304,6 +316,24 @@ def hotkey_text(name):
     if name.startswith('NUM') and name[3:].isdigit():
         return f'小键盘 {name[3:]}'
     return name
+
+
+# What fits on a key cap: the PC client prints key names short (ESC, Shift).
+KEYCAP_LABELS = {
+    'BACKSPACE':'Back','SPACE':'Space','ENTER':'Enter','RETURN':'Enter','CAPSLOCK':'Caps','NUMLOCK':'Num',
+    'CTRL':'Ctrl','SHIFT':'Shift','ALT':'Alt','APPS':'Menu','PRINTSCREEN':'PrtSc','SCROLLLOCK':'ScrLk',
+    'PAGEUP':'PgUp','PAGEDOWN':'PgDn','UP':'Up','DOWN':'Down','LEFT':'Left','RIGHT':'Right',
+    'NUMMUL':'Num *','NUMADD':'Num +','NUMSUB':'Num -','NUMDEC':'Num .','NUMDIV':'Num /',
+    'MOUSE_RIGHT':'右键','MOUSE_MIDDLE':'中键','MOUSE_SIDE1':'侧键1','MOUSE_SIDE2':'侧键2',
+}
+
+
+def keycap_text(name):
+    if name in KEYCAP_LABELS:
+        return KEYCAP_LABELS[name]
+    if name.startswith('NUM') and name[3:].isdigit():
+        return 'Num '+name[3:]
+    return hotkey_text(name)
 
 
 def resolve_hotkeys(settings):
@@ -656,7 +686,12 @@ class ManualAlignmentPopup(W.QWidget):
 
 
 class ExitDropZone(W.QWidget):
-    """Only visible while dragging; never captures game input."""
+    """The drop slot that appears in the top-right corner while the pet is
+    dragged. It only ever *arms*: the pointer entering it lights the slot and
+    changes the caption to 「松开即退出」, and quitting happens on release
+    inside it. Nothing quits on a timer while the hand is still holding the
+    pet. Click-through, never captures game input."""
+    SIZE=(168,96)
     def __init__(self):
         super().__init__(None, C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint
                          | C.Qt.WindowTransparentForInput | C.Qt.WindowDoesNotAcceptFocus)
@@ -664,32 +699,47 @@ class ExitDropZone(W.QWidget):
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         if sys.platform == 'darwin':
             self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
-        self.progress=0.
-        self.resize(156,92)
+        self.armed=False
+        self.grow=0.          # eased 0…1 while armed, for the lift and tint
+        self.anim=C.QTimer(self);self.anim.setInterval(16);self.anim.timeout.connect(self._step)
+        self.resize(*self.SIZE)
+
+    def set_armed(self,armed):
+        if armed==self.armed:return
+        self.armed=armed
+        if not self.anim.isActive():self.anim.start()
+        self.update()
+
+    def _step(self):
+        target=1. if self.armed else 0.
+        self.grow+=(target-self.grow)*.25
+        if abs(target-self.grow)<.01:
+            self.grow=target;self.anim.stop()
+        self.update()
 
     def paintEvent(self,event):
+        from .line_icons import paint_icon
         p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
-        rect=C.QRectF(self.rect()).adjusted(3,3,-3,-3)
-        p.setPen(C.Qt.NoPen);p.setBrush(G.QColor(180,55,67,65));p.drawRect(rect)
-        if self.progress:
-            fill=C.QRectF(0,0,rect.width()*self.progress,rect.height()*self.progress)
-            fill.moveCenter(rect.center())
-            p.setBrush(G.QColor(215,69,81,115));p.drawRect(fill)
-        p.setPen(G.QPen(G.QColor(235,110,122,180),1.5,C.Qt.DashLine));p.setBrush(C.Qt.NoBrush);p.drawRect(rect)
-        # Vector trash can: independent of fonts and emoji support.
-        p.setPen(G.QPen(G.QColor('#f1bec5'),2,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
-        x,y=rect.center().x(),rect.center().y()
-        p.drawLine(C.QPointF(x-12,y-10),C.QPointF(x+12,y-10))
-        p.drawRect(C.QRectF(x-5,y-15,10,5))
-        path=G.QPainterPath();path.moveTo(x-9,y-7);path.lineTo(x-7,y+14);path.lineTo(x+7,y+14);path.lineTo(x+9,y-7)
-        p.drawPath(path)
-        for dx in (-3,3): p.drawLine(C.QPointF(x+dx,y-4),C.QPointF(x+dx,y+9))
+        g=self.grow
+        # The slot lifts a little as it arms; the back is the plain red glass
+        # it always was, just deeper once armed.
+        inset=6-4*g
+        rect=C.QRectF(self.rect()).adjusted(inset,inset,-inset,-inset)
+        p.setPen(C.Qt.NoPen);p.setBrush(G.QColor(180,55,67,int(65+70*g)));p.drawRect(rect)
+        pen=G.QPen(G.QColor(235,110,122,int(180+60*g)),1.5+.5*g,C.Qt.SolidLine if g>.5 else C.Qt.DashLine)
+        p.setPen(pen);p.setBrush(C.Qt.NoBrush);p.drawRect(rect)
+        size=28+4*g
+        paint_icon(p,'exit',rect.center().x()-size/2,rect.top()+14-2*g,size,color='#f6c7cc' if g<.5 else '#ffffff',width=1.8)
+        font=self.font();font.setPixelSize(13);p.setFont(font)
+        p.setPen(G.QColor(246,199,204) if g<.5 else G.QColor(255,255,255))
+        p.drawText(C.QRectF(rect.left(),rect.bottom()-30,rect.width(),24),C.Qt.AlignCenter,'松开即退出' if self.armed else '拖到这里退出')
 
     def locate(self, point):
         screen = W.QApplication.screenAt(point) or W.QApplication.primaryScreen()
         rect = screen.availableGeometry()
         self.move(rect.right()-self.width()-18, rect.top()+18)
-        show_floating(self)
+        if not self.isVisible():
+            show_floating(self)
 
 
 def updater_process_running(pid):
@@ -721,14 +771,13 @@ class DraggableGear(GearButton):
     def __init__(self,window):
         super().__init__()
         self.window=window
-        self.pet=PetAnimation(self)
+        self.pet=create_pet(self,skin_name(getattr(window,'settings',None)))
         self.origin=None
         self.press_global=None
         self.drag_start_pos=None
         self.moved=False
         self.matching=False
         self.game_background=False
-        self.waiting_icon=G.QPixmap(str(ROOT/'mapmatching/appearance/skins/doll/waiting.png'))
         self.game_icon=G.QPixmap(str(ROOT/'mapmatching/assets/minigames/fish5.png'))
         self.match_clock=C.QElapsedTimer()
         self.match_timer=C.QTimer(self)
@@ -740,43 +789,62 @@ class DraggableGear(GearButton):
         # re-recognises.
         self.click_timer=C.QTimer(self)
         self.click_timer.setSingleShot(True)
-        self.click_timer.timeout.connect(lambda: self.window.toggle_panel())
-        self.clicked.connect(lambda: self.window.toggle_panel())
+        self.click_timer.timeout.connect(self.single_click)
+        # A click opens the panel after one double-click interval, so a
+        # double-click (re-recognise) cancels it instead of flashing the panel.
+        self.clicked.connect(self.begin_click)
         self.double_release=False
         self.locked=False
         self._drag_last=None
         self.exit_zone=ExitDropZone()
-        self.exit_clock=C.QElapsedTimer()
         self.exit_timer=C.QTimer(self)
         self.exit_timer.setInterval(40)
         self.exit_timer.timeout.connect(self.check_exit_zone)
+
+    def heart_playing(self):
+        """The hug / ghost-fire trick is still running: clicks are not read
+        until it ends, so a burst of clicks cannot restart or stack it."""
+        pet=self.pet
+        return (pet.enabled and pet.mood in ('heart','happy') and pet.clock.isValid()
+                and pet.clock.elapsed() < pet.duration)
+
+    def begin_click(self):
+        self.click_timer.start(W.QApplication.doubleClickInterval())
+
+    def single_click(self):
+        """A click that was not the first half of a double-click: the pet does
+        its trick (the lantern climbs and spits its fire) and the panel opens.
+        While the trick is still playing the panel still toggles, but the
+        trick is not restarted."""
+        if not self.matching and not self.heart_playing():
+            self.pet.play('heart')
+        self.window.toggle_panel()
+
+    def set_skin(self,name):
+        """Swap the body (doll / lantern) keeping size, fade and state."""
+        old=self.pet
+        if name==old.skin_id:
+            return
+        new=create_pet(self,name)
+        new.scale=old.scale;new.opacity=old.opacity;new.opacity_target=old.opacity_target
+        enabled=old.enabled
+        old.release()
+        self.pet=new
+        new.enable(enabled)
 
     def check_exit_zone(self):
         if not self.moved:
             self.exit_timer.stop()
             self.exit_zone.hide()
-            self.exit_clock.invalidate()
+            self.exit_zone.set_armed(False)
             return
         point=G.QCursor.pos()
         self.exit_zone.locate(point)
-        if self.exit_zone.geometry().contains(point):
-            if not self.exit_clock.isValid():
-                self.exit_clock.start()
-            remaining=max(0,500-self.exit_clock.elapsed())
-            self.exit_zone.progress=1-remaining/500
-            self.exit_zone.update()
-            if remaining == 0:
-                self.exit_timer.stop()
-                # Shutdown saves the window position; retain the position before
-                # this exit gesture rather than the trash zone's coordinates.
-                if self.drag_start_pos is not None:
-                    self.window.move(self.drag_start_pos)
-                self.origin=None
-                W.QApplication.instance().quit()
-        else:
-            self.exit_clock.invalidate()
-            self.exit_zone.progress=0.
-            self.exit_zone.update()
+        armed=self.exit_zone.geometry().contains(point)
+        if armed and not self.exit_zone.armed:
+            # The pet notices where it is being taken.
+            self.pet.play('puzzled')
+        self.exit_zone.set_armed(armed)
 
     def mouseDoubleClickEvent(self,event):
         if getattr(self.window,'_update_starting',False):
@@ -833,13 +901,8 @@ class DraggableGear(GearButton):
             self.gear_rotation=(self.match_clock.elapsed() % 1800)/5. if self.matching else 0.
             super().paintEvent(event)
         if self.matching and self.pet.enabled and not getattr(self.window,'_update_starting',False):
-            s=self.pet.scale
             p=G.QPainter(self)
-            p.setRenderHint(G.QPainter.Antialiasing)
-            p.setRenderHint(G.QPainter.SmoothPixmapTransform)
-            p.translate(90*s+(self.width()-112*s)/2,26*s+(self.height()-132*s)/2)
-            p.rotate(self.match_clock.elapsed()/8.)
-            p.drawPixmap(C.QRectF(-13*s,-13*s,26*s,26*s),self.waiting_icon,C.QRectF(self.waiting_icon.rect()))
+            self.pet.paint_waiting(p,self.match_clock.elapsed())
             p.end()
         if self.game_background:
             p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
@@ -910,12 +973,21 @@ class DraggableGear(GearButton):
 
     def mouseReleaseEvent(self,event):
         dragging=self.moved
+        quitting=dragging and self.exit_zone.armed and self.exit_zone.isVisible()
         self.origin=self.press_global=None
         self.moved=False
         self._drag_last=None
         self.exit_timer.stop()
         self.exit_zone.hide()
-        self.exit_clock.invalidate()
+        self.exit_zone.set_armed(False)
+        if quitting:
+            # Shutdown saves the window position; keep the one from before the
+            # gesture rather than the corner the pet was let go in.
+            if self.drag_start_pos is not None:
+                self.window.move(self.drag_start_pos)
+            self.setDown(False)
+            W.QApplication.instance().quit()
+            return
         if dragging:
             self.pet.end_drag()
         if self.double_release:
@@ -927,8 +999,6 @@ class DraggableGear(GearButton):
             self.window.clamp_to_screen()
             self.window.save()
             return                  # 不调 super() => 不发 clicked
-        if event.button()==C.Qt.LeftButton and not self.matching:
-            self.pet.play('heart')  # on release, so a drag never starts with a hug
         super().mouseReleaseEvent(event)
 
 
@@ -1017,11 +1087,13 @@ class Companion(W.QWidget):
         box.setAlignment(C.Qt.AlignTop)
         from .module_ui import MatchingControls,application_version
         self.matching_controls=MatchingControls(self)
+        # Section names and order follow the phone: 游戏设置 (always open),
+        # then 辅助设置, 界面设置 and 应用更新 under 「更多」.
         self.setting_sections = [FoldSection(name, i == 0) for i, name in
-                                 enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '问题排查'))]
+                                 enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '辅助设置'))]
         self.general_section=FoldSection('界面设置',True)
         self.map_shortcuts=FoldSection('快捷键')
-        self.version_section=FoldSection('版本')
+        self.version_section=FoldSection('应用更新')
         self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])
         self.version_section.body.addWidget(W.QLabel('主程序（含识图程序） · '+application_version()))
         self.version_section.body.addWidget(self.matching_controls)
@@ -1034,9 +1106,23 @@ class Companion(W.QWidget):
         group_layout.setContentsMargins(0, 0, 0, 0)
         group_layout.setSpacing(8)
         group_layout.setAlignment(C.Qt.AlignTop)
-        for index in (0,1,2,3,5,6,4,7):
-            section=self.setting_sections[index]
-            group_layout.addWidget(section)
+        # The per-match group is a card that is always open, titled under a
+        # hand-drawn rule; everything reached less often folds under one
+        # 「更多」, as on the phone.
+        card=self.setting_sections[0]
+        card.header.hide();card.header.setChecked(True)
+        card_title=W.QLabel('游戏设置');card_title.setObjectName('card_title')
+        card.body.insertWidget(0,card_title);card.body.insertWidget(1,HandRule())
+        self.more_section=FoldSection('更多')
+        self.more_section.body.setContentsMargins(6,8,6,10)
+        group_layout.addWidget(card)
+        group_layout.addWidget(self.setting_sections[3])
+        group_layout.addWidget(self.more_section)
+        for index in (1,2,4,6,7):
+            self.more_section.body.addWidget(self.setting_sections[index])
+        # 界面设置 (pet, font) is the settings tab itself, not a fold of 「更多」.
+        group_layout.addWidget(self.setting_sections[5])
+        for section in self.setting_sections+[self.more_section]:
             section.changed.connect(lambda: C.QTimer.singleShot(0, self.resize_settings))
         self.settings_scroll = W.QScrollArea()
         self.settings_scroll.setWidgetResizable(True)
@@ -1052,8 +1138,9 @@ class Companion(W.QWidget):
         from .minigames_ui import GameControls
         self.minigames = GameControls(self)
         minigames.addWidget(self.minigames)
-        # Which game map the player queued for. 磷光症 only has 展十's nightmare
-        # 十四棺 atlases so far, so choosing it fixes the rows below.
+        # Which game map the player queued for. 磷光症 has 凉哈皮's hard and
+        # 展十's hard/nightmare atlases, so choosing it narrows the rows below
+        # to what the chosen author offers (see context.SCENE_CONTEXTS).
         self.scene = ChalkChoice([('厄运之女','curse'),('磷光症','linguang')])
         self.scene.setCurrentIndex(1 if self.settings.get('scene') == 'linguang' else 0)
         scene_row=W.QHBoxLayout()
@@ -1142,9 +1229,9 @@ class Companion(W.QWidget):
         self.return_game.hide()
         debug.addWidget(self.return_game)
         buttons = W.QHBoxLayout()
-        retry = ChalkButton('重新识别')
+        retry = ChalkButton('重新识别',keycap=keycap_text(self.hotkey));self.retry_button=retry
         retry.clicked.connect(self.retry)
-        hide = ChalkButton('隐藏叠图')
+        hide = ChalkButton('隐藏叠图',keycap=keycap_text(self.hide_hotkey));self.hide_button=hide
         hide.clicked.connect(self.close_map)
         buttons.addWidget(retry)
         buttons.addWidget(hide)
@@ -1179,14 +1266,22 @@ class Companion(W.QWidget):
         self.pet_enabled.toggled.connect(self.set_pet_enabled)
         pet_row.addWidget(self.pet_enabled)
         pet_row.addStretch()
+        # Which body: the cloth doll or the frost-grown mine lamp.
+        self.pet_skin = ChalkChoice([(cls.NAME,key) for key,cls in SKINS])
+        self.pet_skin.setCurrentIndex([key for key,_ in SKINS].index(skin_name(self.settings)))
+        self.pet_skin.setToolTip('矿灯：识别失败时眼里射出蓝色激光扫射，识别成功时吐出一团蓝色鬼火')
+        self.pet_skin.currentIndexChanged.connect(lambda _: self.set_pet_skin())
+        skin_row=W.QHBoxLayout()
+        skin_label=W.QLabel('桌宠');skin_label.setFixedWidth(62)
+        skin_row.addWidget(skin_label);skin_row.addWidget(self.pet_skin,1)
         # Desk-pet controls: how big, whether it fades when ignored, whether it
         # keeps still, and whether it can be dragged at all.
         self.pet_size_label = W.QLabel()
         self.pet_size = ChalkSlider()
         self.pet_size.setRange(75,150)
         self.pet_size.setValue(max(75,min(150,int(round(float(self.settings.get('pet_scale',1.))*100)))))
-        self.pet_size.valueChanged.connect(lambda value: self.pet_size_label.setText(f'布偶大小    {value}%'))
-        self.pet_size_label.setText(f'布偶大小    {self.pet_size.value()}%')
+        self.pet_size.valueChanged.connect(lambda _: self.update_pet_size_label())
+        self.update_pet_size_label()
         self.pet_size.sliderReleased.connect(self.pet_settings_changed)
         self.pet_size.valueChanged.connect(lambda _: None if self.pet_size.isSliderDown() else self.pet_settings_changed())
         self.pet_fade = ChalkToggle(); self.pet_fade.setChecked(bool(self.settings.get('pet_fade',True)))
@@ -1244,6 +1339,7 @@ class Companion(W.QWidget):
         self.font_size.valueChanged.connect(lambda _:self.font_changed())
         size_row.addWidget(self.font_size);self.general_section.body.addLayout(size_row)
         self.general_section.body.addLayout(pet_row)
+        self.general_section.body.addLayout(skin_row)
         self.general_section.body.addWidget(self.pet_size_label)
         self.general_section.body.addWidget(self.pet_size)
         for row in self.pet_rows:
@@ -1312,6 +1408,9 @@ class Companion(W.QWidget):
             self.tray.setContextMenu(self.tray_menu)
             self.tray.show()
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
+        # The pet, its bubble and the drop slot stay on screen during a screen
+        # grab: Windows leaves them out of the capture, so nothing has to hide.
+        self._capture_excluded = all(exclude_from_capture(w) for w in (self, self.toast, self.gear.exit_zone))
         # Prepare the filtered index while the gear is idle, before the first G.
         self.module_tabs.setCurrentIndex(1 if self.last_module=='games' else 0)
         C.QTimer.singleShot(0,self.refresh_matching_module)
@@ -1319,7 +1418,8 @@ class Companion(W.QWidget):
         from .update_notice import watch_once
         def update_notice(available):
             self.update_button.set_update_available(available)
-            self.general_section.header.set_update_available(available)
+            self.version_section.header.set_update_available(available)
+            self.more_section.header.set_update_available(available)
             self.update_button.setToolTip('发现新版本，点击更新' if available else '')
         watch_once(self, ROOT, update_notice)
 
@@ -1346,7 +1446,9 @@ class Companion(W.QWidget):
         self.keys.close_key=HOTKEYS[self.close_hotkey] if self.close_key_enabled.isChecked() else 0
         self.keys.hide_key=HOTKEYS[self.hide_hotkey] if self.hide_key_enabled.isChecked() else 0
         for row,label,key in zip(self.map_key_rows,('开启地图快捷键','关闭地图快捷键','隐藏叠图快捷键'),(self.hotkey,self.close_hotkey,self.hide_hotkey)):
-            row.set_key(label,hotkey_text(key))
+            row.set_key(label,keycap_text(key))
+        if hasattr(self,'retry_button'):
+            self.retry_button.set_keycap(keycap_text(self.hotkey));self.hide_button.set_keycap(keycap_text(self.hide_hotkey))
         if persist:self.save()
 
     def refresh_matching_module(self):
@@ -1362,6 +1464,8 @@ class Companion(W.QWidget):
         if hasattr(self,'status'):self.status.setVisible(index==0 and available)
         for i,section in enumerate(self.setting_sections):
             section.setVisible(i in ({0,1,2,4,6,7} if index==0 and available else {7} if index==0 else {3} if index==1 else {5}))
+        self.more_section.setVisible(index==0)
+        if index==0 and not available:self.more_section.header.setChecked(True)
         self.version_section.header.setVisible(available)
         if not available:self.version_section.header.setChecked(True)
         self.settings_scroll.verticalScrollBar().setValue(0)
@@ -1415,7 +1519,8 @@ class Companion(W.QWidget):
             self.module_tabs.buttons[0].setVisible(not games_only)
             if games_only:self.module_tabs.setCurrentIndex(1)
             self.settings_scroll.verticalScrollBar().setValue(0)
-        self.panel.setVisible(not self.panel.isVisible())
+        if self.panel.isVisible():self.panel.hide()
+        else:reveal(self.panel,distance=0)
         self.resize_settings()
         self.adjustSize()
         self.move(right-self.width()+1,self.y())
@@ -1485,10 +1590,12 @@ class Companion(W.QWidget):
         self.author_row.setVisible(True)
         self.difficulty_row.setVisible(True)
         if options is not None:
-            # This author only has one difficulty for this map so far: show it, fixed.
+            # The author offers only some difficulties for this map: with one,
+            # show it fixed; with several, the player picks among them.
             difficulties, _ = options
-            self.difficulty.setCurrentIndex(1 if 'nightmare' in difficulties else 0)
-        self.difficulty.setEnabled(options is None)
+            if len(difficulties) == 1 or self.context()[0] not in difficulties:
+                self.difficulty.setCurrentIndex(1 if 'nightmare' in difficulties else 0)
+        self.difficulty.setEnabled(options is None or len(options[0]) > 1)
         self.party_row.setVisible(options is None and not is_zhanshi and self.difficulty.currentIndex() == 1)
         self.zhanshi_row.setVisible(options is None and is_zhanshi)
 
@@ -1497,7 +1604,8 @@ class Companion(W.QWidget):
         options = scene_options(self.scene_id(), self.provider())
         if options is not None:
             difficulties, modes = options
-            return (difficulties[0], modes[0])
+            chosen = 'hard' if self.difficulty.currentIndex() == 0 else 'nightmare'
+            return (chosen if chosen in difficulties else difficulties[0], modes[0])
         if self.map_provider.currentIndex() == 1:
             return ('hard' if self.difficulty.currentIndex()==0 else 'nightmare','full' if self.zhanshi_route.currentIndex() == 0 else 'speed')
         return ('hard',None) if self.difficulty.currentIndex() == 0 else ('nightmare','solo' if self.party.currentIndex() == 0 else 'duo')
@@ -1507,7 +1615,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_skin=self.gear.pet.skin_id,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def show_module(self, index):
         """Open the panel on a module tab (0 notes, 1 mini-games)."""
@@ -1545,6 +1653,28 @@ class Companion(W.QWidget):
         else:
             self.place_gear(anchor)
         self.clamp_to_screen()
+        self.save()
+
+    def update_pet_size_label(self):
+        self.pet_size_label.setText(f'{self.gear.pet.NAME}大小    {self.pet_size.value()}%')
+
+    def set_pet_skin(self):
+        """Switch bodies under the pointer, like toggling the pet does."""
+        expanded = self.panel.isVisible()
+        anchor_widget = self.panel if expanded else self.gear
+        anchor = anchor_widget.mapToGlobal(C.QPoint(0,0))
+        self.gear.set_skin(self.pet_skin.currentData())
+        self.apply_pet_settings()
+        self.update_pet_size_label()
+        self.adjustSize()
+        self.layout().invalidate()
+        self.layout().activate()
+        if expanded:
+            self.move(self.pos()+anchor-self.panel.mapToGlobal(C.QPoint(0,0)))
+        else:
+            self.place_gear(anchor)
+        self.clamp_to_screen()
+        self.toast.hide()
         self.save()
 
     def set_pet_enabled(self, enabled):
@@ -1955,7 +2085,14 @@ class Companion(W.QWidget):
         self.visibility_obstructed = False
         self.open_probe_count = 0
         self.started = time.perf_counter()
-        self.target = int(self.demo_window.winId()) if self.demo_window is not None else (target_override or win32gui.GetForegroundWindow())
+        foreground = target_override or win32gui.GetForegroundWindow()
+        if self.demo_window is None and sys.platform == 'win32' and target_override is None and foreground == int(self.winId()):
+            # Opened from the pet itself (double-click, panel): the foreground
+            # is us, so bind the game window by title instead, which keeps the
+            # window capture path and spares the pet from hiding.
+            from .game_scene_watch import find_game_window
+            foreground = find_game_window(None) or foreground
+        self.target = int(self.demo_window.winId()) if self.demo_window is not None else foreground
         self.status.setText('等待地图展开…')
         self.gear.set_matching(True)
         C.QTimer.singleShot(self.delay.currentData(),lambda: self.take_capture(token))
@@ -1984,8 +2121,10 @@ class Companion(W.QWidget):
             window_capture = find_game_window(getattr(self, 'target', None)) is not None
         if self.demo_window is None and sys.platform == 'win32' and not window_capture and self.isVisible():
             self._capture_exclusion = native.client_rect(int(self.winId()))
-            self._capture_hidden = True
-            self.hide()
+            if not getattr(self,'_capture_excluded',False):
+                # Only where Windows cannot leave us out of the grab itself.
+                self._capture_hidden = True
+                self.hide()
         C.QTimer.singleShot(60,lambda: self.capture_after_hide(token))
 
     def capture_after_hide(self,token):
@@ -2180,6 +2319,9 @@ class Companion(W.QWidget):
             self.retry(force_floor=floor)
 
     def close_map(self,silent=False,background=False):
+        # Remember whether a hidden map is waiting for the hide key to bring it
+        # back; any other close forgets it.
+        self.hidden_by_key = bool(background and getattr(self,'state',None) is not None and self.state.opened)
         snapshot = getattr(self, '_window_snapshot', None)
         if snapshot is not None:
             snapshot[2].stop()
@@ -2396,7 +2538,13 @@ class Companion(W.QWidget):
             results.put((token,visible))
         def launch():
             threading.Thread(target=inspect,daemon=True,name='map-visibility').start()
-        if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and getattr(self,'visibility_clean_next',False):
+        bound = False
+        if sys.platform == 'win32' and not getattr(self, '_capture_window_hwnd', None):
+            from .game_scene_watch import find_game_window
+            bound = find_game_window(getattr(self, 'target', None)) is not None
+        # Only a screen grab needs the pet out of the frame; a bound game window
+        # is captured by itself, pet or no pet.
+        if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and not bound and not getattr(self,'_capture_excluded',False) and getattr(self,'visibility_clean_next',False):
             self.visibility_clean_next=False
             self._visibility_hidden=True
             self.hide()
@@ -2490,7 +2638,9 @@ class Companion(W.QWidget):
             if getattr(self.keys,'hide_key',0) and self.keys.hide_key in edges:
                 if self.state.opened:
                     self.close_map(background=True)
-                elif self.is_game(foreground) or self.demo_window is not None:
+                elif getattr(self,'hidden_by_key',False) and (self.is_game(foreground) or self.demo_window is not None):
+                    # Only bring back what this key hid; from idle it is just
+                    # the game's own Backspace.
                     self.open_map('hide_hotkey_restore')
             elif getattr(self.keys,'toggle_key',0) and self.enabled.isChecked() and self.keys.toggle_key in edges and self.is_game(foreground):
                 # A game can close its map through multiple inputs. Never invert

@@ -2,18 +2,29 @@
 import math
 
 
-def manual_floor_reading(pixels):
-    """Keep normal recognition untouched; dark damage tint needs two agreeing readings."""
+def manual_floor_reading(pixels, basement=False):
+    """Keep normal recognition untouched; dark damage tint needs two agreeing readings.
+
+    `basement` picks the vertical −1…−4 column reader of 磷光症 instead of the
+    1/2 pair reader of 厄运之女; neither reads the other one's buttons."""
     import numpy as np
-    from .floor_tabs import inspect_floor_tabs
-    original=inspect_floor_tabs(pixels)
+    from .floor_tabs import inspect_floor_tabs, inspect_basement_tabs
+    read=inspect_basement_tabs if basement else inspect_floor_tabs
+    original=read(pixels)
     if original['floor'] is not None or original.get('reason') == 'conflicting_tabs':
         return original
-    readings=[inspect_floor_tabs(np.clip(pixels.astype(np.float32)*gain,0,255).astype(np.uint8))
+    readings=[read(np.clip(pixels.astype(np.float32)*gain,0,255).astype(np.uint8))
               for gain in (1.75,2.0)]
     if readings[0]['floor'] is not None and readings[0]['floor'] == readings[1]['floor']:
         return dict(readings[0],reason='manual_dark_tabs_consensus')
     return original
+
+
+def basement_library(details):
+    """True when this session reads the basement column (磷光症), as recorded
+    by `live.match_with_cache` in the diagnostics of every result."""
+    tabs=(details or {}).get('diagnostics',{}).get('floor_tabs')
+    return isinstance(tabs,dict) and tabs.get('reader') == 'basement'
 
 
 def reliable_memory(candidate, details):
@@ -44,9 +55,20 @@ def cross_floor_candidate(matcher, pixels, confirmed, details):
         return None, None
     if details.get('reason') == 'map_ui_not_confirmed' or not inspect_map_ui(pixels)['visible']:
         return None, None
-    floor = manual_floor_reading(pixels)['floor']
+    reading = manual_floor_reading(pixels, basement_library(details))
+    floor = reading['floor']
     if floor is None or floor == confirmed.floor:
         return None, None
+    # Judge the same pixels recognition judges: on a phone-shaped frame the
+    # viewport crop, which keeps the right-hand HUD icons (door, zoom, locate)
+    # from standing in for map structure on an empty floor.
+    from .phone_layout import phone_viewport
+    viewport = phone_viewport(pixels)
+    if viewport is not None:
+        pixels = viewport
+    if reading.get('reader') == 'basement':
+        from .floor_tabs import hide_floor_column
+        pixels = hide_floor_column(pixels, reading)
     # Empty floors must be centered by the caller, never fitted to HUD noise.
     from .evidence import extract
     evidence = extract(pixels)
@@ -91,7 +113,7 @@ def blank_floor_offer(pixels, confirmed, details):
         return None
     if not inspect_map_ui(pixels)['visible']:
         return None
-    floor=manual_floor_reading(pixels)['floor']
+    floor=manual_floor_reading(pixels, basement_library(details))['floor']
     if floor is None or floor == confirmed.floor:
         return None
     return dict(map_id=confirmed.map_id, floor=floor)

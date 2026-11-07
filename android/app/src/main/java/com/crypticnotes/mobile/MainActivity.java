@@ -92,7 +92,7 @@ public class MainActivity extends Activity {
         TextView subtitle = new TextView(this);
         subtitle.setVisibility(View.GONE);
         content.addView(Theme.muted(this, subtitle.getText().toString()));
-        Theme.Rule rule = new Theme.Rule(this);
+        Theme.HandRule rule = new Theme.HandRule(this);
         LinearLayout.LayoutParams ruleParams = matchWrap();
         ruleParams.topMargin = Theme.px(this, 10);
         content.addView(rule, ruleParams);
@@ -141,7 +141,7 @@ public class MainActivity extends Activity {
         LinearLayout difficultyRow=choiceRow(fieldLabel("难度"), difficulty);
         settings.addView(difficultyRow, matchWrap());
         // 磷光症 has only nightmare 十四棺 so far: the row above gives way to a note.
-        View sceneNote = Theme.helpLabel(this, "磷光症", "凉哈皮目前只有困难，展十只有噩梦十四棺；难度跟随所选作者，其余待作者更新。楼层按负一/负二/负三层识别。");
+        View sceneNote = Theme.helpLabel(this, "磷光症", "凉哈皮只有困难（14 张），展十有困难十六棺（12 张）和噩梦十四棺（15 张）；按本局难度选作者和难度。楼层按右侧负一到负四的按钮识别，负四层暂无参考图。");
         settings.addView(sceneNote, matchWrap());
         settings.addView(libraryChoice.detachRoute(), matchWrap());
         TextView routeLabel = fieldLabel("参考路线");
@@ -162,7 +162,8 @@ public class MainActivity extends Activity {
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
         libraryChoice.changed=()->{
             boolean linguang=libraryChoice.isLinguang();
-            difficultyRow.setVisibility(linguang?View.GONE:View.VISIBLE);
+            // 磷光症: 凉哈皮 has one difficulty (hidden, fixed); 展十 has two.
+            difficultyRow.setVisibility(linguang&&!libraryChoice.isZhanshi()?View.GONE:View.VISIBLE);
             sceneNote.setVisibility(linguang?View.VISIBLE:View.GONE);
             routeRow.setVisibility(!linguang&&!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
             routeLabel.setVisibility(routeRow.getVisibility());
@@ -374,8 +375,9 @@ public class MainActivity extends Activity {
      *
      * Returns the body, for the caller to fill.
      */
-    private LinearLayout fold(String title, boolean expanded) {
-        Theme.SectionHeading bar = heading(title);
+    private LinearLayout fold(String title, boolean expanded) { return fold(title, expanded, null); }
+    private LinearLayout fold(String title, boolean expanded, String icon) {
+        Theme.SectionHeading bar = heading(title).setIcon(icon);
         content.addView(bar);
         LinearLayout body = card();
         body.setTag(bar);
@@ -408,9 +410,11 @@ public class MainActivity extends Activity {
         return panel;
     }
 
-    private TextView fieldLabel(String value) {
+    private TextView fieldLabel(String value) { return fieldLabel(value, null); }
+    private TextView fieldLabel(String value, String icon) {
         TextView view = new TextView(this);
         view.setText(value);
+        if (icon != null) LineIcon.set(view, icon, Theme.TEXT, 16);
         LinearLayout.LayoutParams params = matchWrap();
         params.topMargin = Theme.px(this, 10);
         params.bottomMargin = Theme.px(this, 4);

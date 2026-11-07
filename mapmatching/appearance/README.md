@@ -10,13 +10,23 @@ appearance/
   player.py          分层绘制、骨骼变换、动画计时
   speech.py          对话气泡
   events.py          提示内容对应什么动作
+  lantern.py         磷焰矿灯的身体：分层、灯光、舞台窗口
   skins/
-    doll/            当前布偶外观
+    doll/            小布偶
       image.png      外观原图
       rig.py         分层轮廓和关节位置
       animation.py   比心、挠头、困倦、招呼的动作角度
+      effects.py     手绘符号
       __init__.py    组合此套外观的资源
+    lantern/         磷焰矿灯
+      image.png      外观原图（444×484）
+      rig.py         七层多边形、关节、镜片和亮核位置
+      animation.py   各状态的倾斜、提手、链条、晶簇、腿与灯光通道
+      effects.py     激光扫射、鬼火、晶簇星光、霜尘、符号
+      !.png question.png z.png   冷色版手绘符号（由 doll 的笔触重新上色）
 ```
+
+`player.py` 的 `RigPlayer` 是两种身体共用的基类（计时、帧缓存、拖动弹簧、淡出、转头）；`PetAnimation` 是布偶，`lantern.LanternAnimation` 是矿灯。`__init__.py` 的 `SKINS` 列出可选身体，`create_pet(button, 名字)` 创建，`skin_name(settings)` 从设置读取（键 `pet_skin`）。矿灯的激光和鬼火超出按钮范围，画在 `EffectStage` 穿透窗口上，只在动作期间出现。详见 docs/pet-animation.md。
 
 图片在运行时按 rig.py 的多边形拆层，不需要预先导出手臂、头部等 PNG。手臂上下区域合并为完整纹理，沿长度连续弯曲，避免肘部折角。撒娇时双臂向内收一次、停留后放下，不反复摆臂。
 
@@ -24,7 +34,7 @@ appearance/
 
 在 skins 下复制 doll 为新目录，分别调整 image.png、rig.py 和 animation.py。当前播放器采用 306×332 的坐标画布及相同的身体部件命名；替换角色时需要重新调整分层和关节，单换图片不能自动绑骨骼。不同身体结构则需要扩展 player.py。
 
-代码中通过 PetAnimation(button, skin=新外观模块) 指定外观；当前仍默认使用 doll，尚未增加界面中的多外观选择器。新模块必须被代码导入，PyInstaller 才能收集其 Python 代码；skins 下的 PNG/JPG/WebP/JSON 资源会自动加入打包。
+设置面板「桌宠」一行在小布偶和磷焰矿灯之间切换（`DraggableGear.set_skin`）；默认仍是 doll。新模块必须被代码导入，PyInstaller 才能收集其 Python 代码；skins 下的 PNG/JPG/WebP/JSON 资源会自动加入打包。
 
 docs/images/logo.png 继续作为 README 和项目品牌图片。布偶使用本目录独立的 image.png，以后修改项目 logo 不会意外改动布偶。
 

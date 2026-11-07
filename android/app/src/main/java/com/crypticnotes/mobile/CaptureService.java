@@ -1145,6 +1145,10 @@ public class CaptureService extends Service {
         }
         if (text == null || text.equals(badgeText)) return;
         badgeText = text;
+        String glyph = newState == S_MATCHED ? "check" : newState == S_FAILED ? "question"
+                : text.contains("直接叠图") || text.contains("楼层") ? "floor" : null;
+        if (glyph == null) badgeLabel.setCompoundDrawables(null, null, null, null);
+        else LineIcon.set(badgeLabel, glyph, Theme.TEXT, 14);
         if (badgeMessage) badgeLabel.setText(text);
         else { badgeMessage = true; bubble(true); }
         main.removeCallbacks(hideBadgeMessage);
@@ -1182,9 +1186,15 @@ public class CaptureService extends Service {
         }
         if (spin == null) {
             spin = android.animation.ObjectAnimator.ofFloat(badgeEmblem, "rotation", 0f, 360f);
-            spin.setDuration(1100);
+            spin.setDuration(1500);
             spin.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-            spin.setInterpolator(new android.view.animation.LinearInterpolator());
+            // Three 120° turns per revolution, each easing to a short rest,
+            // like the game's own loading mark rather than a steady spinner.
+            spin.setInterpolator(t -> {
+                float segments = t * 3f; int k = (int) Math.floor(segments); float u = segments - k;
+                float eased = u < .62f ? (1f - (float) Math.cos(Math.PI * u / .62f)) / 2f : 1f;
+                return Math.min(1f, (k + eased) / 3f);
+            });
         }
         if (!spin.isStarted()) spin.start();
     }
@@ -1533,8 +1543,10 @@ public class CaptureService extends Service {
      * window needs the main thread responsive.
      */
     private static RawFrame encodeFloorHeader(Bitmap bitmap){
+        // Half the height: 厄运之女 keeps its 1/2 pair in the top quarter, but
+        // 磷光症 stacks −1…−4 down to about 45% of the screen.
         int w=bitmap.getWidth(),left=(int)(.55*w),right=(int)(.94*w);
-        Bitmap header=Bitmap.createBitmap(bitmap,left,0,right-left,Math.max(1,bitmap.getHeight()/4));
+        Bitmap header=Bitmap.createBitmap(bitmap,left,0,right-left,Math.max(1,bitmap.getHeight()/2));
         try{
             return rawFrame(header);
         }catch(Exception e){return null;}finally{if(header!=bitmap)header.recycle();}
@@ -1923,7 +1935,7 @@ public class CaptureService extends Service {
         panel.addView(applied);
         Theme.ChalkChoice.Listener apply = i -> {
             boolean nightmare = difficulty.getIndex() == 1;
-            difficultyRow.setVisibility(libraryChoice.isLinguang() ? View.GONE : View.VISIBLE);
+            difficultyRow.setVisibility(libraryChoice.isLinguang()&&!libraryChoice.isZhanshi() ? View.GONE : View.VISIBLE);
             party.setVisibility(!libraryChoice.isLinguang()&&!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
             routeRow.setVisibility(party.getVisibility());
             applyRecognition(libraryChoice.difficulty(nightmare ? "nightmare" : "hard"),
@@ -2012,6 +2024,9 @@ public class CaptureService extends Service {
         p.y = ballBelow ? Theme.px(this, 12) : Math.max(Theme.px(this, 12), height - p.height - Theme.px(this, 12));
         header.mover=(dx,dy)->{p.x=Math.max(0,Math.min(width-p.width,p.x+dx));p.y=Math.max(0,Math.min(height-p.height,p.y+dy));windows.updateViewLayout(shell,p);};
         windows.addView(shell, p);
+        shell.setAlpha(0f); shell.setTranslationY(Theme.px(this, 6));
+        shell.animate().alpha(1f).translationY(0f).setDuration(150)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
     }
 
     /**
@@ -2074,7 +2089,7 @@ public class CaptureService extends Service {
     private volatile String scene="curse";
 
     private String difficultyLabel(String difficulty, String mode) {
-        if(scene.equals("linguang")) return "磷光症 · "+("nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"凉哈皮 · 困难");
+        if(scene.equals("linguang")) return "磷光症 · "+(!"full".equals(mode)?"凉哈皮 · 困难":"nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"展十 · 困难 · 十六棺");
         return (difficulty.equals("nightmare") ? "噩梦" : "困难")
                 + " · " + (mode.equals("full") ? "展十全棺" : mode.equals("speed") ? "展十速刷" : mode.equals("duo") ? "多人路线" : "单人路线");
     }

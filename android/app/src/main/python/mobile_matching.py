@@ -15,10 +15,15 @@ def register(*args, **kwargs):
     return result
 
 
-def selected_floor(pixels):
+def selected_floor(pixels, basement=False):
+    """`basement`: read the vertical −1…−4 column of 磷光症 instead of the 1/2 pair."""
     from mapmatching.src.manual_alignment import manual_floor_reading
-    reading=manual_floor_reading(pixels)
+    reading=manual_floor_reading(pixels,basement)
     if reading['floor'] is not None or reading.get('reason')=='conflicting_tabs':return reading['floor']
+    if basement:
+        # The column reader works at native resolution and refuses an
+        # incomplete column, so there is no second interpolation to consult.
+        return None
     # Area downsampling can erase a tiny phone digit at one threshold while
     # its neighbor survives at another. Keep the existing shape/group gates,
     # requiring two independent interpolation results to agree.

@@ -4,6 +4,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from mobile_matching import MobileMatcher as MapMatcher, selected_floor
+from mapmatching.src.floor_tabs import inspect_basement_tabs
 from mapmatching.src.live import match_with_cache, raw_layer, MultiplayerFallback
 from mobile_images import read_image
 from mobile_cancellation import checkpoint, request_scope, Superseded
@@ -102,7 +103,9 @@ def read_floor_header(data, width, height, header_width=0, header_height=0, head
         return 0
     pixels=np.zeros((height,width,3),np.uint8)
     pixels[:header.shape[0],left:left+header.shape[1]]=header
-    return selected_floor(pixels) or 0
+    # 磷光症 stacks −1…−4 down the right edge; the header must reach them
+    # (CaptureService crops half the height) or the match frame reads them.
+    return selected_floor(pixels,basement=_scene=='linguang') or 0
 
 
 def commit_match(token):
@@ -162,8 +165,18 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     x,X=int(.41*w),int(.86*w)
     map_pixels=np.zeros_like(pixels)
     map_pixels[y:Y,x:X]=pixels[y:Y,x:X]
-    # The tab reader only knows 厄运之女's 1/2/-1 buttons; 磷光症's -1/-2/-3 would misread.
-    floor = None if _scene!='curse' else int(viewed_floor) if viewed_floor in (-1,1,2) else selected_floor(pixels)
+    # 厄运之女 reads its 1/2/-1 pair; 磷光症 reads its vertical −1…−4 column.
+    # Either way the value is the viewed floor, used only as a hint.
+    if _scene=='linguang':
+        floor = int(viewed_floor) if viewed_floor in (-1,-2,-3,-4) else selected_floor(pixels,basement=True)
+        # The button column lies inside the viewport: hide it from the evidence.
+        from mapmatching.src.floor_tabs import hide_floor_column
+        map_pixels=hide_floor_column(map_pixels,inspect_basement_tabs(pixels))
+        if floor is not None and not any(r['floor']==floor for ref in _matcher.references for r in ref.regions):
+            return json.dumps(dict(ok=False,message=f'负{-floor}层没有参考图，请切回负一到负三层',
+                details=dict(reason='floor_not_in_library',floor=floor)))
+    else:
+        floor = int(viewed_floor) if viewed_floor in (-1,1,2) else selected_floor(pixels)
     if isinstance(_matcher, MultiplayerFallback):
         _matcher.primary.floor_hint = floor
         # Ensure the lazily created solo matcher gets this frame's floor too.

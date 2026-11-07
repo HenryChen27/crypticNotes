@@ -88,6 +88,18 @@ def keep_floating(_window):
     return True
 
 
+def exclude_from_capture(hwnd):
+    """让这个窗口留在屏幕上、却不出现在任何截图里（BitBlt、PrintWindow、
+    桌面复制都不含它）。Windows 10 2004 起支持；成功返回 True，老系统返回
+    False，调用方退回「截图前先藏起来」。"""
+    try:
+        import ctypes
+        WDA_EXCLUDEFROMCAPTURE = 0x11
+        return bool(ctypes.windll.user32.SetWindowDisplayAffinity(int(hwnd), WDA_EXCLUDEFROMCAPTURE))
+    except Exception:
+        return False
+
+
 # 0x01~0x06 在任何键盘上都是鼠标键（左/右/中/侧1/侧2）。用来判断某个键的
 # 按下态该由鼠标还是键盘的 Raw Input 负责。与 mouse_input.BUTTON_VKS 同源。
 MOUSE_VKS = frozenset((0x01,0x02,0x04,0x05,0x06))

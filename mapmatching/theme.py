@@ -54,32 +54,86 @@ class ChalkButton(W.QPushButton):
             painter.setBrush(G.QColor('#c56967'))
             painter.drawEllipse(C.QPointF(self.width()-32, self.height()/2), 3.5, 3.5)
 
-    def __init__(self,text):
+    def __init__(self,text,icon=None,keycap=None):
         super().__init__(text)
         self.setMinimumHeight(39)
         self.setCursor(C.Qt.PointingHandCursor)
+        # Legend icon before the word and, like the PC client, the key that
+        # also triggers the button drawn as a small cap at the right edge.
+        self.icon=icon
+        self.keycap=keycap
+
+    def set_keycap(self,key):
+        self.keycap=key
+        self.update()
 
     def paintEvent(self,event):
         p=G.QPainter(self)
         enabled=self.isEnabled()
+        down=enabled and self.isDown()
+        # Pressed: the chalk darkens and the whole face sinks one pixel, the
+        # way the game's buttons answer a tap.
+        if down:
+            p.translate(0,1)
+            p.setOpacity(.82)
         p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),(self.underMouse() or self.isDown()) if enabled else 'deep',.7,'rounded'))
+        p.setOpacity(1)
         p.setPen(G.QColor('#152635' if enabled else '#8294a1'))
         p.setFont(self.font())
-        p.drawText(self.rect(),C.Qt.AlignCenter,self.text())
+        # The label (and its icon) centre in the room left of the key cap, so
+        # neither ever runs under the other on a half-width button.
+        cap_width=0
+        if self.keycap:
+            small=G.QFont(self.font());small.setPixelSize(11)
+            cap_width=max(22,G.QFontMetrics(small).horizontalAdvance(self.keycap)+12)+10
+        text_rect=C.QRect(6,0,self.width()-12-cap_width,self.height())
+        if self.icon:
+            from .line_icons import paint_icon
+            metrics=G.QFontMetrics(self.font())
+            total=18+6+metrics.horizontalAdvance(self.text())
+            left=max(6,text_rect.left()+(text_rect.width()-total)/2)
+            paint_icon(p,self.icon,left,(self.height()-18)/2,18,color='#152635' if enabled else '#8294a1')
+            p.drawText(C.QRect(int(left+24),0,text_rect.right()-int(left+24),self.height()),C.Qt.AlignVCenter|C.Qt.AlignLeft,self.text())
+        else:
+            p.drawText(text_rect,C.Qt.AlignCenter,self.text())
+        if self.keycap:
+            paint_keycap(p,self.keycap,self.width()-8,self.height()/2,self.font(),dark=True)
         self.paint_update_dot(p)
+
+
+def paint_keycap(p,key,right,cy,font,dark=False):
+    """A small outlined key cap whose right edge sits at `right`."""
+    p.save()
+    p.setRenderHint(G.QPainter.Antialiasing)
+    small=G.QFont(font)
+    small.setPixelSize(11)
+    width=max(22,G.QFontMetrics(small).horizontalAdvance(key)+12)
+    rect=C.QRectF(right-width,cy-9,width,17)
+    ink=G.QColor('#152635') if dark else G.QColor('#d3dfe6')
+    p.setPen(G.QPen(G.QColor(ink.red(),ink.green(),ink.blue(),170),1))
+    p.setBrush(G.QColor(255,255,255,40) if dark else G.QColor(17,33,46,150))
+    p.drawRoundedRect(rect,3,3)
+    p.setPen(G.QPen(G.QColor(ink.red(),ink.green(),ink.blue(),90),1))
+    p.drawLine(C.QPointF(rect.left()+3,rect.bottom()+1.5),C.QPointF(rect.right()-3,rect.bottom()+1.5))
+    p.setFont(small)
+    p.setPen(ink)
+    p.drawText(rect,C.Qt.AlignCenter,key)
+    p.restore()
 
 
 class FoldSection(W.QWidget):
     """Dark frosted groups with feathered edges and top-aligned content."""
     changed = C.Signal()
 
-    def __init__(self, title, expanded=False):
+    def __init__(self, title, expanded=False, icon=None):
         super().__init__()
         self.setSizePolicy(W.QSizePolicy.Preferred, W.QSizePolicy.Maximum)
         class Heading(ChalkButton):
             def paintEvent(self, event):
                 p = G.QPainter(self)
                 p.setRenderHint(G.QPainter.Antialiasing)
+                if self.isDown():
+                    p.translate(0, 1)
                 # The texture supplies both the subtle gradient and feathered
                 # alpha edge; an opaque rectangle underneath would erase it.
                 p.setOpacity(.94 if self.underMouse() else .86)
@@ -87,7 +141,12 @@ class FoldSection(W.QWidget):
                 p.setOpacity(1)
                 p.setPen(G.QColor('#d3dfe6'))
                 p.setFont(self.font())
-                p.drawText(self.rect().adjusted(14, 0, -32, 0), C.Qt.AlignVCenter, title)
+                left = 14
+                if icon:
+                    from .line_icons import paint_icon
+                    paint_icon(p, icon, 12, (self.height()-17)/2, 17, color='#d3dfe6')
+                    left = 36
+                p.drawText(self.rect().adjusted(left, 0, -32, 0), C.Qt.AlignVCenter, title)
                 x, y = self.width()-18, self.height()/2
                 p.setPen(G.QPen(G.QColor('#aabfcd'), 1.5))
                 points = [(x-4,y-2),(x,y+2),(x+4,y-2)] if self.isChecked() else [(x-2,y-4),(x+2,y),(x-2,y+4)]
@@ -277,6 +336,7 @@ QWidget { color: #d4e1e8; font-family: "%s"; font-size: 16px; }
 QLabel { background: transparent; }
 QLabel#title { color: #e3edf2; font-size: 29px; }
 QLabel#muted { color: #9cadbb; font-size: 13px; }
+QLabel#card_title { color: #e3edf2; font-size: 16px; padding-left: 2px; }
 QLabel#status { background: rgba(8,20,31,100); padding: 12px; border-left: 2px solid #859daf; }
 QPushButton, QComboBox { background: rgba(111,143,163,32); border: 1px solid rgba(161,185,202,60); border-radius: 1px; padding: 8px 12px; }
 QPushButton:hover, QComboBox:hover { background: rgba(145,172,190,70); color: #eef6fa; border-color: #859dae; }
@@ -330,6 +390,84 @@ class MistPanel(W.QFrame):
             for y in range(8,self.height()-8,6):
                 p.setPen(G.QColor(156,183,204,rng.randint(15,65)))
                 p.drawLine(x,y,x,y+3)
+
+
+def paint_worn_corners(p,rect,length=16,inset=7,alpha=120,seed=11):
+    """Four short hand-drawn L strokes just inside the corners, as the game
+    frames its panels: slightly bent, uneven in weight, never a full border."""
+    p.save()
+    p.setRenderHint(G.QPainter.Antialiasing)
+    rng=random.Random(seed)
+    for sx,sy in ((1,1),(-1,1),(1,-1),(-1,-1)):
+        x0=rect.left()+inset if sx>0 else rect.right()-inset
+        y0=rect.top()+inset if sy>0 else rect.bottom()-inset
+        for dx,dy in ((sx,0),(0,sy)):
+            path=G.QPainterPath(C.QPointF(x0,y0))
+            mid=C.QPointF(x0+dx*length*.5+(-dy)*rng.uniform(-.8,.8),y0+dy*length*.5+(-dx)*rng.uniform(-.8,.8))
+            end=C.QPointF(x0+dx*length,y0+dy*length)
+            path.quadTo(mid,end)
+            p.setPen(G.QPen(G.QColor(190,210,222,alpha),rng.uniform(1.1,1.6),C.Qt.SolidLine,C.Qt.RoundCap))
+            p.drawPath(path)
+    p.restore()
+
+
+class HandRule(W.QWidget):
+    """A thin hand-drawn rule under a title: one wavering stroke that fades at
+    both ends, instead of a ruled line."""
+
+    def __init__(self,seed=3):
+        super().__init__()
+        self.seed=seed
+        self.setFixedHeight(6)
+
+    def paintEvent(self,event):
+        p=G.QPainter(self)
+        p.setRenderHint(G.QPainter.Antialiasing)
+        rng=random.Random(self.seed)
+        w=self.width()
+        path=G.QPainterPath(C.QPointF(4,3))
+        x=4.
+        while x<w-4:
+            step=rng.uniform(18,34)
+            x=min(w-4,x+step)
+            path.quadTo(C.QPointF(x-step/2,3+rng.uniform(-1.2,1.2)),C.QPointF(x,3+rng.uniform(-.6,.6)))
+        gradient=G.QLinearGradient(0,0,w,0)
+        gradient.setColorAt(0,G.QColor(164,191,207,0))
+        gradient.setColorAt(.12,G.QColor(164,191,207,120))
+        gradient.setColorAt(.88,G.QColor(164,191,207,120))
+        gradient.setColorAt(1,G.QColor(164,191,207,0))
+        p.setPen(G.QPen(G.QBrush(gradient),1.2))
+        p.drawPath(path)
+
+
+def reveal(widget,distance=6,duration=150):
+    """Show `widget` the way the game opens a panel: it fades in while
+    settling up by a few pixels. The effect is removed when done so the
+    widget keeps painting directly afterwards."""
+    widget.show()
+    effect=W.QGraphicsOpacityEffect(widget)
+    widget.setGraphicsEffect(effect)
+    fade=C.QPropertyAnimation(effect,b'opacity',widget)
+    fade.setStartValue(0.)
+    fade.setEndValue(1.)
+    fade.setDuration(duration)
+    fade.setEasingCurve(C.QEasingCurve.OutCubic)
+    start=widget.pos()
+    slide=C.QPropertyAnimation(widget,b'pos',widget)
+    slide.setStartValue(start+C.QPoint(0,distance))
+    slide.setEndValue(start)
+    slide.setDuration(duration)
+    slide.setEasingCurve(C.QEasingCurve.OutCubic)
+    group=C.QParallelAnimationGroup(widget)
+    group.addAnimation(fade)
+    group.addAnimation(slide)
+    def done():
+        widget.setGraphicsEffect(None)
+        widget.move(start)
+    group.finished.connect(done)
+    group.start(C.QAbstractAnimation.DeleteWhenStopped)
+    widget._reveal=group
+    return group
 
 
 class GearButton(W.QPushButton):

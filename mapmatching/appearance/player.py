@@ -4,15 +4,18 @@ import numpy as np
 from PySide6 import QtCore as C, QtGui as G
 from .skins import doll
 
-class PetAnimation:
-    """Layered rig player for the companion mascot.
 
-    Besides the skin's own moods, three runtime modifiers are blended on top of
-    whatever pose is playing, so they need no new animation data:
+class RigPlayer:
+    """Timing, caching and runtime modifiers shared by every desk-pet body.
+
+    A body (the doll, the lantern) subclasses this and supplies the layer
+    cutting and ``_paint_on``. Besides the skin's own moods, three runtime
+    modifiers are blended on top of whatever pose is playing, so they need no
+    new animation data:
 
     - ``look``: a head turn in degrees (towards the speech bubble, the cursor).
     - ``drag``: limb swing and torso lean driven by the drag velocity while the
-      player carries the doll, with a spring so limbs trail the hand.
+      player carries the pet, with a spring so limbs trail the hand.
     - ``opacity``: the idle fade.
 
     The idle breath is cached as frames; any active modifier switches that
@@ -22,37 +25,44 @@ class PetAnimation:
     BASE_SIZE = (112, 132)
     GAME_SIZE = (146, 176)
     BASE_ORIGIN = (7, 20)
+    RENDER_SCALE = .32
+    # Where the "still matching" spinner sits, in base widget coordinates.
+    WAITING_ANCHOR = (90, 26)
+    NAME = '小布偶'
+    skin_id = 'doll'
+    _waiting_pixmaps = {}
 
-    def __init__(self, button, skin=doll):
+    def waiting_pixmap(self):
+        """The skin's own spinner (``waiting.png`` beside its image), cached."""
+        path = self.skin.IMAGE.parent/'waiting.png'
+        pixmap = RigPlayer._waiting_pixmaps.get(path)
+        if pixmap is None:
+            pixmap = RigPlayer._waiting_pixmaps[path] = G.QPixmap(str(path))
+        return pixmap
+
+    def paint_waiting(self, painter, elapsed_ms):
+        """The turning spinner at the skin's anchor, for matching and for the
+        startup wait, sized and placed like the body itself."""
+        pixmap = self.waiting_pixmap()
+        if pixmap.isNull():
+            return
+        s = self.scale
+        ax, ay = self.WAITING_ANCHOR
+        w, h = self.BASE_SIZE
+        painter.save()
+        painter.setRenderHint(G.QPainter.Antialiasing)
+        painter.setRenderHint(G.QPainter.SmoothPixmapTransform)
+        painter.setOpacity(self.opacity)
+        painter.translate(ax*s+(self.button.width()-w*s)/2, ay*s+(self.button.height()-h*s)/2)
+        painter.rotate(elapsed_ms/8.)
+        painter.drawPixmap(C.QRectF(-13*s, -13*s, 26*s, 26*s), pixmap, C.QRectF(pixmap.rect()))
+        painter.restore()
+
+    def __init__(self, button, skin):
         self.skin = skin
         self.button = button
         self.pixmap = G.QPixmap(str(skin.IMAGE))
         self.layers = {}
-        if not self.pixmap.isNull():
-            for name, vertices in skin.PARTS.items():
-                layer = G.QPixmap(306, 332)
-                layer.fill(C.Qt.transparent)
-                painter = G.QPainter(layer)
-                painter.setRenderHint(G.QPainter.Antialiasing)
-                path = G.QPainterPath()
-                path.addPolygon(G.QPolygonF([C.QPointF(*v) for v in vertices]))
-                painter.setClipPath(path)
-                painter.drawPixmap(C.QRect(0,0,306,332), self.pixmap)
-                painter.end()
-                self.layers[name] = layer
-            # One continuous source mask per arm, with no overlaid elbow seam.
-            for side in ('left','right'):
-                layer=G.QPixmap(306,332);layer.fill(C.Qt.transparent)
-                painter=G.QPainter(layer)
-                path=G.QPainterPath()
-                for section in ('upper','lower'):
-                    section_path=G.QPainterPath()
-                    section_path.addPolygon(G.QPolygonF([C.QPointF(*v) for v in skin.PARTS[side+'_'+section]]))
-                    path=path.united(section_path)
-                painter.setRenderHint(G.QPainter.Antialiasing)
-                painter.setClipPath(path)
-                painter.drawPixmap(C.QRect(0,0,306,332),self.pixmap)
-                painter.end();self.layers[side+'_arm']=layer
         self.enabled = False
         self.mood = 'curious'
         self.wave_right = False
@@ -85,14 +95,14 @@ class PetAnimation:
         return int(round(w*self.scale)), int(round(h*self.scale))
 
     def origin_for(self, width, height, game_background=False):
-        """Where the 306×332 canvas lands inside a widget of this size."""
+        """Where the skin's canvas lands inside a widget of this size."""
         base_w, base_h = self.widget_size(False)
         return (self.BASE_ORIGIN[0]*self.scale + (width-base_w)/2,
                 self.BASE_ORIGIN[1]*self.scale + (height-base_h)/2)
 
     @property
     def render_scale(self):
-        return .32*self.scale
+        return self.RENDER_SCALE*self.scale
 
     def set_scale(self, factor):
         self.scale = max(.5, min(2., float(factor)))
@@ -121,6 +131,13 @@ class PetAnimation:
             self.timer.start(50)
         self.apply_size()
         self.button.update()
+        self._after_advance()
+
+    def release(self):
+        """Stop for good: the button switches to another body."""
+        self.timer.stop()
+        self.enabled = False
+        self._after_advance()
 
     def play(self, mood):
         if not self.enabled:
@@ -156,6 +173,7 @@ class PetAnimation:
         changed = self._advance_modifiers()
         if self.dragging:
             self.timer.setInterval(33)
+        self._after_advance()
         if not self.button.isVisible():
             return
         if self.cacheable and not changed:
@@ -168,6 +186,9 @@ class PetAnimation:
             self._idle_index = None
         self.button.update()
 
+    def _after_advance(self):
+        """Hook for bodies with effects outside the button (the lantern's stage)."""
+
     def _advance_modifiers(self):
         """Ease the runtime modifiers one step; True when something moved."""
         before = (round(self.look_current,2), round(self.opacity,3),
@@ -179,10 +200,10 @@ class PetAnimation:
         if abs(self.opacity-self.opacity_target) < .005:
             self.opacity = self.opacity_target
         # Limbs trail the hand: a spring towards the velocity-driven target,
-        # which relaxes to zero once the doll is set down.
-        target = max(-26., min(26., -self.drag_velocity*1.6)) if self.dragging else 0.
+        # which relaxes to zero once the pet is set down.
+        target = max(-32., min(32., -self.drag_velocity*60.)) if self.dragging else 0.
         self.drag_swing += (target-self.drag_swing)*.28
-        self.drag_lean += (target*.45-self.drag_lean)*.22
+        self.drag_lean += (target*.5-self.drag_lean)*.22
         self.drag_lift += ((1. if self.dragging else 0.)-self.drag_lift)*.2
         if not self.dragging:
             self.drag_velocity *= .6
@@ -197,7 +218,7 @@ class PetAnimation:
         """A pose modifier is active: a cached frame would be wrong.
 
         Opacity is not one: a steady fade is baked into the cache key instead,
-        so a faded idle doll still blits frames rather than re-rendering.
+        so a faded idle pet still blits frames rather than re-rendering.
         """
         return (self.look_current != 0. or self.dragging
                 or self.drag_swing != 0. or self.drag_lean != 0. or self.drag_lift != 0.
@@ -266,6 +287,41 @@ class PetAnimation:
             return
         t = progress if progress is not None else (self.clock.elapsed()/self.duration if self.timer.isActive() else 1)
         self._paint_on(self.button, t, render_scale, origin)
+
+    def _paint_on(self, device, t, render_scale, origin):
+        raise NotImplementedError
+
+
+class PetAnimation(RigPlayer):
+    """Layered rig player for the cloth doll."""
+
+    def __init__(self, button, skin=doll):
+        super().__init__(button, skin)
+        if not self.pixmap.isNull():
+            for name, vertices in skin.PARTS.items():
+                layer = G.QPixmap(306, 332)
+                layer.fill(C.Qt.transparent)
+                painter = G.QPainter(layer)
+                painter.setRenderHint(G.QPainter.Antialiasing)
+                path = G.QPainterPath()
+                path.addPolygon(G.QPolygonF([C.QPointF(*v) for v in vertices]))
+                painter.setClipPath(path)
+                painter.drawPixmap(C.QRect(0,0,306,332), self.pixmap)
+                painter.end()
+                self.layers[name] = layer
+            # One continuous source mask per arm, with no overlaid elbow seam.
+            for side in ('left','right'):
+                layer=G.QPixmap(306,332);layer.fill(C.Qt.transparent)
+                painter=G.QPainter(layer)
+                path=G.QPainterPath()
+                for section in ('upper','lower'):
+                    section_path=G.QPainterPath()
+                    section_path.addPolygon(G.QPolygonF([C.QPointF(*v) for v in skin.PARTS[side+'_'+section]]))
+                    path=path.united(section_path)
+                painter.setRenderHint(G.QPainter.Antialiasing)
+                painter.setClipPath(path)
+                painter.drawPixmap(C.QRect(0,0,306,332),self.pixmap)
+                painter.end();self.layers[side+'_arm']=layer
 
     def _paint_on(self, device, t, render_scale=.32, origin=(7,20)):
         p = G.QPainter(device)

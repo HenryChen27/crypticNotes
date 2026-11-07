@@ -3,11 +3,11 @@ from dataclasses import dataclass
 # 游戏里的两张地图。`curse`=厄运之女（原有全部图库），`linguang`=磷光症。
 SCENES = ('curse', 'linguang')
 SCENE_NAMES = {'curse': '厄运之女', 'linguang': '磷光症'}
-# 磷光症目前：凉哈皮只有困难，展十只有噩梦（十四棺）；其余难度待作者更新后在这里放开。
+# 磷光症目前：凉哈皮只有困难，展十有困难（十六棺）和噩梦（十四棺）；其余待作者更新后在这里放开。
 SCENE_CONTEXTS = {
     'linguang': {
         'lianghapi': dict(difficulties=('hard',), modes=(None,)),
-        'zhanshi': dict(difficulties=('nightmare',), modes=('full',)),
+        'zhanshi': dict(difficulties=('hard', 'nightmare'), modes=('full',)),
     },
 }
 
@@ -38,7 +38,7 @@ class SessionContext:
         if options is not None:
             difficulties, modes = options
             if self.difficulty not in difficulties or self.mode not in modes:
-                raise ValueError(f'{SCENE_NAMES[self.scene]}目前没有这位作者的这个难度（凉哈皮：困难；展十：噩梦十四棺）')
+                raise ValueError(f'{SCENE_NAMES[self.scene]}目前没有这位作者的这个难度（凉哈皮：困难；展十：困难十六棺 / 噩梦十四棺）')
             return
         if self.provider == 'zhanshi':
             if self.difficulty not in ('hard','nightmare') or self.mode not in ('full', 'speed'):

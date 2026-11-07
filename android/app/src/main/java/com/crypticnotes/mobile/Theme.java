@@ -188,6 +188,28 @@ public final class Theme {
 
         public void setOpacity(float value) { opacity = value; invalidateSelf(); }
 
+        private final Paint cornerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path corner = new Path();
+        /** Four short hand-drawn L strokes just inside the corners: bent, uneven, never a full border. */
+        private void drawWornCorners(Canvas canvas, Rect b, float scale) {
+            cornerPaint.setStyle(Paint.Style.STROKE);
+            cornerPaint.setStrokeCap(Paint.Cap.ROUND);
+            cornerPaint.setColor(0x78bed2de);
+            Random random = new Random(11);
+            float length = 16 * scale, inset = 7 * scale;
+            for (int sx = -1; sx <= 1; sx += 2) for (int sy = -1; sy <= 1; sy += 2) {
+                float x0 = sx > 0 ? b.left + inset : b.right - inset, y0 = sy > 0 ? b.top + inset : b.bottom - inset;
+                for (int axis = 0; axis < 2; axis++) {
+                    float dx = axis == 0 ? sx : 0, dy = axis == 0 ? 0 : sy;
+                    float jx = (random.nextFloat() * 1.6f - .8f) * scale, jy = (random.nextFloat() * 1.6f - .8f) * scale;
+                    corner.reset(); corner.moveTo(x0, y0);
+                    corner.quadTo(x0 + dx * length / 2f + (axis == 0 ? 0 : jx), y0 + dy * length / 2f + (axis == 0 ? jy : 0), x0 + dx * length, y0 + dy * length);
+                    cornerPaint.setStrokeWidth((1.1f + random.nextFloat() * .5f) * scale);
+                    canvas.drawPath(corner, cornerPaint);
+                }
+            }
+        }
+
         @Override protected void onBoundsChange(Rect bounds) {
             int w = Math.max(1, bounds.width());
             gradientPaint.setShader(new LinearGradient(bounds.left, bounds.top, bounds.right, bounds.bottom,
@@ -318,12 +340,63 @@ public final class Theme {
             invalidate();
         }
 
+        private LineIcon icon;
+        private int iconSize, iconGap;
+        /** Legend icon drawn before the (still centred) label, as the game lists its landmarks. */
+        public ChalkButton setIcon(String name) {
+            iconSize = px(getContext(), 18); iconGap = px(getContext(), 6);
+            icon = name == null ? null : LineIcon.sized(getContext(), name, INK, 18);
+            int extra = icon == null ? 0 : iconSize + iconGap;
+            setPadding(px(getContext(), 12) + extra, getPaddingTop(), px(getContext(), 12), getPaddingBottom());
+            invalidate();
+            return this;
+        }
+
         @Override protected void onDraw(Canvas canvas) {
+            // Pressed: the whole face sinks one pixel, the way the game's buttons answer a tap.
+            if (isPressed() && isEnabled()) canvas.translate(0, px(getContext(), 1));
             int inset = px(getContext(), 4);
             surface.setBounds(0, inset, getWidth(), getHeight() - inset);
             surface.draw(canvas);
             super.onDraw(canvas);
+            if (icon != null) {
+                float text = getPaint().measureText(getText().toString());
+                float start = getPaddingLeft() + (getWidth() - getPaddingLeft() - getPaddingRight() - text) / 2f;
+                int left = Math.round(start) - iconSize - iconGap, top = (getHeight() - iconSize) / 2;
+                icon.setBounds(left, top, left + iconSize, top + iconSize);
+                icon.setAlpha(isEnabled() ? 255 : 110);
+                icon.draw(canvas);
+            }
         }
+    }
+
+    /** A thin hand-drawn rule under a title: one wavering stroke fading at both ends. */
+    public static class HandRule extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Path path = new Path();
+        public HandRule(Context context) {
+            super(context);
+            paint.setStyle(Paint.Style.STROKE);
+            paint.setStrokeWidth(Math.max(1f, 1.2f * dp(context)));
+            paint.setStrokeCap(Paint.Cap.ROUND);
+        }
+        @Override protected void onMeasure(int widthSpec, int heightSpec) {
+            setMeasuredDimension(resolveSize(0, widthSpec), px(getContext(), 6));
+        }
+        @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
+            paint.setShader(new LinearGradient(0, 0, Math.max(1, width), 0,
+                    new int[]{0x00a4bfcf, 0x78a4bfcf, 0x78a4bfcf, 0x00a4bfcf},
+                    new float[]{0f, .12f, .88f, 1f}, Shader.TileMode.CLAMP));
+            Random random = new Random(3);
+            float scale = dp(getContext()), y = height / 2f, x = 4 * scale;
+            path.reset(); path.moveTo(x, y);
+            while (x < width - 4 * scale) {
+                float step = (18 + random.nextFloat() * 16) * scale;
+                x = Math.min(width - 4 * scale, x + step);
+                path.quadTo(x - step / 2f, y + (random.nextFloat() * 2.4f - 1.2f) * scale, x, y + (random.nextFloat() * 1.2f - .6f) * scale);
+            }
+        }
+        @Override protected void onDraw(Canvas canvas) { canvas.drawPath(path, paint); }
     }
 
     /**
@@ -357,6 +430,13 @@ public final class Theme {
             arrowPaint.setStyle(Paint.Style.FILL);
         }
 
+        private LineIcon icon;
+        public SectionHeading setIcon(String name) {
+            icon = name == null ? null : LineIcon.sized(getContext(), name, HEADING, 17);
+            invalidate();
+            return this;
+        }
+
         /** Mark the heading foldable and record which way it currently points. */
         public void setExpanded(boolean value) {
             foldable = true;
@@ -376,10 +456,17 @@ public final class Theme {
             surface.draw(canvas);
             Paint.FontMetrics metrics = paint.getFontMetrics();
             float baseline = getHeight() / 2f - (metrics.ascent + metrics.descent) / 2f;
-            canvas.drawText(label, px(getContext(), 14), baseline, paint);
+            int textLeft = px(getContext(), 14);
+            if (icon != null) {
+                int size = px(getContext(), 17), top = (getHeight() - size) / 2, left = px(getContext(), 12);
+                icon.setBounds(left, top, left + size, top + size);
+                icon.draw(canvas);
+                textLeft = px(getContext(), 36);
+            }
+            canvas.drawText(label, textLeft, baseline, paint);
             if(updateAvailable) {
                 paint.setColor(Color.rgb(197,105,103));
-                canvas.drawCircle(px(getContext(), 24)+paint.measureText(label),getHeight()/2f,px(getContext(),3),paint);
+                canvas.drawCircle(textLeft+px(getContext(), 10)+paint.measureText(label),getHeight()/2f,px(getContext(),3),paint);
                 paint.setColor(HEADING);
             }
             if (!foldable) return;
@@ -657,6 +744,7 @@ public final class Theme {
         row.addView(help, new android.widget.LinearLayout.LayoutParams(px(context, 44), px(context, 44)));
         Runnable show = () -> {
             TextView detail = muted(context, explanation);
+            detail.setTextSize(14);   // the game font smudges below 14sp
             detail.setPadding(px(context, 16), px(context, 12), px(context, 16), px(context, 12));
             detail.setBackground(new MistDrawable(context));
             android.widget.PopupWindow popup = new android.widget.PopupWindow(detail,
