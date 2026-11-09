@@ -81,6 +81,41 @@ class OcclusionCacheTests(unittest.TestCase):
         self.assertEqual(previous.map_id,'hard/test')
         self.assertEqual(result.diagnostics['map_switch_rejected'],'hard/other')
 
+    def test_new_game_map_displaces_a_remembered_map_the_frame_contradicts(self):
+        # Friend's report: after one game on map A, later games on map B were
+        # refused for the whole session. The remembered map was tried on this
+        # frame and fits poorly; B leads it and every other map clearly.
+        matcher=Mock()
+        remembered=candidate(.41)
+        matcher.register_known.return_value=MatchResult(candidates=[remembered])
+        other=candidate(.66);other.map_id='hard/other'
+        matcher.match.return_value=MatchResult(candidates=[other,candidate(.44)])
+        result,selected,_=match_with_cache(matcher,None,candidate())
+        self.assertIs(selected,other)
+        self.assertEqual(result.diagnostics['map_switch']['reason'],'remembered_map_displaced')
+
+    def test_phone_rejected_fit_of_remembered_map_counts_as_tested(self):
+        # The phone matcher drops a poor fit from `candidates` but keeps it in
+        # diagnostics; that still proves the frame contradicts the memory.
+        matcher=Mock()
+        matcher.register_known.return_value=MatchResult(reason='mobile_fit_not_reliable',diagnostics=dict(
+            rejected_candidates=[dict(map_id='hard/test',floor=1,explained=.38,contradiction=.5,retrieval_score=3)]))
+        other=candidate(.67);other.map_id='hard/other'
+        matcher.match.return_value=MatchResult(candidates=[other])
+        _,selected,_=match_with_cache(matcher,None,candidate())
+        self.assertIs(selected,other)
+
+    def test_shared_terrain_does_not_flap_to_an_equally_fitting_map(self):
+        # When the remembered map explains the frame about as well (shared
+        # terrain), memory still wins until the new map is strong.
+        matcher=Mock()
+        matcher.register_known.return_value=MatchResult(candidates=[candidate(.60)])
+        other=candidate(.66);other.map_id='hard/other'
+        matcher.match.return_value=MatchResult(candidates=[other,candidate(.58)])
+        result,selected,_=match_with_cache(matcher,None,candidate())
+        self.assertIsNone(selected)
+        self.assertEqual(result.diagnostics['map_switch_rejected'],'hard/other')
+
     def test_strong_unambiguous_other_map_can_replace_cache(self):
         matcher=Mock()
         other=candidate(.9);other.map_id='hard/other'

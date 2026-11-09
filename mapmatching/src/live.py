@@ -198,6 +198,8 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
     if floor_reading.get('reader') == 'basement':
         from .floor_tabs import hide_floor_column
         pixels = hide_floor_column(pixels, floor_reading)
+    if hasattr(matcher, 'single_view'):
+        matcher.single_view = floor_reading.get('reader') == 'basement' and floor_reading['floor'] is not None
     if hasattr(matcher, 'floor_hint'):
         matcher.floor_hint = floor_reading['floor']
         if isinstance(matcher, MultiplayerFallback):
@@ -205,11 +207,20 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
             if matcher.solo is not None:
                 matcher.solo.floor_hint = matcher.floor_hint
     fallback = None
+    # How well the remembered map explains this very frame, when it could be
+    # tested on real structure (None: not tested, or nothing to register).
+    remembered_fit = None
     if cached is not None:
         result = matcher.register_known(pixels,cached.map_id)
         result.diagnostics['floor_tabs'] = floor_reading
         if visibility is not None:
             result.diagnostics['map_ui'] = visibility
+        posed = [c.explained or 0 for c in result.candidates if c.pose is not None]
+        # The phone matcher drops fits its policy rejects from `candidates`
+        # but keeps them here, so a poor fit still counts as tested.
+        posed += [c.get('explained') or 0 for c in result.diagnostics.get('rejected_candidates') or ()
+                  if c.get('map_id') == cached.map_id and c.get('explained') is not None]
+        remembered_fit = max(posed) if posed else None
         candidate,message = cached_alignment_candidate(result)
         # A different floor/viewport has different visible evidence. A strong
         # current fit need not match the previous frame's near-perfect score.
@@ -228,10 +239,21 @@ def match_with_cache(matcher, pixels, cached=None, *, require_map_ui=False, floo
     if cached is not None and candidate is not None and candidate.map_id != cached.map_id:
         rivals = [c for c in result.candidates if c.map_id != candidate.map_id]
         margin = candidate.explained - max((c.explained or 0 for c in rivals), default=0)
-        if candidate.explained < .75 or candidate.contradiction > .20 or margin < .06:
+        strong = candidate.explained >= .75 and candidate.contradiction <= .20 and margin >= .06
+        # A new game: the remembered map was just tried on this frame's real
+        # structure and could not be aligned, while another map explains the
+        # frame clearly better than it does and leads every other map. Memory
+        # only guards against flapping between maps that fit about equally
+        # (shared terrain); it must not hold a map the frame contradicts.
+        displaced = (remembered_fit is not None and margin >= .06
+                     and candidate.explained - remembered_fit >= .10)
+        if not (strong or displaced):
             result.diagnostics['map_switch_rejected'] = candidate.map_id
             candidate = None
             message = '暂时无法对齐，已记住上次地图；请增加可见线索'
+        elif not strong:
+            result.diagnostics['map_switch'] = dict(reason='remembered_map_displaced', previous=cached.map_id,
+                                                    remembered_fit=remembered_fit)
     result.diagnostics.update(pipeline='recognition_fallback' if cached is not None else 'recognition',
                               identity_search_performed=True,cache_fallback_reason=fallback,
                               pipeline_ms=(time.perf_counter()-start)*1000)
@@ -411,7 +433,10 @@ def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curs
             confirmed=options.get('confirmed_candidate')
             # A basement the authors never drew has nothing to offer: keep the
             # floor gate's message instead of asking to overlay a blank floor.
-            if confirmed is not None and options.get('force_floor') is None and result.reason != 'floor_not_in_library':
+            # A different map that passed the switch rules above is a new game:
+            # never hold it back to offer the previous game's map instead.
+            new_map = candidate is not None and confirmed is not None and candidate.map_id != confirmed.map_id
+            if confirmed is not None and options.get('force_floor') is None and result.reason != 'floor_not_in_library' and not new_map:
                 from .manual_alignment import blank_floor_offer, automatic_cross_floor_reliable
                 cross_offer=blank_floor_offer(pixels,confirmed,result.to_dict())
                 if cross_offer is not None and (candidate is None or

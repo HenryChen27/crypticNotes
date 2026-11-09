@@ -35,6 +35,11 @@ class MatchResult:
 class MapMatcher:
     def __init__(self, index: Path, *, difficulty: str, mode: str | None = None, provider: str = 'lianghapi', map_ids=None, scene: str = 'curse'):
         self.floor_hint = None
+        # True when the floor came from the 磷光症 vertical floor buttons: that
+        # reading is reliable, so search only the cropped view on that floor.
+        # The wider passes below never recovered a 磷光症 PC frame and cost ~5 s
+        # on weak frames (datasets/evaluation/20261109-friend-records).
+        self.single_view = False
         self.context = SessionContext(difficulty, mode, provider, scene)
         self.references = load(index, difficulty=difficulty, mode=mode, provider=provider, map_ids=map_ids, include_distance=False, scene=scene)
         if not self.references:
@@ -69,6 +74,9 @@ class MapMatcher:
             return result
         initial = self._match_view(screenshot)
         if presentation_candidate(initial)[0] is not None:
+            return initial
+        if self.single_view:
+            initial.diagnostics['single_view'] = True
             return initial
         expanded = self._match_view(screenshot,full_view=True)
         recovered = presentation_candidate(expanded)[0]
@@ -178,6 +186,9 @@ class MapMatcher:
         initial = align(False)
         candidate = cached_alignment_candidate(initial)[0]
         if candidate is not None and candidate.explained >= .75 and candidate.contradiction <= .20:
+            return initial
+        if self.single_view:
+            initial.diagnostics['single_view'] = True
             return initial
         expanded = align(True)
         candidate = cached_alignment_candidate(expanded)[0]

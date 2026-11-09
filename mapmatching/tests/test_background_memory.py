@@ -61,7 +61,9 @@ class BackgroundMemoryTests(unittest.TestCase):
         s=self.subject();token=s.state.generation
         Companion.close_map(s,silent=True,background=True)
         Companion.close_map(s,silent=True) # open_map/context change cancels
-        s.stop_worker.assert_called_once()
+        # The worker survives the close (a restart costs 1-2 s); the generation
+        # check alone discards its late result.
+        s.stop_worker.assert_not_called()
         s.connection.poll.return_value=True
         s.connection.recv.return_value=('result',(token,object(),'ok',object(),10,{}))
         with patch.object(W.QApplication,'activeModalWidget',return_value=None),patch.object(win32gui,'GetForegroundWindow',return_value=42):

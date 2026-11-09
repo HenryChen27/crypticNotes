@@ -5,6 +5,7 @@ import argparse
 import json
 import math
 import multiprocessing as mp
+import os
 import platform
 from pathlib import Path
 import sys
@@ -51,6 +52,10 @@ def exclude_from_capture(window):
     """Keep `window` on screen but out of every screen grab (Windows 10 2004+).
     Returns False where unsupported, and the caller hides before capturing."""
     if sys.platform != 'win32':
+        return False
+    # 录制桌宠素材时设置 JYSJ_RECORD_PET=1：不排除采集，OBS 等录屏软件才拍得到布偶；
+    # 识图前会退回「截图时短暂隐藏」。
+    if os.environ.get('JYSJ_RECORD_PET'):
         return False
     try:
         return bool(native.exclude_from_capture(int(window.winId())))
@@ -213,6 +218,8 @@ def explain_failure(message):
 # 连续两帧判定「屏幕上没有地图」才退出；第二帧自动获取，不需要再次操作。
 # 刚进地图、还没探索、或者一次失手都可能只失败一次。
 NO_MAP_STREAK = 2
+# 一条没人要的旧请求最多等这么久，超过就重启 worker（重启约 1～2 秒）。
+STALE_REQUEST_S = 2.5
 
 # 「屏幕上没有地图」需要的角点数下限。实测（见 tests/test_no_map_signal.py）：
 # 3D 游戏场景 320~372 个角点，而地图画面（无论探索多少）只有 32~60 个 —— 差 6 倍以上。
@@ -2254,9 +2261,32 @@ class Companion(W.QWidget):
             self.request_exclusion = getattr(self,'capture_exclusion',None)
             trace("worker_request",token=self.pending[0])
             self.connection.send(self.pending)
+            self.request_token = self.pending[0]
+            self.request_started = time.monotonic()
             self.pending = None
             self.busy = True
             self.worker_deadline = time.monotonic() + 30
+
+    def restart_stale_worker(self):
+        """A newer frame waits behind a request nobody will look at any more.
+
+        Normally that request finishes within about a second and the waiting
+        frame goes next. Only when it has run for STALE_REQUEST_S is a restart
+        (1–2 s) cheaper than waiting it out.
+        """
+        if not (getattr(self,'busy',False) and getattr(self,'pending',None) is not None
+                and getattr(self,'process',None) is not None):
+            return False
+        if self.state.accepts(getattr(self,'request_token',None)):
+            return False
+        if time.monotonic() - getattr(self,'request_started',time.monotonic()) < STALE_REQUEST_S:
+            return False
+        pending = self.pending
+        trace('worker_restart_stale',token=getattr(self,'request_token',None))
+        self.stop_worker()
+        self.pending = pending
+        self.start_worker()
+        return True
 
     def stop_worker(self):
         if self.process is not None:
@@ -2361,8 +2391,9 @@ class Companion(W.QWidget):
             show_floating(self)
         # 状态结束 = 计数归零。下次按 G 是新会话，不该背着上一次的失败次数。
         self.no_map_streak = 0
-        if not background and (self.busy or (sys.platform != 'darwin' and self.process is not None and not getattr(self,'ready',False))):
-            self.stop_worker()
+        # 关图不杀 worker：在途那张让它算完，结果按 generation 丢弃。杀掉重启要
+        # 重付 1～2 秒启动，朋友日志里关图杀进程 475 次，下次开图总在等重启。
+        # 在途太久的旧请求由 restart_stale_worker() 兜底。
         if not silent:
             self.notify('已隐藏')
 
@@ -2671,6 +2702,8 @@ class Companion(W.QWidget):
                     self.stop_worker()
                     self.notify('识别任务超时，已释放；请按 G 或点击重新识别')
                     return
+                if not self.connection.poll() and Companion.restart_stale_worker(self):
+                    return
                 if self.connection.poll():
                     kind,payload = self.connection.recv()
                     if kind == 'ready':
@@ -2812,6 +2845,9 @@ class Companion(W.QWidget):
                                 # keep the cached identity for the next explicit try.
                                 self.close_map(silent=True)
                                 self.notify(advise(details,message)+' · 按重新识别重试')
+                        # 关图后 worker 不再被杀，新一帧可能在排队：上一条一回来就发出去。
+                        if getattr(self,'pending',None) is not None and not self.busy and self.process is not None:
+                            self.start_worker()
                 elif not self.process.is_alive():
                     self.close_map(silent=True)
                     self.stop_worker()

@@ -31,9 +31,9 @@ class MacCaptureTests(unittest.TestCase):
         subject.start_worker.assert_called_once()
         subject.notify.assert_not_called()
 
-    def test_mac_keeps_idle_initializing_worker_windows_keeps_original_behavior(self):
+    def test_closing_keeps_an_initializing_worker_on_both_platforms(self):
         from mapmatching.ui import Companion
-        for platform,stops in [('darwin',0),('win32',1)]:
+        for platform,stops in [('darwin',0),('win32',0)]:
             subject=SimpleNamespace(state=ToggleState(),overlay=Mock(),toast=Mock(),
                 busy=False,process=object(),ready=False,stop_worker=Mock(),notify=Mock(),
                 restore_capture_companion=Mock(),dismiss_manual_offer=Mock(),gear=Mock())
