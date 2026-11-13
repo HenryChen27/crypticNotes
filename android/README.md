@@ -2,7 +2,7 @@
 
 ## 2026-11-06 磷光症测试包（0.6.52-linguang-test，版本代码 60）
 
-首页「游戏设置」和游戏内面板新增「地图」一行：厄运之女 / 磷光症。选磷光症后路线行收起，难度按作者放开：凉哈皮只有困难（固定、不显示难度行），展十有困难十六棺和噩梦十四棺（显示难度行，2026-11-08 起）；识图引擎按 `scene=linguang` 只搜磷光症所选作者、所选难度的图，楼层按负一/负二/负三层显示；楼层由右侧竖排的 −1…−4 按钮读取（`floor_tabs.inspect_basement_tabs`），读到负四层直接提示没有参考图。
+首页「游戏设置」和游戏内面板新增「地图」一行：厄运之女 / 磷光症。选磷光症后路线行收起，难度按作者放开：凉哈皮有困难和噩梦（2026-11-13 起，噩梦不分单人/多人），展十有困难十六棺和噩梦十四棺；两位作者都显示难度行；识图引擎按 `scene=linguang` 只搜磷光症所选作者、所选难度的图，楼层按负一/负二/负三层显示；楼层由右侧竖排的 −1…−4 按钮读取（`floor_tabs.inspect_basement_tabs`），读到负四层直接提示没有参考图。
 
 这份测试包把磷光症的 29 张图（凉哈皮困难 14 张 + 展十噩梦 15 张）连同特征直接放在 APK 里（`assets/bundled/linguang.zip`，由 `scripts/bundle_android_maps.py linguang` 生成），首页启动时由 `MatchingModuleStore.installBundled` 合并进地图库（`mobile_modules.install_scene`）：只替换磷光症自己的条目，不动已安装的作者包、个人地图和来源记录，同一包只装一次。正式发布版不带这个资源，行为不变。厄运之女仍需照常下载作者地图库。地图库目录已改为「地图 → 作者 → 难度」，见 `maps/README.md`。
 
@@ -118,10 +118,10 @@ Android 10 及以上保存到相册 `Movies/CrypticNotes`；Android 8/9 保存�
 构建必须先 `python scripts/prepare_android.py`，然后：
 
 ```bash
-JAVA_HOME="C:/jysj/out/android-tools/jdk/jdk-17.0.20.1+1" \
-ANDROID_USER_HOME="C:/jysj/out/android-user" \
-GRADLE_USER_HOME="C:/jysj/out/android-gradle-cache" \
-  ./out/android-tools/gradle/gradle-8.13/bin/gradle -p android assembleDebug --console=plain
+JAVA_HOME="$PWD/out/android-tools/jdk/jdk-17.0.20.1+1" \
+ANDROID_USER_HOME="$PWD/out/android-user" \
+GRADLE_USER_HOME="$PWD/out/android-gradle-local-test" \
+  ./out/android-tools/gradle/gradle-8.13/bin/gradle -p android assembleDebug -Pandroid.overridePathCheck=true --console=plain
 ```
 
 `ANDROID_USER_HOME` 不能省。调试签名钥匙存放在 `out/android-user/debug.keystore`；漏掉这个变量，Gradle 会回退到 `~/.android` 并**另造一把钥匙**，打出的 APK 因为签名不同无法覆盖安装到已装设备上，只能在手机上卸载重装（会连带清掉点击区域校准）。改完签名相关的设置后如果 Gradle 报全 up-to-date，删掉 `android/app/build/outputs/apk/debug/app-debug.apk` 再构建，否则 APK 不会重新签名。签好之后用 `out/android-tools/sdk/build-tools/*/apksigner.bat verify --print-certs` 核对证书是不是 `b7b3d824…`（`apksigner` 需要 `JAVA_HOME`，和构建一样指到 `out/android-tools/jdk`）。
@@ -153,7 +153,7 @@ python android/tests/bridge_contract.py
 
 “下载完自动弹出安装界面”**不是保证**。Android 10 起从后台启动界面会被系统静默拦下（不抛异常，代码察觉不到），本应用靠悬浮窗权限争取这个豁免，但没有设备能证实它一定生效。因此每条路径都留了可点的东西：进度通知结束时换成一条“更新已下载，点按完成安装”的通知，`update_pending_install` 也会记进偏好，下次回到首页自动补装一次（只补一次，取消系统安装对话框后不会反复弹）。安装包留在缓存目录，`UpdateProvider` 只把它以只读方式交给系统安装器。
 
-发布者每次提高 `versionCode`，使用同一签名构建，再运行 `python scripts/publish_android.py`。脚本替换现有 Release 的安卓包，核对远端 SHA-256 后最后发布版本清单，保留 Windows 附件，不新建 Release。内置地图随 APK 更新，升级时刷新应用私有目录中的资源。首次安装本版仍需安装 APK，之后直接在手机首页检查更新。
+发布统一用 `python scripts/release_manager.py --platforms ... --publish`（自动提高 `versionCode`、构建、上传并同步 GitCode）；旧的 `scripts/publish_android.py` 只替换 GitHub 附件，不再用于正式发布。脚本替换现有 Release 的安卓包，核对远端 SHA-256 后最后发布版本清单，保留 Windows 附件，不新建 Release。内置地图随 APK 更新，升级时刷新应用私有目录中的资源。首次安装本版仍需安装 APK，之后直接在手机首页检查更新。
 
 联网仅用于主动检查和下载更新，不上传游戏截图。网络或校验失败保留现有安装，可稍后重试。
 

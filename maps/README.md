@@ -18,8 +18,8 @@ maps/
 ```
 
 每个作者在每张地图下的全部难度槽位都已建好（空目录放 `.gitkeep`），作者补图时直接放进对应
-目录再登记即可。目前已有：厄运之女（凉哈皮困难/噩梦，展十困难/噩梦）、磷光症（凉哈皮困难 14 张，
-展十噩梦十四棺 15 张）。`datasets/tools/restructure_maps.py` 负责把旧的 `maps/<作者>/...` 搬到
+目录再登记即可。目前已有：厄运之女（凉哈皮困难/噩梦，展十困难/噩梦）、磷光症（凉哈皮困难 13 张、噩梦 15 张，
+展十困难十六棺 12 张、噩梦十四棺 15 张）。`datasets/tools/restructure_maps.py` 负责把旧的 `maps/<作者>/...` 搬到
 这个层级；厄运之女的 `map_id` 不变（它是身份不是路径），磷光症的 `map_id` 就是
 `linguang/<作者>/<难度>[/<路线>]/<名字>`。界面「录入新地图」也按这个层级存放。
 
@@ -27,14 +27,14 @@ maps/
 
 设置里新增「地图」选择：厄运之女（默认，原有全部图库）/ 磷光症。登记条目用 `scene` 字段区分
 （缺省即 `curse`=厄运之女），`mapstore.load_references` 按 scene 过滤，两张游戏地图的图**永远不会**
-进同一个候选池。磷光症的难度跟随作者：凉哈皮目前只有困难（14 张，`linguang/lianghapi/hard/<入口>/地图N`，
+进同一个候选池。磷光症的难度跟随作者：凉哈皮最初只有困难（14 张，其中地图9 与地图8 同地形已停用，`linguang/lianghapi/hard/<入口>/地图N`，
 三层纵向排列，由 `datasets/tools/import_linguang_lianghapi.py` 按空行切分，标题缩略图和图例进 `exclude_regions`），
 展十有噩梦「十四棺图」（15 张，`linguang/zhanshi/nightmare/full/N`，负一层左上、负二层右上、负三层下方，
 由 `datasets/tools/import_linguang.py` 按固定版式分区）和困难「十六棺图」（12 张，`linguang/zhanshi/hard/full/N`，
 2026-11-08 由 `datasets/tools/import_linguang_zhanshi_hard.py` 导入，版式相同，作者按负一层/负二层形状命名的目录与文件名
 保留在条目 `name` 里；同目录下两张教学图按尺寸跳过）。版式不符的图会被拒绝而不是猜；
 选区预览分别在 `datasets/evaluation/linguang-lianghapi-import/`、`linguang-import/` 和 `linguang-zhanshi-hard-import/`。
-磷光症全部 41 张图（含已移除的地图9）都走和手动录入一样的存储策略 `webp-2048-q90-v1`（最长边 2048、WebP 质量 90），
+磷光症全部 56 张图（含已移除的地图9）都走和手动录入一样的存储策略 `webp-2048-q90-v1`（最长边 2048、WebP 质量 90），
 显示图合计约 5.6 MB；识别特征另存，不进发布包的显示图体积。
 `mapmatching/src/context.py` 的 `SCENE_CONTEXTS` 记录每位作者已有的难度，作者补图后在那里放开。
 
@@ -57,7 +57,14 @@ PC 样本是 B 站视频截帧裁下的按钮列（`tests/fixtures/linguang-tabs
 两位作者的磷光症图**不是同一批版型**：展十的 15 张噩梦十四棺图与凉哈皮的 14 张困难图两两交叉比对（`datasets/evaluation/
 20261107-linguang-phone/cross-author-floor-table.json`）没有任何一层能对上，所以噩梦十四棺只有展十有图，困难则凉哈皮和展十各有一套（展十困难十六棺 2026-11-08 加入），
 选错作者或难度只会得到「地图对齐证据不足」。`SCENE_CONTEXTS` 里展十现在是 `('hard','nightmare')`，桌面和安卓的难度
-选择在「磷光症 · 展十」下放开为困难/噩梦，凉哈皮仍固定困难。
+选择在「磷光症 · 展十」下放开为困难/噩梦。
+
+**凉哈皮磷光症噩梦（2026-11-13）**：15 张，`linguang/lianghapi/nightmare/<入口>/地图N`（`mode` 为空，凉哈皮的磷光症噩梦只有一套，
+不分单人/多人），版式与凉哈皮困难相同（1000×3500，三层纵向），由 `datasets/tools/import_linguang_lianghapi_nightmare.py`
+复用困难的切层逻辑导入，原图在仓库根目录 `凉哈皮加页手记《磷光症》噩梦难度路线图/`（作者同时给的「一图流」总览 PNG 不是
+图集，跳过）；选区预览在 `datasets/evaluation/linguang-lianghapi-nightmare-import/`。这套与展十噩梦十四棺**是同一批 15 张地图**：
+朋友的 36 张 PC 帧与三张手机截图在两套图库里两两一一对应、楼层一致（展十 1/2/3/4/5/9/11/13/14 ↔ 凉哈皮 地图3/8/5/13/6/14/1/12/10），
+所以噩梦局选哪位作者都能识别。`SCENE_CONTEXTS` 里凉哈皮放开为 `('hard','nightmare')`，双端「磷光症 · 凉哈皮」都可选困难/噩梦。
 展十困难与凉哈皮困难交叉比对（`datasets/evaluation/20261107-linguang-phone/cross-author-floor-table-hard.json`）证明两套困难图
 是同一批版型：展十 1–7、9、11、12 分别对应凉哈皮 地图14、11、6、5、12、8、2、4、3、7，展十 8、10 和凉哈皮 地图1、地图13 各自只有一方画了。凉哈皮的 `左直线/地图9` 与 `地图8` 地形和路线逐像素相同（只有标题缩略图不同），
 两条同地形条目会让识别永远判为「两张地图过于相似」，已在 2026-11-07 用 `set_map_enabled` 移入 `disabled.json`

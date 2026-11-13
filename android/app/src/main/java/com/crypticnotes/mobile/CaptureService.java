@@ -1935,7 +1935,7 @@ public class CaptureService extends Service {
         panel.addView(applied);
         Theme.ChalkChoice.Listener apply = i -> {
             boolean nightmare = difficulty.getIndex() == 1;
-            difficultyRow.setVisibility(libraryChoice.isLinguang()&&!libraryChoice.isZhanshi() ? View.GONE : View.VISIBLE);
+            difficultyRow.setVisibility(View.VISIBLE);
             party.setVisibility(!libraryChoice.isLinguang()&&!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
             routeRow.setVisibility(party.getVisibility());
             applyRecognition(libraryChoice.difficulty(nightmare ? "nightmare" : "hard"),
@@ -1944,8 +1944,8 @@ public class CaptureService extends Service {
         difficulty.setListener(apply);
         party.setListener(apply);
         libraryChoice.changed=()->apply.onChanged(0);
-        difficultyRow.setVisibility(libraryChoice.isLinguang() ? View.GONE : View.VISIBLE);
-        if(libraryChoice.isZhanshi())routeRow.setVisibility(View.GONE);
+        difficultyRow.setVisibility(View.VISIBLE);
+        if(libraryChoice.isZhanshi()||libraryChoice.isLinguang()){party.setVisibility(View.GONE);routeRow.setVisibility(View.GONE);}
 
         // Overlay opacity. Live, because it is a display setting and the whole
         // point is seeing the change; re-recognition is not needed for it.
@@ -2089,7 +2089,7 @@ public class CaptureService extends Service {
     private volatile String scene="curse";
 
     private String difficultyLabel(String difficulty, String mode) {
-        if(scene.equals("linguang")) return "磷光症 · "+(!"full".equals(mode)?"凉哈皮 · 困难":"nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"展十 · 困难 · 十六棺");
+        if(scene.equals("linguang")) return "磷光症 · "+(!"full".equals(mode)?("nightmare".equals(difficulty)?"凉哈皮 · 噩梦":"凉哈皮 · 困难"):"nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"展十 · 困难 · 十六棺");
         return (difficulty.equals("nightmare") ? "噩梦" : "困难")
                 + " · " + (mode.equals("full") ? "展十全棺" : mode.equals("speed") ? "展十速刷" : mode.equals("duo") ? "多人路线" : "单人路线");
     }

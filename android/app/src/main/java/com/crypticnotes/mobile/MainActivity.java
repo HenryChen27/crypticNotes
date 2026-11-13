@@ -140,8 +140,7 @@ public class MainActivity extends Activity {
         difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         LinearLayout difficultyRow=choiceRow(fieldLabel("难度"), difficulty);
         settings.addView(difficultyRow, matchWrap());
-        // 磷光症 has only nightmare 十四棺 so far: the row above gives way to a note.
-        View sceneNote = Theme.helpLabel(this, "磷光症", "凉哈皮只有困难（14 张），展十有困难十六棺（12 张）和噩梦十四棺（15 张）；按本局难度选作者和难度。楼层按右侧负一到负四的按钮识别，负四层暂无参考图。");
+        View sceneNote = Theme.helpLabel(this, "磷光症", "凉哈皮有困难（13 张）和噩梦（15 张），展十有困难十六棺（12 张）和噩梦十四棺（15 张）；按本局难度选作者和难度。楼层按右侧负一到负四的按钮识别，负四层暂无参考图。");
         settings.addView(sceneNote, matchWrap());
         settings.addView(libraryChoice.detachRoute(), matchWrap());
         TextView routeLabel = fieldLabel("参考路线");
@@ -152,9 +151,11 @@ public class MainActivity extends Activity {
         party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
         difficulty.setListener(i -> {
             getSharedPreferences("mobile", 0).edit().putString("difficulty", i == 0 ? "hard" : "nightmare").apply();
-            party.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
-            routeLabel.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
-            routeRow.setVisibility(i == 1 && !libraryChoice.isZhanshi() ? View.VISIBLE : View.GONE);
+            // Solo/duo routes exist only for 厄运之女 噩梦 by 凉哈皮.
+            int partyShown = i == 1 && !libraryChoice.isZhanshi() && !libraryChoice.isLinguang() ? View.VISIBLE : View.GONE;
+            party.setVisibility(partyShown);
+            routeLabel.setVisibility(partyShown);
+            routeRow.setVisibility(partyShown);
         });
         party.setVisibility(difficulty.getIndex() == 1 ? View.VISIBLE : View.GONE);
         routeLabel.setVisibility(party.getVisibility());
@@ -162,8 +163,8 @@ public class MainActivity extends Activity {
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
         libraryChoice.changed=()->{
             boolean linguang=libraryChoice.isLinguang();
-            // 磷光症: 凉哈皮 has one difficulty (hidden, fixed); 展十 has two.
-            difficultyRow.setVisibility(linguang&&!libraryChoice.isZhanshi()?View.GONE:View.VISIBLE);
+            // 磷光症: both authors offer 困难 and 噩梦.
+            difficultyRow.setVisibility(View.VISIBLE);
             sceneNote.setVisibility(linguang?View.VISIBLE:View.GONE);
             routeRow.setVisibility(!linguang&&!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
             routeLabel.setVisibility(routeRow.getVisibility());

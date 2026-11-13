@@ -8,9 +8,9 @@ import android.widget.LinearLayout;
 /**
  * Which game map, which author, which route.
  *
- * For 磷光症 each author has one difficulty so far (凉哈皮: 困难, 展十: 噩梦
- * 十四棺), so the difficulty follows the author and the route row is hidden;
- * the legacy party selector stays with the caller.
+ * For 磷光症 both authors offer 困难 and 噩梦 (凉哈皮: one set each, no
+ * solo/duo; 展十: 困难 十六棺 and 噩梦 十四棺, route "full"), so the player
+ * picks the difficulty and the route and party rows stay hidden.
  */
 final class MapLibraryChoice extends LinearLayout {
     private final SharedPreferences prefs;
@@ -41,11 +41,10 @@ final class MapLibraryChoice extends LinearLayout {
     View detachRoute(){removeView(routeRow);return routeRow;}
     static String sceneOf(SharedPreferences prefs){return prefs.getString("scene","curse");}
     static String providerOf(SharedPreferences prefs){return prefs.getString("map_provider","lianghapi");}
-    /** The one difficulty an author offers for 磷光症 so far, or null when the player chooses
-     *  (凉哈皮 has only 困难; 展十 has 困难 十六棺 and 噩梦 十四棺, both with route "full"). */
+    /** The one difficulty an author offers for a map, or null when the player chooses.
+     *  Every 磷光症 author now offers 困难 and 噩梦, so the player always chooses. */
     static String fixedDifficulty(String scene,String provider){
-        if(!scene.equals("linguang"))return null;
-        return provider.equals("zhanshi")?null:"hard";
+        return null;
     }
     boolean isLinguang(){return scene.getIndex()==1;}
     String scene(){return isLinguang()?"linguang":"curse";}

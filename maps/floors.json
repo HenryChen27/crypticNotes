@@ -134879,6 +134879,1176 @@
         "kind": "terrain-mask-v1",
         "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
       }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/只有左边/地图3",
+      "name": "只有左边 · 地图3",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/只有左边/地图3.webp",
+      "sha256": "13221a39adcf6fcacf0f2ca6bb8aec1a009244d9bad2b35cee99f3517fe4566c",
+      "pixel_sha256": "e1d5303c6d494d5b474a8aaf746e39d3a959412834074dec15962111480b566a",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            356,
+            585,
+            817
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            857,
+            585,
+            1357
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1427,
+            585,
+            1916
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          356
+        ],
+        [
+          0,
+          1916,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "05452789c54fc4fc9930896f255335a74e48460474c8bd6f999a5c196472bff1",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/c9483e9517432b83.png",
+        "sha256": "d3b0f47e53400302c8a60ad8a3863092f3e7a77b8e6d7369dea1fa713663e565",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/只有左边/地图5",
+      "name": "只有左边 · 地图5",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/只有左边/地图5.webp",
+      "sha256": "057701cfcd9a3538266182e342b3e83ec2015c4276da55e3af7a5bdcb527c010",
+      "pixel_sha256": "d600c31fef15870d8386cf59252a5a4ee7629abc1f90233967b4007fc8023c5b",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            327,
+            585,
+            833
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            865,
+            585,
+            1393
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1429,
+            585,
+            1933
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          327
+        ],
+        [
+          0,
+          1933,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "9443df0a7bba067fa4bb8582d15f2fe2580ed65f684dc3114d057b6369a79a04",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/74709d22bc7e65a2.png",
+        "sha256": "a14efc8f6677928615547ec545e7a971fd8cde0c74acdbfc238f90ef784d580f",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/只有左边/地图8",
+      "name": "只有左边 · 地图8",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/只有左边/地图8.webp",
+      "sha256": "409b619a260317116cb4959b75d72184293d27c03aa1b28e26f817eff2af359b",
+      "pixel_sha256": "71a507d92a11157e342853e61a06e65cec6c26a0ea72a0a19472e4b3cc4fef1a",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            351,
+            585,
+            833
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            853,
+            585,
+            1372
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1428,
+            585,
+            1915
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          351
+        ],
+        [
+          0,
+          1915,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "761bb3cd7f9ea57235007045dad517b70ad5a7b5a92faeef427286ac0fece278",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/38e67a23c7a6d2a1.png",
+        "sha256": "29234fe1e75c04d29a02ad0f906bf47da02f6150e5914be5a95c85583d218b3d",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-下右弯/地图12",
+      "name": "左直-下右弯 · 地图12",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-下右弯/地图12.webp",
+      "sha256": "9f34103e418e0f4390534a06f3cf513954b72d6ab427a456a78c5af7fdec680b",
+      "pixel_sha256": "a252955b8e412c04f3edb5d6f2326175bcb0807e473e85ef2a7ba3ec56c1bc71",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            342,
+            585,
+            858
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            907,
+            585,
+            1378
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1432,
+            585,
+            1920
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          342
+        ],
+        [
+          0,
+          1920,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "51b86099310d28777d7d5dc64468b299008a2840c955b941e656e97da3bc6b08",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/b0d5d8c0b840a7fa.png",
+        "sha256": "94e925ea03fd4615cf7c3170315e3feb660b1dcc04dd58eaeabd71a77268e678",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-下右弯/地图13",
+      "name": "左直-下右弯 · 地图13",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-下右弯/地图13.webp",
+      "sha256": "5c1315494c491721b54f52da3d60292494ea0a75a0f3357c5cfcc80c991c3273",
+      "pixel_sha256": "187cb3a8e55acc2ecddd2cd6e8901e4e768bcd3ea0401409c863ac9c0d96be05",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            347,
+            585,
+            836
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            860,
+            585,
+            1375
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1404,
+            585,
+            1915
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          347
+        ],
+        [
+          0,
+          1915,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "0edadec528f40e81166946897492add9f204175ba0441409f77f72df9600c5fe",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/decd329d0aed7b3a.png",
+        "sha256": "be0ccaf14a1221237203ae156002eb62bdfb1bc220fa9087f3d6c1f9c26f26dd",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-两都有路口/地图1",
+      "name": "左直-两都有路口 · 地图1",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-两都有路口/地图1.webp",
+      "sha256": "2046c49997ddd43ef57d2943afa0a2ff567d80864fc7f0401f1573f321d3c93c",
+      "pixel_sha256": "3be4391b5c3e85d888c66ee6488f479411c6719bbd75ea48691735e6b0446445",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            349,
+            585,
+            825
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            901,
+            585,
+            1331
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1355,
+            585,
+            1882
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          349
+        ],
+        [
+          0,
+          1882,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "8c266f26dc83083446672ee0e4bbbe3b196a5a713e35175af2f79a3acca10fb1",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/29f2ed3bfac22f23.png",
+        "sha256": "c07e47913a726610fecba082c998eb39fe61683d911c016fbd22b5731d0e3c28",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-两都有路口/地图4",
+      "name": "左直-两都有路口 · 地图4",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-两都有路口/地图4.webp",
+      "sha256": "a1d1ad5c6d0cfdb3a1f17670c9797d036f7fcdba632f2c9baa9e67f3176781c7",
+      "pixel_sha256": "d5fc7ef5740dd7132f3b470918b48173ccf5ff50bd4df2d7902f0d5139eb8ec3",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            363,
+            585,
+            864
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            951,
+            585,
+            1400
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1427,
+            585,
+            1931
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          363
+        ],
+        [
+          0,
+          1931,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "c220e8162d3619abb64c72f34dd37dfa26c501d3bb90b602e67e3d02a2a4e93a",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/7c627ee1876ce414.png",
+        "sha256": "f9a2f700c0f2d4571e486c9024b4ba18db3ca1ea2221786c341e65c32a239fce",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右上弯/地图6",
+      "name": "左直-右上弯 · 地图6",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右上弯/地图6.webp",
+      "sha256": "a5296e9b247f41ef51a30ff4aec0916f84889cdc8d14402069b0379393efad97",
+      "pixel_sha256": "5cb5d9de2b2a09b7fb34fea68548777076a9f0c081951b704d11ecc783c2601a",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            351,
+            585,
+            851
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            894,
+            585,
+            1387
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1424,
+            585,
+            1925
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          351
+        ],
+        [
+          0,
+          1925,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "7df5baaef32f4938b1eabf2b7273c785d4616a63297f413c62af7a2f402c81e5",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/b0aa620a3e1d6d54.png",
+        "sha256": "7e2ea55705b059749d8e7556b79884f6e9c63b6d6e243e3588bfc9b21f189266",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右上弯/地图7",
+      "name": "左直-右上弯 · 地图7",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右上弯/地图7.webp",
+      "sha256": "d4a367febae75a2160971d6b9bdca795b4907daf0fd508641f579ed1b5b6b6ea",
+      "pixel_sha256": "06898157302dc9b7286f31fbdc595bda922e41a98d33116d8b7d70bf26e7644c",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            326,
+            585,
+            802
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            802,
+            585,
+            1349
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1379,
+            585,
+            1913
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          326
+        ],
+        [
+          0,
+          1913,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "59fa5a9cbaadd18379fdd244958db816d36f66cce5e768ff399fb4a0bd398c80",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/4b956510cd550071.png",
+        "sha256": "6d0518de97cb734195216c0da2371359062fd2fc6684327117815d6925ff125d",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右上弯/地图11",
+      "name": "左直-右上弯 · 地图11",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右上弯/地图11.webp",
+      "sha256": "68a72a84aaa121d96a93f7ffb10ef716a1d241a6fa13a3eab0c015f498a82288",
+      "pixel_sha256": "ce804a1ceb4517a1279c2e8df56ea56bdf01dfa3e5cfc81e0b51f857137a2e84",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            360,
+            585,
+            867
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            896,
+            585,
+            1397
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1415,
+            585,
+            1923
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          360
+        ],
+        [
+          0,
+          1923,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "5d008efe8b6807280b487647a0129f8f30d016749ea62b417631fd37b1e4f560",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/d1e17b6917f3d6df.png",
+        "sha256": "0a187da732b97edcf48bf42b8cf4ab30ee5ba6a88e5f2280d8132f1f8c829d9a",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右上弯/地图15",
+      "name": "左直-右上弯 · 地图15",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右上弯/地图15.webp",
+      "sha256": "071731cb860ba93e0aa37b5ad9a89052f14938c63c56d70405e728f3902f02db",
+      "pixel_sha256": "777366ea0ba3052ea4942dc3ed8e5bac752f7e186c5c458574f7bba5773c06e7",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            337,
+            585,
+            829
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            852,
+            585,
+            1385
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1410,
+            585,
+            1918
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          337
+        ],
+        [
+          0,
+          1918,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "01d34b0f7c12cfe29d49aa8a7db4d7f189a57e1704590a868398bf57fdebe934",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/ab87e3d1e323201e.png",
+        "sha256": "f0b9f7c3ff431ae6f4f0c94f558365fcb87451748578040dc303e5e4ad119efc",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右直/地图2",
+      "name": "左直-右直 · 地图2",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右直/地图2.webp",
+      "sha256": "81d4e2e83f5f8d99df7e247303d63923d5cb26d3f68d4e11e6340b03dc9191e2",
+      "pixel_sha256": "e09e4a57cd9064984c05a014e1ed514daf1a3ba8280ad7efbaba607cc16671c7",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            332,
+            585,
+            801
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            889,
+            585,
+            1347
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1404,
+            585,
+            1925
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          332
+        ],
+        [
+          0,
+          1925,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "19d624312f6ef8e01919a998f07bed94ec49cf99599e830fef38578864a23053",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/297021f8c5fc793f.png",
+        "sha256": "a0f82ee3eb85bba258ed549747a26ef3f9a3f655855047f219e35980a33e9c50",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右直/地图10",
+      "name": "左直-右直 · 地图10",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右直/地图10.webp",
+      "sha256": "6c53e116a460a641ee9504fb5819c1eb07c26a14fd75b62dca30260dc6d8e020",
+      "pixel_sha256": "deae4d61f5622d82fb71ff40747d98c9f7da938a47fc591c0f8739dd8862c95e",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            358,
+            585,
+            741
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            905,
+            585,
+            1383
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1418,
+            585,
+            1929
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          358
+        ],
+        [
+          0,
+          1929,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "3ccc30fd75116edd3f26781c628218f92aeb5366e5cda47b4d8d3734bd22685f",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/56765900f4cd098b.png",
+        "sha256": "f38e77355ee501e0c8e21c61c56aa9bc004c038a34c1f852f094fe54c1bb73ea",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左直-右直/地图14",
+      "name": "左直-右直 · 地图14",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左直-右直/地图14.webp",
+      "sha256": "bce5e6c57dfec9f3f3ecf871764d9d6761130547f9fbb1d1c9e783a54d83505c",
+      "pixel_sha256": "3053db286bdc6b0af4719bc4336237830cc092e63406cfaa3fe32fcc12b3041e",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            378,
+            585,
+            838
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            864,
+            585,
+            1384
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1426,
+            585,
+            1917
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          378
+        ],
+        [
+          0,
+          1917,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "d1dea2141864f909b8b7e040d5eccdf164c741aa17154d04b8bf0e5fe5f4f523",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/eaa29a5b56e864f6.png",
+        "sha256": "39f1ed90bb21a613ccfed403365f54774e9511842eafc2aa664040fb4fb1632f",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
+    },
+    {
+      "map_id": "linguang/lianghapi/nightmare/左边没路口/地图9",
+      "name": "左边没路口 · 地图9",
+      "provider": "lianghapi",
+      "scene": "linguang",
+      "difficulty": "nightmare",
+      "mode": null,
+      "source": "maps/linguang/lianghapi/nightmare/左边没路口/地图9.webp",
+      "sha256": "bdb3d1d168297be50bb4019e817e96f3eea28e7b06081f0e379edffcf458dc63",
+      "pixel_sha256": "55c0aefbfa888b4aeda9550a8bc2921a1014136cddf47da0c119487dd344e6f6",
+      "size": [
+        585,
+        2048
+      ],
+      "regions": [
+        {
+          "floor": -1,
+          "bbox": [
+            0,
+            351,
+            585,
+            834
+          ]
+        },
+        {
+          "floor": -2,
+          "bbox": [
+            0,
+            889,
+            585,
+            1357
+          ]
+        },
+        {
+          "floor": -3,
+          "bbox": [
+            0,
+            1424,
+            585,
+            1922
+          ]
+        }
+      ],
+      "exclude_regions": [
+        [
+          0,
+          0,
+          585,
+          351
+        ],
+        [
+          0,
+          1922,
+          585,
+          2048
+        ]
+      ],
+      "review": "2026-11-13 导入；负一/负二/负三层按纵向地形带自动分区，标题缩略图与图例排除，预览见 datasets/evaluation/linguang-lianghapi-nightmare-import",
+      "storage": {
+        "policy": "webp-2048-q90-v1",
+        "original_size": [
+          1000,
+          3500
+        ],
+        "original_sha256": "8b42218cb4d213f70178943f2e9a13440ea3c2109966df88c2ad5cc5ad91a2db",
+        "resize": [
+          0.585,
+          0.5851428571428572
+        ]
+      },
+      "recognition": {
+        "source": "maps/recognition-inputs/ce309e94effe47f2.png",
+        "sha256": "9bbd18af1c71f8e2f25c5bc76b2cf514ad7376f467a9cc606814541135793654",
+        "factor": 0.48828124999999994,
+        "kind": "terrain-mask-v1",
+        "config": "071728f7a5207dc6b21c886696aff324ebad365a8a5a34ef3d69bf74d72483e3"
+      }
     }
   ]
 }
