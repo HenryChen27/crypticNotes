@@ -1102,7 +1102,13 @@ class Companion(W.QWidget):
         self.map_shortcuts=FoldSection('快捷键')
         self.version_section=FoldSection('应用更新')
         self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])
-        self.version_section.body.addWidget(W.QLabel('主程序（含识图程序） · '+application_version()))
+        # Wrapped and width-ignoring: no version text may widen the page
+        # beyond the scroll viewport (horizontal scrolling is off, so the
+        # overflow would silently clip every row on the right).
+        app_version=W.QLabel('主程序（含识图程序）\n版本 '+application_version())
+        app_version.setWordWrap(True)
+        app_version.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
+        self.version_section.body.addWidget(app_version)
         self.version_section.body.addWidget(self.matching_controls)
         self.matching_controls.changed.connect(self.refresh_matching_module)
         for i in (3,5):self.setting_sections[i].hide()

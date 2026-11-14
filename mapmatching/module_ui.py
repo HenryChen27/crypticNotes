@@ -16,8 +16,20 @@ def application_version():
         except (OSError,ValueError):return '未读取'
     try:
         spec=json.loads((ROOT/'windows-build.json').read_text(encoding='utf-8-sig'))
-        return str(spec.get('version') or spec.get('build','未知'))
     except (OSError,ValueError):return '未读取'
+    return windows_version_text(spec)
+
+def windows_version_text(spec):
+    """Windows builds only carry ``build``, a ``time.time_ns()`` stamp from
+    finalize_release. Shown raw it is a 19-digit number that cannot wrap and
+    widened the whole settings page past its viewport, clipping every row on
+    the right; show the build time instead."""
+    import datetime
+    if spec.get('version'):return str(spec['version'])
+    try:build=int(spec['build'])
+    except (KeyError,TypeError,ValueError):return '未知'
+    try:return datetime.datetime.fromtimestamp(build/1e9).strftime('%Y.%m.%d %H:%M')
+    except (OverflowError,OSError,ValueError):return str(build)
 
 
 class ModuleCheck(C.QThread):

@@ -4,7 +4,7 @@ from pathlib import Path
 from urllib.parse import quote
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from scripts.gitcode_release import GitCode,plan,publish
+from scripts.gitcode_release import GitCode,plan,publish,release_title
 CHECKOUT=ROOT/'release/gitcode'
 
 def git(*args):
@@ -52,7 +52,7 @@ def mirror(jobs,tag=None,release=None):
     client=GitCode();base=client.repository
     releases=client.api(base+'/releases?per_page=100')
     if not any(r.get('tag_name')==tag for r in releases):
-        client.api(base+'/releases',dict(tag_name=tag,name='小布偶插件 · '+tag.removeprefix('v')+'（上传中）',body='上传完成并通过校验后才转为正式版本。',target_commitish='main',release_status='pre'),'POST')
+        client.api(base+'/releases',dict(tag_name=tag,name=release_title(tag)+' (uploading)',body='Becomes the official release after every upload is verified.',target_commitish='main',release_status='pre'),'POST')
     current=client.api(base+'/releases/tags/'+quote(tag,safe=''));assets={a['name']:a for a in current['assets']}
     missing=[]
     for name,e in prepared['files'].items():

@@ -63,14 +63,21 @@ def anonymous_digest(url):
     except Exception:raise RuntimeError('Anonymous download verification failed') from None
     return digest.hexdigest(),size
 
+# The release JSON must stay pure ASCII. Windows updaters shipped from
+# 2026-10-31 to 2026-11-13 read /releases/latest with WebClient's default ANSI
+# code page (GitCode sends no charset), so any Chinese in the title or body
+# turns into invalid JSON there and those installs can never update again.
+# ASCII decodes identically under every code page.
+RELEASE_BODY='Windows, Android and macOS packages plus the lianghapi and zhanshi map libraries.'
+def release_title(tag):return 'crypticNotes '+tag.removeprefix('v')
+
 def publish(jobs,tag,prepared=None):
     prepared=prepared or plan(jobs);client=GitCode();base=client.repository
     releases=client.api(base+'/releases?per_page=100')
     release=next((r for r in releases if r.get('tag_name')==tag),None)
-    title='小布偶插件 · '+tag.removeprefix('v')
-    body='Windows、Android、macOS 安装包及凉哈皮、展十地图库。\n\n新版客户端主程序与地图库更新优先使用 GitCode；查询连接失败时回退 GitHub。旧用户需先安装一次过渡更新。小游戏资源暂用原仓库。'
+    title=release_title(tag);body=RELEASE_BODY
     if release is None:
-        release=client.api(base+'/releases',dict(tag_name=tag,name=title+'（上传中）',body=body,target_commitish='main',release_status='pre'),'POST')
+        release=client.api(base+'/releases',dict(tag_name=tag,name=title+' (uploading)',body=body,target_commitish='main',release_status='pre'),'POST')
         print('Created GitCode release:',tag,flush=True)
     quoted=quote(tag,safe='')
     checkpoint=Path('out')/('gitcode-verified-'+quote(tag,safe='')+'.json')

@@ -321,12 +321,21 @@ try {
     # Public API: no Git, token or GitHub account required.
     $release = $null
     foreach ($endpoint in @('https://api.gitcode.com/api/v5/repos/weixin_51917701/crypticNotes/releases/latest', 'https://api.github.com/repos/HenryChen27/crypticNotes/releases/latest')) {
+        # One fresh client per source. WebClient empties Headers after every
+        # request, so a shared client asked GitHub without a User-Agent and got
+        # 403 whenever GitCode had been tried first. Decode as UTF-8 explicitly:
+        # GitCode sends no charset, WebClient then falls back to the ANSI code
+        # page (GBK here), the Chinese release title swallows a quote and
+        # ConvertFrom-Json fails. Together these broke every update since the
+        # 2026-10-31 switch to GitCode-first.
+        $source = New-Client
+        $source.Encoding = [Text.Encoding]::UTF8
         try {
-            $task = $client.DownloadStringTaskAsync($endpoint)
+            $task = $source.DownloadStringTaskAsync($endpoint)
             $timer = [Diagnostics.Stopwatch]::StartNew()
             while (-not $task.IsCompleted) {
                 [Windows.Forms.Application]::DoEvents()
-                if ($form.IsDisposed -or $timer.Elapsed.TotalSeconds -gt 40) { $client.CancelAsync(); throw '检查已取消或超时' }
+                if ($form.IsDisposed -or $timer.Elapsed.TotalSeconds -gt 40) { $source.CancelAsync(); throw '检查已取消或超时' }
                 Start-Sleep -Milliseconds 80
             }
             $candidate = $task.GetAwaiter().GetResult() | ConvertFrom-Json
@@ -334,8 +343,10 @@ try {
             $release = $candidate
             break
         } catch {
-            Log "release source failed: $endpoint"
+            Log "release source failed: $endpoint :: $(Explain $_.Exception)"
             if ($form.IsDisposed) { throw }
+        } finally {
+            $source.Dispose()
         }
     }
     if (-not $release) { throw '无法连接更新服务器，请稍后重试' }

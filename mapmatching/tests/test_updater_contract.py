@@ -83,6 +83,28 @@ class UpdaterContractTests(unittest.TestCase):
         self.assertLess(guard,download)
         self.assertIn('throw',self.source[guard:guard+160])
 
+    def test_each_release_source_gets_a_fresh_utf8_client(self):
+        # 2026-10-31..11-13: a shared WebClient lost its User-Agent after the
+        # GitCode request (GitHub then answered 403), and GitCode's charset-less
+        # JSON was decoded as GBK, so every update failed with 无法连接更新服务器.
+        loop = self.source.split("foreach ($endpoint in", 1)[1].split("if (-not $release)", 1)[0]
+        self.assertIn('= New-Client', loop, '检查更新又共用了一个 WebClient：第二个源请求时请求头已被清空，GitHub 回 403')
+        self.assertIn('[Text.Encoding]::UTF8', loop, '没有按 UTF-8 解码：GitCode 发布标题里的中文会让 JSON 解析失败')
+        self.assertNotIn('$client.', loop)
+
+    def test_gitcode_release_text_stays_ascii(self):
+        # Installs from 2026-10-31..11-13 still decode GitCode's JSON as GBK;
+        # only pure-ASCII release text parses there.
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from scripts.gitcode_release import RELEASE_BODY, release_title
+        self.assertTrue(RELEASE_BODY.isascii())
+        self.assertTrue((release_title('v2026.11.13-203508') + ' (uploading)').isascii())
+        for name in ('scripts/gitcode_release.py', 'scripts/gitcode_cloud_release.py'):
+            for line in read(ROOT/name).splitlines():
+                if "/releases'," in line and "'POST'" in line:
+                    self.assertTrue(line.isascii(), name + ' 创建发布时又写了中文：旧版更新脚本会解析失败')
+
     def test_keeps_the_utf8_bom_and_crlf_dist_extras_requires(self):
         data = UPDATER.read_bytes()
         self.assertTrue(data.startswith(b'\xef\xbb\xbf'),
