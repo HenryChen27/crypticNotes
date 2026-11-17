@@ -20,6 +20,11 @@ final class RecordPresets {
     static final String KEY_QUALITY = "record_quality";
     static final String KEY_FPS = "record_fps";
     static final String KEY_AUDIO = "record_internal_audio";
+    /** Seconds the replay buffer keeps; 0 is off, which is the default. */
+    static final String KEY_REPLAY = "record_replay_seconds";
+    /** What the settings row offers, in its order; index 0 is off. */
+    static final int[] REPLAY_SECONDS = {0, 20, 30, 40, 50};
+    static final String[] REPLAY_LABELS = {"关闭", "20s", "30s", "40s", "50s"};
 
     /** Stored as names, not indexes, like `difficulty`/`mode`: reordering a table
      *  then cannot silently remap what existing users already chose. */
@@ -78,6 +83,24 @@ final class RecordPresets {
     static void setFpsIndex(Context context, int index) {
         prefs(context).edit().putInt(KEY_FPS, fpsValue(index)).apply();
     }
+
+    /** Position of a length in {@link #REPLAY_SECONDS}; anything not offered is "off". */
+    static int replayIndex(int seconds) {
+        for (int i = 0; i < REPLAY_SECONDS.length; i++) if (REPLAY_SECONDS[i] == seconds) return i;
+        return 0;
+    }
+
+    /** 0 when the replay buffer is off. */
+    static int storedReplaySeconds(Context context) {
+        return REPLAY_SECONDS[replayIndex(prefs(context).getInt(KEY_REPLAY, 0))];
+    }
+
+    static void setReplayIndex(Context context, int index) {
+        prefs(context).edit().putInt(KEY_REPLAY, REPLAY_SECONDS[clamp(index, REPLAY_SECONDS.length, 0)]).apply();
+    }
+
+    /** The words on the save button and on its notification action. */
+    static String replayLabel(int seconds) { return "回溯录屏（" + seconds + "s）"; }
 
     /** Exactly what the user chose. Positions the switch, and nothing else. */
     static boolean storedInternalAudio(Context context) {

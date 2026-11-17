@@ -155,7 +155,7 @@ class PlayerTests(unittest.TestCase):
         cls.app = W.QApplication.instance() or W.QApplication([])
 
     def test_registry_and_settings_fallback(self):
-        self.assertEqual([key for key, _ in SKINS], ['doll', 'lantern'])
+        self.assertEqual([key for key, _ in SKINS][:2], ['doll', 'lantern'])
         self.assertEqual(skin_name({}), 'doll')
         self.assertEqual(skin_name({'pet_skin': 'lantern'}), 'lantern')
         self.assertEqual(skin_name({'pet_skin': 'teapot'}), 'doll')

@@ -32,7 +32,8 @@ else:
     from .mouse_input import MouseWatcher
     from .keyboard_input import KeyboardWatcher
     import win32gui
-from .appearance import PetAnimation, SpeechBubble, reaction, PetBehavior, create_pet, skin_name, SKINS
+from .appearance import PetAnimation, SpeechBubble, reaction, PetBehavior, Heist, create_pet, skin_name, SKINS
+from .appearance.heist import new_pity
 from .panel_dialogs import own_dialog_open
 from .theme import MistPanel, GearButton, ChalkButton, ChalkChoice, DelaySlider, ChalkSlider, ChalkToggle, EditButton, FoldSection, FrostScrollBar, FrostCheckBox,HandRule,reveal
 from .line_icons import KeyCap
@@ -61,6 +62,34 @@ def exclude_from_capture(window):
         return bool(native.exclude_from_capture(int(window.winId())))
     except Exception:
         return False
+
+
+def watch_for_stalls(app, seconds=8):
+    """If the interface thread ever stops for `seconds`, write every thread's
+    stack to out/mapmatching/stall.log. A heartbeat re-arms the timer, so
+    nothing is written while the interface is alive. Diagnostic only: it
+    never stops or kills anything."""
+    import faulthandler
+    try:
+        path = DATA_ROOT/'out/mapmatching/stall.log'
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists() and path.stat().st_size > 512*1024:
+            path.unlink()                   # keep it from growing without bound
+        log = open(path, 'a', encoding='utf-8')
+    except OSError:
+        return None
+    def beat():
+        faulthandler.cancel_dump_traceback_later()
+        log.write('')                       # nothing; the dump itself is what gets written
+        faulthandler.dump_traceback_later(seconds, repeat=False, file=log)
+    timer = C.QTimer(app)
+    timer.setInterval(2000)
+    timer.timeout.connect(beat)
+    timer.start()
+    beat()
+    app.aboutToQuit.connect(faulthandler.cancel_dump_traceback_later)
+    app._stall_watch = (timer, log)
+    return timer
 
 
 def show_floating(window):
@@ -361,6 +390,17 @@ def resolve_hotkeys(settings):
     return hotkey,hide
 
 
+def resolve_confirm_hotkey(settings, taken):
+    """「是否需要直接叠图？」弹窗的确认键，默认回车。
+
+    Esc 在这个弹窗里永远是取消，所以不能当确认键；也不能和地图那三个键相同，
+    否则按一下既确认又开关 / 隐藏。`taken` 最多三个键，候选里总有一个空着。
+    """
+    blocked = {HOTKEYS[name] for name in taken if name in HOTKEYS} | {HOTKEYS['ESC']}
+    return next(name for name in (settings.get('confirm_hotkey','ENTER'),'ENTER','SPACE','TAB','F9')
+                if name in HOTKEYS and HOTKEYS[name] not in blocked)
+
+
 # Qt 键 -> HOTKEYS 里的名字。**不用 QKeySequence**：它把同样一个键按当前修饰键
 # 拼成不同的串（小键盘数字是 "Num+0"，Shift 状态还会换字符），而这里要的是
 # 「一个物理键就是一个名字」，否则同一颗键会因为 NumLock / Shift 变成两个身份。
@@ -630,19 +670,35 @@ class Segmented(W.QWidget):
 
 
 class ManualChoiceButton(ChalkButton):
-    def __init__(self, accept):
-        super().__init__('')
+    def __init__(self, accept, keycap=None):
+        super().__init__('',keycap=keycap)
         self.accept=accept
-        self.setFixedSize(70,32)
+        self.setFixedSize(self.natural_width(),32)
         self.setMinimumHeight(32)
         self.setToolTip('同意' if accept else '忽略')
+
+    def cap_width(self):
+        """Width of the key cap exactly as `paint_keycap` draws it; 0 without one."""
+        if not self.keycap:return 0
+        small=G.QFont(self.font());small.setPixelSize(11)
+        return max(22,G.QFontMetrics(small).horizontalAdvance(self.keycap)+12)
+
+    def natural_width(self):
+        # 14 px of air either side of the 18 px mark, then the cap and its 8 px margin.
+        cap=self.cap_width()
+        return max(70,46+cap+8) if cap else 70
 
     def paintEvent(self,event):
         from .theme import chalk_texture
         p=G.QPainter(self);p.setRenderHint(G.QPainter.Antialiasing)
         p.drawImage(self.rect(),chalk_texture(self.width(),self.height(),'deep',.8,'rounded'))
         p.setPen(G.QPen(G.QColor('#83c4a1' if self.accept else '#df858c'),2.5,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
-        x,y=self.width()/2,self.height()/2
+        # The mark centres in the room left of the key cap.
+        cap=self.cap_width()
+        if cap:
+            from .theme import paint_keycap
+            paint_keycap(p,self.keycap,self.width()-8,self.height()/2,self.font())
+        x,y=(self.width()-(cap+8 if cap else 0))/2,self.height()/2
         if self.accept:
             p.drawLine(C.QPointF(x-8,y),C.QPointF(x-2,y+6));p.drawLine(C.QPointF(x-2,y+6),C.QPointF(x+9,y-7))
         else:
@@ -654,19 +710,26 @@ class ManualAlignmentPopup(W.QWidget):
     accepted=C.Signal()
     ignored=C.Signal()
 
-    def __init__(self,parent=None):
+    def __init__(self,parent=None,confirm_key=None):
+        """`confirm_key` is the HOTKEYS name that accepts, or None when that
+        shortcut is switched off. Esc always ignores. The popup never takes
+        focus, so both keys are read by `Companion.tick`, not here."""
         super().__init__(parent,C.Qt.Tool | C.Qt.FramelessWindowHint | C.Qt.WindowStaysOnTopHint)
         self.setAttribute(C.Qt.WA_ShowWithoutActivating)
         self.setAttribute(C.Qt.WA_TranslucentBackground)
         if sys.platform == 'darwin':
             self.setAttribute(C.Qt.WA_MacAlwaysShowToolWindow)
-        self.setFixedSize(200,106)
         row=W.QVBoxLayout(self);row.setContentsMargins(18,30,18,12);row.setSpacing(10)
         label=W.QLabel('是否需要直接叠图？');label.setAlignment(C.Qt.AlignCenter)
         label.setStyleSheet('color:#dbe5ec;background:transparent;font-size:15px;')
         row.addWidget(label)
         buttons=W.QHBoxLayout();buttons.setSpacing(10)
-        accept=ManualChoiceButton(True);ignore=ManualChoiceButton(False)
+        accept=ManualChoiceButton(True,keycap_text(confirm_key) if confirm_key else None)
+        ignore=ManualChoiceButton(False,keycap_text('ESC'))
+        self.accept_button,self.ignore_button=accept,ignore
+        width=max(accept.natural_width(),ignore.natural_width())
+        accept.setFixedWidth(width);ignore.setFixedWidth(width)
+        self.setFixedSize(max(200,36+10+2*width),106)
         accept.clicked.connect(self.accepted);ignore.clicked.connect(self.ignored)
         buttons.addWidget(accept);buttons.addWidget(ignore);row.addLayout(buttons)
         self.clock=C.QElapsedTimer();self.clock.start()
@@ -803,10 +866,17 @@ class DraggableGear(GearButton):
         self.double_release=False
         self.locked=False
         self._drag_last=None
+        self._drag_moved_at=0.
+        self._drag_pending=None
         self.exit_zone=ExitDropZone()
         self.exit_timer=C.QTimer(self)
         self.exit_timer.setInterval(40)
         self.exit_timer.timeout.connect(self.check_exit_zone)
+
+    def heist(self):
+        """The puppet's cursor theft, while it is running; else None."""
+        heist=getattr(self.window,'heist',None)
+        return heist if heist is not None and heist.active else None
 
     def heart_playing(self):
         """The hug / ghost-fire trick is still running: clicks are not read
@@ -832,6 +902,8 @@ class DraggableGear(GearButton):
         old=self.pet
         if name==old.skin_id:
             return
+        heist=self.heist()
+        if heist is not None:heist.abort()
         new=create_pet(self,name)
         new.scale=old.scale;new.opacity=old.opacity;new.opacity_target=old.opacity_target
         enabled=old.enabled
@@ -854,6 +926,8 @@ class DraggableGear(GearButton):
         self.exit_zone.set_armed(armed)
 
     def mouseDoubleClickEvent(self,event):
+        if event.button()==C.Qt.LeftButton and self.heist() is not None:
+            self.heist().pet_clicked();event.accept();return
         if getattr(self.window,'_update_starting',False):
             self.window.notify('更新中，请稍候…');event.accept();return
         if event.button()==C.Qt.LeftButton:
@@ -872,6 +946,8 @@ class DraggableGear(GearButton):
         active=bool(active or getattr(self.window,'_update_starting',False))
         if self.matching == active:
             return
+        if active and self.heist() is not None:
+            self.heist().abort()    # work first: the puppet goes back to its place
         self.matching=active
         if active:
             self.match_clock.start()
@@ -919,6 +995,8 @@ class DraggableGear(GearButton):
             p.end()
 
     def enterEvent(self,event):
+        if self.heist() is not None:
+            super().enterEvent(event);return
         behavior=getattr(self.window,'behavior',None)
         # The wave has a cooldown: the doll sits next to the game's own top-right
         # controls, and greeting every pass of the pointer was noise.
@@ -947,6 +1025,10 @@ class DraggableGear(GearButton):
             self.click_timer.stop()
             self.exit_timer.stop();self.exit_zone.hide()
             event.accept();self.context_menu(event.globalPosition().toPoint());return
+        if event.button()==C.Qt.LeftButton and self.heist() is not None:
+            # Mid-theft a click is part of the game (trip it up, or hand the
+            # thing back), never a drag or the settings panel.
+            self.click_timer.stop();self.origin=None;self.heist().pet_clicked();event.accept();return
         if event.button()==C.Qt.LeftButton:
             if self.game_background and (event.position()-self.game_orbit_pos()).manhattanLength()<30:
                 self.click_timer.stop();self.double_release=True;self.window.minigames.restore_game();event.accept();return
@@ -976,10 +1058,22 @@ class DraggableGear(GearButton):
         if now-last_t>0:
             self.pet.drag_moved((point.x()-last_x)/max(1.,(now-last_t)*1000))
         self._drag_last=(point.x(),now)
-        self.window.move(point-self.origin)
+        # Coalesce: a 1000 Hz mouse would otherwise ask the compositor to move
+        # this layered window a thousand times a second. The release always
+        # lands on the exact spot.
+        if now-self._drag_moved_at>=.008:
+            self._drag_moved_at=now
+            self._drag_pending=None
+            self.window.move(point-self.origin)
+        else:
+            self._drag_pending=point-self.origin
 
     def mouseReleaseEvent(self,event):
+        if self.origin is None and self.heist() is not None:
+            self.setDown(False);event.accept();return
         dragging=self.moved
+        # Moves are coalesced while dragging: a last one may still be owed.
+        landing,self._drag_pending=self._drag_pending,None
         quitting=dragging and self.exit_zone.armed and self.exit_zone.isVisible()
         self.origin=self.press_global=None
         self.moved=False
@@ -1003,6 +1097,7 @@ class DraggableGear(GearButton):
             return
         if dragging:
             self.setDown(False)     # 不自己清的话按钮会永远停在按下态
+            if landing is not None:self.window.move(landing)
             self.window.clamp_to_screen()
             self.window.save()
             return                  # 不调 super() => 不发 clicked
@@ -1065,6 +1160,8 @@ class Companion(W.QWidget):
         if self.close_hotkey not in HOTKEYS or HOTKEYS[self.close_hotkey] == HOTKEYS[self.hotkey]:
             self.close_hotkey = 'ESC'
         self.keys.close_key = HOTKEYS[self.close_hotkey]
+        self.confirm_hotkey = resolve_confirm_hotkey(
+            self.settings,(self.hotkey,self.hide_hotkey,self.close_hotkey))
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(3,3,3,3)
         layout.setSpacing(8)
@@ -1254,11 +1351,14 @@ class Companion(W.QWidget):
         from .shortcut_row import ShortcutRow
         self.close_key_enabled=ChalkToggle();self.close_key_enabled.setChecked(self.settings.get('close_key_enabled',True))
         self.hide_key_enabled=ChalkToggle();self.hide_key_enabled.setChecked(self.settings.get('hide_key_enabled',True))
+        self.confirm_key_enabled=ChalkToggle();self.confirm_key_enabled.setChecked(self.settings.get('confirm_key_enabled',True))
         self.map_key_rows=[
             ShortcutRow('开启地图快捷键',hotkey_text(self.hotkey),self.edit_hotkey,self.enabled),
             ShortcutRow('关闭地图快捷键',hotkey_text(self.close_hotkey),self.edit_close_hotkey,self.close_key_enabled),
-            ShortcutRow('隐藏叠图快捷键',hotkey_text(self.hide_hotkey),self.edit_hide_hotkey,self.hide_key_enabled)]
-        self.hotkey_label,self.close_hotkey_label,self.hide_hotkey_label=[row.label for row in self.map_key_rows]
+            ShortcutRow('隐藏叠图快捷键',hotkey_text(self.hide_hotkey),self.edit_hide_hotkey,self.hide_key_enabled),
+            ShortcutRow('确认叠图快捷键',hotkey_text(self.confirm_hotkey),self.edit_confirm_hotkey,self.confirm_key_enabled)]
+        self.map_key_rows[3].setToolTip('出现「是否需要直接叠图？」时按这个键同意；Esc 始终是忽略')
+        self.hotkey_label,self.close_hotkey_label,self.hide_hotkey_label=[row.label for row in self.map_key_rows[:3]]
         for row in self.map_key_rows:
             self.map_shortcuts.body.addWidget(row)
             row.toggle.toggled.connect(lambda _:self.update_map_keys())
@@ -1282,7 +1382,7 @@ class Companion(W.QWidget):
         # Which body: the cloth doll or the frost-grown mine lamp.
         self.pet_skin = ChalkChoice([(cls.NAME,key) for key,cls in SKINS])
         self.pet_skin.setCurrentIndex([key for key,_ in SKINS].index(skin_name(self.settings)))
-        self.pet_skin.setToolTip('矿灯：识别失败时眼里射出蓝色激光扫射，识别成功时吐出一团蓝色鬼火')
+        self.pet_skin.setToolTip('矿灯：识别失败时眼里射出蓝色激光扫射，识别成功时吐出一团蓝色鬼火\n木偶：鼠标静止 10 秒会来偷光标，Esc 结束')
         self.pet_skin.currentIndexChanged.connect(lambda _: self.set_pet_skin())
         skin_row=W.QHBoxLayout()
         skin_label=W.QLabel('桌宠');skin_label.setFixedWidth(62)
@@ -1303,7 +1403,9 @@ class Companion(W.QWidget):
         self.pet_quiet.setToolTip('不做随机小动作、不打盹，只保留识别结果的反应')
         self.pet_locked = ChalkToggle(); self.pet_locked.setChecked(bool(self.settings.get('pet_locked',False)))
         self.pet_locked.setToolTip('锁定后不能拖动，点击和快捷键照常')
-        for toggle in (self.pet_fade,self.pet_quiet,self.pet_locked):
+        self.pet_heist = ChalkToggle(); self.pet_heist.setChecked(bool(self.settings.get('pet_heist',True)))
+        self.pet_heist.setToolTip('鼠标每静止 10 秒，木偶就会来偷走光标；按 Esc 随时结束并复位')
+        for toggle in (self.pet_fade,self.pet_quiet,self.pet_locked,self.pet_heist):
             toggle.setFixedSize(88,28); toggle.setFont(pet_font)
             toggle.toggled.connect(lambda _: self.pet_settings_changed())
         self.pet_rows=[]
@@ -1311,6 +1413,12 @@ class Companion(W.QWidget):
             row=W.QHBoxLayout(); row.addStretch()
             label=W.QLabel(text); label.setStyleSheet('font-size:14px;'); row.addWidget(label)
             row.addWidget(toggle); row.addStretch(); self.pet_rows.append(row)
+        # Only the 守财木偶 steals the pointer, so its switch shows only for it.
+        self.pet_heist_row=W.QWidget()
+        row=W.QHBoxLayout(self.pet_heist_row); row.setContentsMargins(0,0,0,0); row.addStretch()
+        label=W.QLabel('偷鼠标：'); label.setStyleSheet('font-size:14px;'); row.addWidget(label)
+        row.addWidget(self.pet_heist); row.addStretch()
+        self.pet_heist_row.setVisible(skin_name(self.settings)=='puppet')
         library.addWidget(enroll)
         import_button = ChalkButton('录入新地图')
         import_button.clicked.connect(self.import_map)
@@ -1357,6 +1465,7 @@ class Companion(W.QWidget):
         self.general_section.body.addWidget(self.pet_size)
         for row in self.pet_rows:
             self.general_section.body.addLayout(row)
+        self.general_section.body.addWidget(self.pet_heist_row)
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
@@ -1372,6 +1481,9 @@ class Companion(W.QWidget):
         # Unprompted life: micro-actions, doze, idle fade, looking at the bubble.
         self.behavior = PetBehavior(self.gear, self)
         self.toast_timer.timeout.connect(self.behavior.bubble_hidden)
+        # The 守财木偶's game: it steals the pointer when the mouse rests.
+        self.heist = Heist(self.gear, self)
+        self.heist.pity.update(new_pity(self.settings.get('pet_heist_pity')))
         self.apply_pet_settings()
         self.timer = C.QTimer(self)
         self.timer.timeout.connect(self.tick)
@@ -1458,7 +1570,7 @@ class Companion(W.QWidget):
         self.keys.toggle_key=HOTKEYS[self.hotkey] if self.enabled.isChecked() else 0
         self.keys.close_key=HOTKEYS[self.close_hotkey] if self.close_key_enabled.isChecked() else 0
         self.keys.hide_key=HOTKEYS[self.hide_hotkey] if self.hide_key_enabled.isChecked() else 0
-        for row,label,key in zip(self.map_key_rows,('开启地图快捷键','关闭地图快捷键','隐藏叠图快捷键'),(self.hotkey,self.close_hotkey,self.hide_hotkey)):
+        for row,label,key in zip(self.map_key_rows,('开启地图快捷键','关闭地图快捷键','隐藏叠图快捷键','确认叠图快捷键'),(self.hotkey,self.close_hotkey,self.hide_hotkey,self.confirm_hotkey)):
             row.set_key(label,keycap_text(key))
         if hasattr(self,'retry_button'):
             self.retry_button.set_keycap(keycap_text(self.hotkey));self.hide_button.set_keycap(keycap_text(self.hide_hotkey))
@@ -1628,7 +1740,7 @@ class Companion(W.QWidget):
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_skin=self.gear.pet.skin_id,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),confirm_key_enabled=self.confirm_key_enabled.isChecked(),confirm_hotkey=self.confirm_hotkey,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_skin=self.gear.pet.skin_id,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,pet_heist=self.pet_heist.isChecked() if hasattr(self,'pet_heist') else True,pet_heist_pity=dict(self.heist.pity) if hasattr(self,'heist') else self.settings.get('pet_heist_pity',{}),power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
 
     def show_module(self, index):
         """Open the panel on a module tab (0 notes, 1 mini-games)."""
@@ -1650,6 +1762,10 @@ class Companion(W.QWidget):
             if not self.behavior.fade:
                 self.gear.pet.opacity_target = 1.
         self.gear.locked = bool(self.pet_locked.isChecked()) if hasattr(self, 'pet_locked') else bool(self.settings.get('pet_locked', False))
+        if hasattr(self, 'heist'):
+            self.heist.enabled = bool(self.pet_heist.isChecked()) if hasattr(self, 'pet_heist') else bool(self.settings.get('pet_heist', True))
+            if not self.heist.enabled:
+                self.heist.abort()
         self.gear.setCursor(C.Qt.ArrowCursor if self.gear.locked else C.Qt.PointingHandCursor)
 
     def pet_settings_changed(self):
@@ -1677,6 +1793,7 @@ class Companion(W.QWidget):
         anchor_widget = self.panel if expanded else self.gear
         anchor = anchor_widget.mapToGlobal(C.QPoint(0,0))
         self.gear.set_skin(self.pet_skin.currentData())
+        self.pet_heist_row.setVisible(self.gear.pet.skin_id=='puppet')
         self.apply_pet_settings()
         self.update_pet_size_label()
         self.adjustSize()
@@ -1754,6 +1871,9 @@ class Companion(W.QWidget):
             if dialog.selected == self.hide_hotkey:
                 self.notify('快捷键冲突：不能与隐藏叠图快捷键相同')
                 return
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.confirm_hotkey]:
+                self.notify('快捷键冲突：不能与确认叠图快捷键相同')
+                return
             self.hotkey=dialog.selected
             self.keys.toggle_key=HOTKEYS[self.hotkey]
             self.hotkey_label.setText(f'启用快捷键({hotkey_text(self.hotkey)})')
@@ -1767,6 +1887,9 @@ class Companion(W.QWidget):
             if HOTKEYS[dialog.selected] == HOTKEYS[self.hotkey]:
                 self.notify('开启与关闭地图快捷键不能相同')
                 return
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.confirm_hotkey]:
+                self.notify('快捷键冲突：不能与确认叠图快捷键相同')
+                return
             self.close_hotkey=dialog.selected
             self.keys.close_key=HOTKEYS[self.close_hotkey]
             self.close_hotkey_label.setText(f'关闭地图快捷键({hotkey_text(self.close_hotkey)})')
@@ -1779,11 +1902,27 @@ class Companion(W.QWidget):
             if dialog.selected == self.hotkey:
                 self.notify('快捷键冲突：不能与地图开关快捷键相同')
                 return
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.confirm_hotkey]:
+                self.notify('快捷键冲突：不能与确认叠图快捷键相同')
+                return
             self.hide_hotkey=dialog.selected
             self.keys.hide_key=HOTKEYS[self.hide_hotkey]
             self.hide_hotkey_label.setText(f'隐藏叠图({hotkey_text(self.hide_hotkey)})')
             self.save()
             self.notify(f'隐藏键已改为 {hotkey_text(self.hide_hotkey)}')
+
+    def edit_confirm_hotkey(self):
+        self.dismiss_manual_offer()
+        dialog=HotkeyDialog(self.confirm_hotkey,self,default='ENTER')
+        if dialog.exec()==W.QDialog.Accepted:
+            taken={HOTKEYS[self.hotkey]:'开启地图',HOTKEYS[self.close_hotkey]:'关闭地图',HOTKEYS[self.hide_hotkey]:'隐藏叠图'}
+            clash=taken.get(HOTKEYS[dialog.selected])
+            if clash:
+                self.notify(f'快捷键冲突：不能与{clash}快捷键相同')
+                return
+            self.confirm_hotkey=dialog.selected
+            self.update_map_keys()
+            self.notify(f'确认叠图键已改为 {hotkey_text(self.confirm_hotkey)}')
 
     def opacity_changed(self):
         self.opacity_label.setText(f'不透明度    {self.opacity.value()}%')
@@ -2318,11 +2457,21 @@ class Companion(W.QWidget):
             popup.deleteLater()
             self.manual_popup=None
 
+    def manual_offer_keys(self):
+        """Virtual keys to watch while the 「是否需要直接叠图？」 popup is up:
+        the confirm key first (when that shortcut is on), then Esc. Empty
+        when there is no popup, so neither key is watched the rest of the time."""
+        if getattr(self,'manual_popup',None) is None:
+            return ()
+        toggle=getattr(self,'confirm_key_enabled',None)
+        confirm=HOTKEYS.get(getattr(self,'confirm_hotkey',None),0) if toggle is not None and toggle.isChecked() else 0
+        return (confirm,0x1B) if confirm else (0x1B,)
+
     def offer_manual_alignment(self, offer, token):
         self.dismiss_manual_offer()
         self.manual_offer=(token,offer)
         trace('manual_alignment_offered',token=token,**offer)
-        popup=ManualAlignmentPopup(self)
+        popup=ManualAlignmentPopup(self,self.confirm_hotkey if self.confirm_key_enabled.isChecked() else None)
         popup.accepted.connect(self.accept_manual_alignment)
         popup.ignored.connect(self.dismiss_manual_offer)
         popup.expired.connect(self.dismiss_manual_offer)
@@ -2643,7 +2792,9 @@ class Companion(W.QWidget):
         # capture/template work off the UI thread so it cannot lose more keys.
         if sys.platform == 'win32' and hasattr(self,'visibility_watch'):
             self.visibility_watch()
-        if hasattr(self,"minigames"):self.keys.extra_keys=self.minigames.shortcut_keys()
+        offer_keys=Companion.manual_offer_keys(self)
+        extra=self.minigames.shortcut_keys() if hasattr(self,"minigames") else ()
+        self.keys.extra_keys={*extra,*offer_keys} if offer_keys else extra
         edges = self.keys.edges()
         if edges:
             trace('shortcut_edge',keys=sorted(edges),enabled=self.enabled.isChecked(),
@@ -2669,6 +2820,17 @@ class Companion(W.QWidget):
             if (self.state.opened
                     and self.target == int(self.winId())):
                 self.target = foreground
+        if offer_keys:
+            # The popup never takes focus, so its keys are read like every other
+            # shortcut: observed, never swallowed. Esc ignores the offer even
+            # when it is not the close-map key; the confirm key only counts
+            # while the game (or a local screenshot) is what the user is in.
+            if 0x1B in edges:
+                self.dismiss_manual_offer()
+            elif (offer_keys[0] != 0x1B and offer_keys[0] in edges
+                    and (self.is_game(foreground) or self.demo_window is not None)):
+                edges=edges-{offer_keys[0]}
+                self.accept_manual_alignment()
         if getattr(self.keys,'close_key',0x1B) in edges:
             self.close_map(background=True)
         else:
@@ -2874,6 +3036,10 @@ class Companion(W.QWidget):
         if getattr(self, '_shutdown_done', False):
             return
         self._shutdown_done = True
+        if hasattr(self, 'heist'):
+            self.heist.abort()      # the position saved below is the puppet's own place
+            for extra in (self.heist.sprite, self.heist.sack):
+                if extra is not None:extra.close()
         for control in (getattr(self,'minigames',None),getattr(self,'matching_controls',None)):
             if control is not None:control.shutdown()
         tray = getattr(self, 'tray', None)
@@ -2919,6 +3085,7 @@ def main():
     cv2.setNumThreads(1)
     trace('desktop_compute_policy',opencv_threads=cv2.getNumThreads())
     app = W.QApplication(sys.argv[:1])
+    watch_for_stalls(app)
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.
         native.install_window_policy(app)

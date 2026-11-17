@@ -11,7 +11,7 @@ from unittest.mock import call, patch
 from mapmatching.mouse_input import MouseWatcher, RAWINPUT, RIM_TYPEMOUSE
 from mapmatching.src.windows import Keys
 from mapmatching.ui import (C, HOTKEY_LABELS, HOTKEYS, hotkey_from_event, hotkey_text,
-                            resolve_hotkeys)
+                            resolve_confirm_hotkey, resolve_hotkeys)
 
 
 def event(key, modifiers=C.Qt.NoModifier):
@@ -218,6 +218,29 @@ class ResolveHotkeysTests(unittest.TestCase):
     def test_mouse_keys_are_kept(self):
         self.assertEqual(resolve_hotkeys({'hotkey': 'MOUSE_SIDE1', 'hide_hotkey': 'MOUSE_SIDE2'}),
                          ('MOUSE_SIDE1', 'MOUSE_SIDE2'))
+
+
+class ResolveConfirmHotkeyTests(unittest.TestCase):
+    """「是否需要直接叠图？」的确认键：默认回车，Esc 留给取消，不和地图三键相撞。"""
+    MAP_KEYS = ('G', 'BACKSPACE', 'ESC')
+
+    def test_defaults_to_enter(self):
+        self.assertEqual(resolve_confirm_hotkey({}, self.MAP_KEYS), 'ENTER')
+
+    def test_saved_choice_is_kept(self):
+        self.assertEqual(resolve_confirm_hotkey({'confirm_hotkey': 'F'}, self.MAP_KEYS), 'F')
+        self.assertEqual(resolve_confirm_hotkey({'confirm_hotkey': 'MOUSE_SIDE1'}, self.MAP_KEYS),
+                         'MOUSE_SIDE1')
+
+    def test_escape_and_unknown_names_fall_back(self):
+        for saved in ('ESC', 'NOPE'):
+            self.assertEqual(resolve_confirm_hotkey({'confirm_hotkey': saved}, self.MAP_KEYS), 'ENTER')
+
+    def test_never_lands_on_a_map_key(self):
+        # 手改过的配置里可能和某个地图键相同；RETURN 与 ENTER 是同一个键。
+        self.assertEqual(resolve_confirm_hotkey({'confirm_hotkey': 'G'}, self.MAP_KEYS), 'ENTER')
+        self.assertEqual(resolve_confirm_hotkey({}, ('G', 'BACKSPACE', 'RETURN')), 'SPACE')
+        self.assertEqual(resolve_confirm_hotkey({}, ('ENTER', 'SPACE', 'TAB')), 'F9')
 
 
 if __name__ == '__main__':

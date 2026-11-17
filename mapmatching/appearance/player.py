@@ -159,7 +159,9 @@ class RigPlayer:
         return self.mood in getattr(self.skin, 'LOOPING', ('matching',))
 
     def advance(self):
-        if self.clock.elapsed() >= self.duration:
+        # A skin's HOLD moods keep their last frame until something else is
+        # played (the puppet lying where it fell), instead of popping to idle.
+        if self.clock.elapsed() >= self.duration and self.mood not in getattr(self.skin, 'HOLD', ()):
             if not self.looping:
                 self.mood = 'idle'
             self.clock.restart()

@@ -236,7 +236,7 @@ class GameControls(W.QWidget):
         dialog=HotkeyDialog(current,self.companion)
         if dialog.exec()!=W.QDialog.Accepted:return
         key=dialog.selected
-        reserved={HOTKEYS[k] for k in (self.companion.hotkey,self.companion.close_hotkey,self.companion.hide_hotkey)}
+        reserved={HOTKEYS[k] for k in (self.companion.hotkey,self.companion.close_hotkey,self.companion.hide_hotkey,self.companion.confirm_hotkey)}
         if HOTKEYS[key] in reserved or any(HOTKEYS.get(self.preferences.get(a+'_key'))==HOTKEYS[key] for a in self.shortcut_buttons if a!=action):
             self.status.setText('快捷键已被使用，请选择其他按键');return
         self.preferences[action+'_key']=key;self.preferences[action+'_enabled']=True

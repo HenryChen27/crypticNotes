@@ -15,12 +15,21 @@ import java.nio.*;
 /** One projection surface, GPU fan-out to the existing ImageReader and AVC.
  * No second MediaProjection/VirtualDisplay; optional playback audio, never mic.
  * All GL/codec resources are confined to the recording thread.
+ *
+ * Two ways to use the encoded stream. An ordinary recording muxes it straight
+ * into a file. A replay session ({@code replaySeconds > 0}) keeps only the
+ * newest seconds in a {@link ReplayBuffer} and writes nothing until
+ * {@link #saveReplay()}; the encoder, the GL pass and the sound capture are the
+ * same in both, so a replay session costs what a recording costs for as long as
+ * it runs.
  */
 final class SharedScreenRecorder {
     interface Listener {
         void ready(Surface input);
         void finished(String location, String error);
         default void warning(String text) {}
+        /** A replay clip was written ({@code error == null}) or could not be. */
+        default void replaySaved(String location, int seconds, String error) {}
     }
     private final Context context;
     private final Surface recognition;
@@ -30,6 +39,13 @@ final class SharedScreenRecorder {
     private final boolean wantAudio;
     /** Chosen on the settings screen; clamped to the encoder's range further down. */
     private final int wantedQuality, wantedFps;
+    /** 0 records to a file; otherwise this many seconds are kept in memory. */
+    private final int replaySeconds;
+    private ReplayBuffer replay;
+    private ByteBuffer replayData;
+    private SharedMemory replayMemory;
+    private MediaFormat videoFormat, audioFormat;
+    private final java.util.concurrent.atomic.AtomicBoolean savingReplay=new java.util.concurrent.atomic.AtomicBoolean();
     private AudioRecord audioRecord;
     private MediaCodec audioCodec;
     private int audioTrack=-1;
@@ -56,9 +72,7 @@ final class SharedScreenRecorder {
     private SurfaceTexture texture;
     private MediaCodec codec;
     private MediaMuxer muxer;
-    private ParcelFileDescriptor descriptor;
-    private Uri uri;
-    private File file;
+    private RecordingFile output;
     private int textureId, program, track = -1, videoWidth, videoHeight, videoFps, videoBitrate;
     private boolean muxing, ended, samples;
     private final java.util.concurrent.atomic.AtomicBoolean previewRequested = new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -70,9 +84,10 @@ final class SharedScreenRecorder {
             .asFloatBuffer().put(new float[]{-1,-1,0,0, 1,-1,1,0, -1,1,0,1, 1,1,1,1});
 
     SharedScreenRecorder(Context context, Surface recognition, int width, int height, MediaProjection projection,
-                         RecordPresets.Settings settings, Listener listener) {
+                         RecordPresets.Settings settings, int replaySeconds, Listener listener) {
         this.context=context.getApplicationContext(); this.recognition=recognition;
         this.width=width; this.height=height; this.listener=listener;
+        this.replaySeconds=replaySeconds;
         this.projection=projection; this.wantAudio=settings.audio;
         this.wantedQuality=settings.quality; this.wantedFps=settings.fps;
     }
@@ -85,6 +100,72 @@ final class SharedScreenRecorder {
     }
     void stop() { stopRequested=true; if(handler!=null) handler.post(() -> finish(null)); }
 
+    /**
+     * Writes the newest {@code replaySeconds} to a video of their own. The
+     * buffer keeps filling: the samples are copied here, on the recording
+     * thread, and muxed on another one, so the encoder is never left undrained
+     * while a file is being written.
+     */
+    void saveReplay() {
+        if(handler==null || replaySeconds==0) return;
+        handler.post(() -> {
+            if(ended || replay==null || !savingReplay.compareAndSet(false,true)) return;
+            ReplayBuffer.Clip clip=null; String error=null;
+            try {
+                clip=replay.clip(replaySeconds*1_000_000L,ByteBuffer::allocateDirect);
+                if(clip==null || videoFormat==null) error="还没有可保存的画面";
+            } catch(OutOfMemoryError e) { error="内存不足，无法保存"; }
+            if(error!=null) {
+                savingReplay.set(false);
+                final String text=error; main.post(() -> listener.replaySaved(null,0,text));
+                return;
+            }
+            final ReplayBuffer.Clip saved=clip;
+            final MediaFormat video=videoFormat, audio=clip.audio?audioFormat:null;
+            new Thread(() -> writeReplay(saved,video,audio),"replay-writer").start();
+        });
+    }
+
+    private void writeReplay(ReplayBuffer.Clip clip,MediaFormat video,MediaFormat audio) {
+        RecordingFile file=null; MediaMuxer target=null; String error=null; boolean started=false;
+        try {
+            file=new RecordingFile(context,"CrypticNotes-replay-"+System.currentTimeMillis()+".mp4");
+            target=file.muxer;
+            int videoTrack=target.addTrack(video), soundTrack=audio==null?-1:target.addTrack(audio);
+            target.start(); started=true;
+            MediaCodec.BufferInfo info=new MediaCodec.BufferInfo();
+            for(int i=0;i<clip.count;i++) {
+                boolean sound=clip.track[i]==ReplayBuffer.AUDIO;
+                if(sound && soundTrack<0) continue;
+                clip.data.clear(); clip.data.position(clip.offset[i]); clip.data.limit(clip.offset[i]+clip.length[i]);
+                info.set(clip.offset[i],clip.length[i],clip.ptsUs[i],clip.flags[i]);
+                target.writeSampleData(sound?soundTrack:videoTrack,clip.data,info);
+            }
+        } catch(Exception e) { error=e.getMessage()==null?"保存失败":e.getMessage(); }
+        try { if(target!=null && started) target.stop(); } catch(Exception e) { if(error==null) error="视频封装失败"; }
+        try { if(target!=null) target.release(); } catch(Exception ignored) {}
+        try { if(file!=null) file.close(error==null); } catch(Exception e) { if(error==null) error="无法保存到相册"; }
+        savingReplay.set(false);
+        final String location=file==null?null:file.location(), text=error;
+        final int seconds=(int)Math.round(clip.durationUs()/1e6);
+        main.post(() -> listener.replaySaved(text==null?location:null,seconds,text));
+    }
+
+    /**
+     * Off the Java heap where the platform allows it (API 27): 10 to 40 MB held
+     * for as long as the game runs should not weigh on the collector. A direct
+     * buffer on Android is still heap memory, hence only the fallback.
+     */
+    private ByteBuffer replayStorage(int bytes) throws IOException {
+        try {
+            if(Build.VERSION.SDK_INT>=27) {
+                replayMemory=SharedMemory.create("crypticnotes-replay",bytes);
+                return replayMemory.mapReadWrite();
+            }
+            return ByteBuffer.allocateDirect(bytes);
+        } catch(Exception | OutOfMemoryError e) { throw new IOException("内存不足，无法开启回溯录制"); }
+    }
+
     private void prepare() throws Exception {
         codec=MediaCodec.createEncoderByType("video/avc");
         MediaCodecInfo.VideoCapabilities caps=codec.getCodecInfo().getCapabilitiesForType("video/avc").getVideoCapabilities();
@@ -93,26 +174,14 @@ final class SharedScreenRecorder {
         format.setInteger(MediaFormat.KEY_COLOR_FORMAT,MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
         format.setInteger(MediaFormat.KEY_BIT_RATE,videoBitrate);
         format.setInteger(MediaFormat.KEY_FRAME_RATE,videoFps);
-        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,2);
+        // A clip can only begin on a key frame: one a second keeps a saved
+        // replay within a second of the length that was asked for.
+        format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,replaySeconds>0?1:2);
         codec.configure(format,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
         encoderSurface=codec.createInputSurface(); codec.start();
-        String name="CrypticNotes-"+System.currentTimeMillis()+".mp4";
-        if(Build.VERSION.SDK_INT>=29) {
-            ContentValues values=new ContentValues();
-            values.put(MediaStore.Video.Media.DISPLAY_NAME,name);
-            values.put(MediaStore.Video.Media.MIME_TYPE,"video/mp4");
-            values.put(MediaStore.Video.Media.RELATIVE_PATH,"Movies/CrypticNotes");
-            values.put(MediaStore.Video.Media.IS_PENDING,1);
-            uri=context.getContentResolver().insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI,values);
-            if(uri==null) throw new IOException("无法创建录屏文件");
-            descriptor=context.getContentResolver().openFileDescriptor(uri,"w");
-            if(descriptor==null) throw new IOException("无法打开录屏文件");
-            muxer=new MediaMuxer(descriptor.getFileDescriptor(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
-        } else {
-            File directory=context.getExternalFilesDir(Environment.DIRECTORY_MOVIES);
-            if(directory==null) throw new IOException("视频存储不可用");
-            file=new File(directory,name);
-            muxer=new MediaMuxer(file.toString(),MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        if(replaySeconds==0) {
+            output=new RecordingFile(context,"CrypticNotes-"+System.currentTimeMillis()+".mp4");
+            muxer=output.muxer;
         }
         egl=EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
         if(!EGL14.eglInitialize(egl,new int[2],0,new int[2],0)) throw new IOException("无法初始化录屏 GPU");
@@ -141,6 +210,11 @@ final class SharedScreenRecorder {
         input=new Surface(texture);
         texture.setOnFrameAvailableListener(t -> frame(),handler);
         if(wantAudio) prepareAudio();
+        if(replaySeconds>0) {
+            replayData=replayStorage(ReplayBuffer.bytesFor(replaySeconds,videoBitrate,audioEnabled));
+            replay=new ReplayBuffer(replayData,ReplayBuffer.slotsFor(replaySeconds,videoFps,audioEnabled),
+                    ReplayBuffer.keepSeconds(replaySeconds)*1_000_000L);
+        }
     }
 
     /**
@@ -228,6 +302,13 @@ final class SharedScreenRecorder {
         @Override public void run() {
             if(ended || stopRequested || !audioStarted) return;
             try {
+                if(replay!=null) {
+                    // Sound is timed by counting frames. Over the hours a replay
+                    // session lasts that count drifts from the video clock, and a
+                    // stalled pump loses frames for good; step forward when it shows.
+                    long behind=(System.nanoTime()-firstNanos)/1000-(audioOffsetUs+audioFrames*1000000/48000);
+                    if(behind>250_000) audioOffsetUs+=behind-50_000;
+                }
                 for(int n=0;n<8;n++) {
                     int index=audioCodec.dequeueInputBuffer(0);
                     if(index<0) break;
@@ -256,7 +337,7 @@ final class SharedScreenRecorder {
     };
 
     private void maybeStartMuxer() throws IOException {
-        if(muxing || track<0 || (audioEnabled && audioTrack<0)) return;
+        if(muxer==null || muxing || track<0 || (audioEnabled && audioTrack<0)) return;
         muxer.start(); muxing=true;
         while(!pendingSamples.isEmpty()) {
             PendingSample sample=pendingSamples.removeFirst();
@@ -265,6 +346,7 @@ final class SharedScreenRecorder {
         pendingBytes=0;
     }
     private void writeSample(int sampleTrack,ByteBuffer bytes,MediaCodec.BufferInfo info) throws IOException {
+        if(replay!=null) { replay.add(sampleTrack,bytes,info.presentationTimeUs,info.flags); return; }
         if(muxing) muxer.writeSampleData(sampleTrack,bytes,info);
         else {
             if(pendingBytes+info.size>4_000_000) throw new IOException("音视频轨道启动超时");
@@ -284,7 +366,8 @@ final class SharedScreenRecorder {
             int index=audioCodec.dequeueOutputBuffer(info,end?10000:0);
             if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 if(audioTrack>=0) throw new IOException("声音格式发生变化");
-                audioTrack=muxer.addTrack(audioCodec.getOutputFormat()); maybeStartMuxer();
+                if(replay!=null) { audioFormat=audioCodec.getOutputFormat(); audioTrack=ReplayBuffer.AUDIO; }
+                else { audioTrack=muxer.addTrack(audioCodec.getOutputFormat()); maybeStartMuxer(); }
             } else if(index>=0) {
                 try {
                     ByteBuffer buffer=audioCodec.getOutputBuffer(index);
@@ -354,7 +437,8 @@ final class SharedScreenRecorder {
                 if(System.nanoTime()>deadline) throw new IOException("录屏收尾超时");
             } else if(index==MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
                 if(track>=0) throw new IOException("录屏格式发生变化");
-                track=muxer.addTrack(codec.getOutputFormat()); maybeStartMuxer();
+                if(replay!=null) { videoFormat=codec.getOutputFormat(); track=ReplayBuffer.VIDEO; }
+                else { track=muxer.addTrack(codec.getOutputFormat()); maybeStartMuxer(); }
             } else if(index>=0) {
                 try {
                     ByteBuffer buffer=codec.getOutputBuffer(index);
@@ -372,11 +456,13 @@ final class SharedScreenRecorder {
         if(ended) return; ended=true;
         handler.removeCallbacks(audioPump);
         if(audioStarted) { try { audioRecord.stop(); } catch(Exception ignored) {} audioStarted=false; }
-        try { if(audioEnabled) drainAudio(true); }
+        // A replay session has no file to finish: what is still in the encoders is dropped with it.
+        final boolean buffered=replaySeconds>0;
+        try { if(audioEnabled && !buffered) drainAudio(true); }
         catch(Exception e) { warn("声音收尾异常，尝试保留视频"); }
         if(audioTrack<0) audioEnabled=false;
         try { maybeStartMuxer(); } catch(Exception e) { failure=e; }
-        try { if(failure==null && codec!=null) drain(true); }
+        try { if(failure==null && codec!=null && !buffered) drain(true); }
         catch(Exception e) { failure=e; }
         releaseAudio();
         if(texture!=null) texture.setOnFrameAvailableListener(null);
@@ -393,16 +479,17 @@ final class SharedScreenRecorder {
         if(input!=null) input.release();
         if(texture!=null) texture.release();
         if(encoderSurface!=null) encoderSurface.release();
-        try { if(descriptor!=null) descriptor.close(); } catch(IOException ignored) {}
+        replay=null;
+        if(replayMemory!=null) {
+            try { SharedMemory.unmap(replayData); } catch(Exception ignored) {}
+            replayMemory.close(); replayMemory=null;
+        }
+        replayData=null;
         boolean valid=failure==null && samples;
-        try {
-            if(uri!=null) {
-                if(valid) { ContentValues values=new ContentValues(); values.put(MediaStore.Video.Media.IS_PENDING,0); context.getContentResolver().update(uri,values,null,null); }
-                else context.getContentResolver().delete(uri,null,null);
-            } else if(!valid && file!=null) { file.delete(); }
-        } catch(Exception e) { failure=e; valid=false; }
-        final String error=valid?null:failure==null?"未录到画面":failure.getMessage();
-        final String location=uri!=null?"相册 / Movies/CrypticNotes":file==null?"":file.toString();
+        try { if(output!=null) output.close(valid); } catch(Exception e) { failure=e; valid=false; }
+        final String error=buffered?(failure==null?null:String.valueOf(failure.getMessage()))
+                :valid?null:failure==null?"未录到画面":failure.getMessage();
+        final String location=output==null?"":output.location();
         main.post(() -> listener.finished(location,error));
         thread.quitSafely();
     }

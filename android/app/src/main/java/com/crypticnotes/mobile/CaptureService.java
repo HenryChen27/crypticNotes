@@ -23,11 +23,26 @@ import java.util.concurrent.*;
 public class CaptureService extends Service {
     private SharedScreenRecorder recorder;
     private boolean stoppingRecording, recordingReady, pendingCaptureResize, capturedVisible=true;
-    private Theme.ChalkButton recordButton;
+    /**
+     * `recorder` is a replay buffer, not a recording the user started: it runs
+     * unannounced for as long as the game is up, so everything that tells the
+     * user "you are recording" (pulsing badge, long-press-to-save, the status
+     * line) has to leave it alone.
+     */
+    private boolean replaySession;
+    /** Length of the buffer that is running, to notice when the setting has moved on. */
+    private int replaySeconds;
+    /** The user pressed 屏幕录制 while the replay buffer held the encoder. */
+    private boolean pendingRecording;
+    /** The buffer stopped with an error; do not restart it in a loop. */
+    private boolean replayFailed;
+    /** releaseGameCapture() had to stop the buffer first and is owed a second call. */
+    private boolean pendingGameRelease;
+    private Theme.ChalkButton recordButton, replayButton;
     private android.animation.ObjectAnimator recordingPulse;
     private void updateRecordingPulse() {
         if(badgeEmblem==null) return;
-        if(!recordingReady || stoppingRecording) {
+        if(!recordingReady || stoppingRecording || replaySession) {
             if(recordingPulse!=null) recordingPulse.cancel();
             badgeEmblem.setAlpha(1f); return;
         }
@@ -73,10 +88,14 @@ public class CaptureService extends Service {
         PendingIntent action=PendingIntent.getService(this,0,new Intent(this,CaptureService.class).setAction("stop"),
                 PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder builder=new Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_menu_mapmode)
-                .setContentTitle(gameOnly?"加页手记小游戏悬浮窗":recorder==null?"加页手记正在本机识图":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
+                .setContentTitle(gameOnly?"加页手记小游戏悬浮窗":recorder==null?"加页手记正在本机识图":replaySession?"加页手记正在识图（回溯录制已开）":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
                 .setContentText(gameOnly&&projection==null?"小游戏专用模式，不采集屏幕、不识别地图":"点击停止可结束屏幕采集").setOngoing(true)
                 .addAction(new Notification.Action.Builder(null,"停止全部",action).build());
-        if(recorder!=null) {
+        if(recorder!=null && replaySession) {
+            PendingIntent save=PendingIntent.getService(this,2,new Intent(this,CaptureService.class).setAction("save_replay"),
+                    PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
+            builder.addAction(new Notification.Action.Builder(null,RecordPresets.replayLabel(replaySeconds),save).build());
+        } else if(recorder!=null) {
             PendingIntent stopVideo=PendingIntent.getService(this,1,new Intent(this,CaptureService.class).setAction("stop_recording"),
                     PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
             builder.addAction(new Notification.Action.Builder(null,"保存录屏",stopVideo).build());
@@ -85,8 +104,48 @@ public class CaptureService extends Service {
     }
 
     private void toggleRecording() {
+        if(recorder!=null && replaySession) {
+            // One encoder, one surface: the buffer lets go first, and the
+            // recording starts from its finished() callback.
+            pendingRecording=true; stopRecording(); return;
+        }
         if(recorder!=null) { stopRecording(); return; }
-        if(projection==null || display==null || reader==null || stoppingRecording) return;
+        startRecorder(false);
+    }
+
+    /**
+     * Starts the replay buffer when it is switched on and nothing else holds the
+     * encoder. Landscape only, like the idle check: portrait is not the game.
+     */
+    void ensureReplay() {
+        if(destroyed || gameOnly || replayFailed || pendingRecording || recorder!=null || stoppingRecording
+                || projection==null || display==null || reader==null || width<=height) return;
+        if(RecordPresets.storedReplaySeconds(this)>0) startRecorder(true);
+    }
+
+    /** The settings screen changed the replay switch. */
+    void replaySettingChanged() {
+        replayFailed=false;
+        int wanted=RecordPresets.storedReplaySeconds(this);
+        // Off, or another length: the running buffer is the wrong size either
+        // way. Stopping it is enough -- finished() starts the one now wanted.
+        if(recorder!=null && replaySession && wanted!=replaySeconds) stopRecording();
+        else if(wanted>0) ensureReplay();
+        updateRecordingButton();
+    }
+
+    private void saveReplay() {
+        if(recorder==null || !replaySession || !recordingReady || stoppingRecording) {
+            Toast.makeText(this,"回溯录制还没有准备好",Toast.LENGTH_SHORT).show();
+            return;
+        }
+        recorder.saveReplay();
+    }
+
+    private void startRecorder(final boolean replay) {
+        if(projection==null || display==null || reader==null || stoppingRecording || recorder!=null) return;
+        replaySession=replay;
+        replaySeconds=replay?RecordPresets.storedReplaySeconds(this):0;
         idleProbe.cancel();display.resize(width,height,density);
         final SharedScreenRecorder[] session=new SharedScreenRecorder[1];
         final ImageReader recordingReader=reader;
@@ -99,7 +158,11 @@ public class CaptureService extends Service {
         final boolean wantAudioPermission=RecordPresets.storedInternalAudio(this) && !settings.audio
                 && Build.VERSION.SDK_INT>=29;
         session[0]=new SharedScreenRecorder(this,reader.getSurface(),width,height,projection,
-                settings,new SharedScreenRecorder.Listener() {
+                settings,replaySeconds,new SharedScreenRecorder.Listener() {
+            public void replaySaved(String location,int seconds,String error) {
+                if(destroyed) return;
+                setStatus(S_IDLE,error==null?"已保存前 "+seconds+" 秒到 "+location:"保存失败："+error);
+            }
             public void warning(String text) { if(!destroyed) Toast.makeText(CaptureService.this,text,Toast.LENGTH_LONG).show(); }
             public void ready(Surface input) {
                 if(destroyed || recorder!=session[0] || stoppingRecording) { session[0].stop(); return; }
@@ -107,22 +170,32 @@ public class CaptureService extends Service {
                     display.setSurface(input);
                     recordingReady=true;
                     updateRecordingButton();
-                    setStatus(S_IDLE,recorder.hasAudio()?"正在录制操作（内部声音）":"正在录制操作（无声）");
-                    if(quickSettings!=null) closeQuickSettings();
+                    if(!replay) {
+                        setStatus(S_IDLE,recorder.hasAudio()?"正在录制操作（内部声音）":"正在录制操作（无声）");
+                        if(quickSettings!=null) closeQuickSettings();
+                    }
                 } catch(Exception e) { stopRecording(); }
             }
             public void finished(String location,String error) {
                 if(recorder!=session[0]) return;
                 if(!destroyed && display!=null && reader!=null) display.setSurface(reader.getSurface());
                 recorder=null; stoppingRecording=false;
-                recordingReady=false;
+                recordingReady=false; replaySession=false;
                 if(destroyed) recordingReader.close();
                 if(!destroyed) {
                     updateRecordingButton();
-                    setStatus(S_IDLE,error==null?"录屏已保存到 "+location:"录屏失败："+error);
-                    if(wantAudioPermission) promptAudioPermission();
+                    if(!replay) {
+                        setStatus(S_IDLE,error==null?"录屏已保存到 "+location:"录屏失败："+error);
+                        if(wantAudioPermission) promptAudioPermission();
+                    } else if(error!=null) {
+                        replayFailed=true;
+                        setStatus(S_IDLE,"回溯录制已停止："+error);
+                    }
                     if(pendingCaptureResize) { pendingCaptureResize=false; resizeCapture(); }
                     updateCaptureOutput();invalidateSamples(); repoll(WATCH_MS);
+                    if(pendingRecording) { pendingRecording=false; startRecorder(false); }
+                    else if(pendingGameRelease) { pendingGameRelease=false; releaseGameCapture(); }
+                    else ensureReplay();
                 }
             }
         });
@@ -133,10 +206,12 @@ public class CaptureService extends Service {
         updateRecordingPulse();
         if(!destroyed) ((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(1,captureNotification());
         if(recordButton!=null) {
-            recordButton.setText(stoppingRecording?"正在保存…":recorder==null?"屏幕录制":"停止录制");
-            ActionIcon.set(recordButton,recorder==null?ActionIcon.RECORD:ActionIcon.STOP,false);
+            boolean recording=recorder!=null && !replaySession;
+            recordButton.setText(stoppingRecording?(replaySession?"请稍候…":"正在保存…"):recording?"停止录制":"屏幕录制");
+            ActionIcon.set(recordButton,recording?ActionIcon.STOP:ActionIcon.RECORD,false);
             recordButton.setEnabled(!stoppingRecording);
         }
+        if(replayButton!=null) replayButton.setEnabled(recorder!=null && replaySession && recordingReady && !stoppingRecording);
     }
 
     private void stopRecording() {
@@ -417,7 +492,12 @@ public class CaptureService extends Service {
     }
     private final Runnable idleProbeTick=()->{
         idleProbeScheduled=false;
-        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe())return;
+        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe()){
+            // The mirror stays attached between checks, so switching the
+            // automatic check off has to release it explicitly.
+            if(!automaticMapProbe())idleProbe.cancel();
+            return;
+        }
         if(projection==null || display==null || !capturedVisible || width<=height || quickSettings!=null || calibration!=null || overlayHidden){scheduleIdleProbe();return;}
         try{
             if(recorder!=null){
@@ -429,7 +509,7 @@ public class CaptureService extends Service {
                 if(small!=frame)frame.recycle();
                 inspectIdleFrame(small);
             }else idleProbe.start(display,width,height,density,this::inspectIdleFrame);
-        }catch(Exception error){android.util.Log.w("CrypticNotes","Idle map probe failed",error);updateCaptureOutput();scheduleIdleProbe();}
+        }catch(Exception error){android.util.Log.w("CrypticNotes","Idle map probe failed",error);idleProbe.cancel();updateCaptureOutput();scheduleIdleProbe();}
     };
     private void inspectIdleFrame(Bitmap frame){
         if(frame==null){scheduleIdleProbe();return;}
@@ -452,7 +532,7 @@ public class CaptureService extends Service {
                 if(destroyed)return;
                 if(token==generation && recognitionIdle() && opened && automaticMapProbe()){
                     clearOverlay();lastMatch=0;wakeRecognition();
-                    android.util.Log.i("CrypticNotes","Map controls detected by low-resolution pulse; full capture resumed");
+                    android.util.Log.i("CrypticNotes","Map controls detected by the low-resolution mirror; full capture resumed");
                 }else scheduleIdleProbe();
             });
         });}catch(RejectedExecutionException error){idleChecking=false;frame.recycle();scheduleIdleProbe();}
@@ -461,7 +541,10 @@ public class CaptureService extends Service {
     private boolean recognitionIdle(){return !gameOnly && !MiniGameOverlayService.running && !touchCapture.awake();}
     private void updateCaptureOutput(){
         if(display==null || reader==null || recorder!=null || stoppingRecording)return;
-        if(recognitionIdle())display.setSurface(null);
+        // While idle the low-resolution mirror, once attached, is left alone:
+        // every surface change makes SurfaceFlinger rebuild the virtual display
+        // and costs the game a frame (see IdleMapProbe).
+        if(recognitionIdle()){ if(!idleProbe.attached())display.setSurface(null); }
         else { idleProbe.cancel();display.resize(width,height,density);display.setSurface(reader.getSurface()); }
     }
     private void wakeRecognition(){
@@ -518,6 +601,8 @@ public class CaptureService extends Service {
     boolean gameOnly;
     private MediaProjection.Callback projectionCallback;
     void releaseGameCapture(){
+        // The replay buffer is ours to stop; a recording the user started is not.
+        if(gameOnly && recorder!=null && replaySession){pendingGameRelease=true;stopRecording();return;}
         if(!gameOnly||projection==null||recorder!=null)return;
         if(display!=null){display.release();display=null;}
         if(reader!=null){reader.close();reader=null;}
@@ -531,6 +616,8 @@ public class CaptureService extends Service {
     void openGame(String id){
         if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         gameOnly=true;generation++;clearOverlay();setSpinning(false);updateCaptureOutput();refreshTapRegion();
+        // Mini-game mode does not look at the screen; the replay buffer must not either.
+        if(replaySession)stopRecording();
         getSharedPreferences("mobile",0).edit().putString("active_game",id).putString("last_module","games").apply();
         startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));
         if(ready)repoll(0);
@@ -547,6 +634,7 @@ public class CaptureService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int id) {
         if (intent == null || "stop".equals(intent.getAction())) { stopSelf(); return START_NOT_STICKY; }
         if("stop_recording".equals(intent.getAction())) { stopRecording(); return START_NOT_STICKY; }
+        if("save_replay".equals(intent.getAction())) { saveReplay(); return START_NOT_STICKY; }
         boolean requestedGameOnly=intent.getBooleanExtra("gameOnly",false);
         String launchGame=intent.getStringExtra("launchGame");
         if("games_only".equals(intent.getAction())&&projection==null){
@@ -994,6 +1082,7 @@ public class CaptureService extends Service {
         layoutBadge();
         refreshTapRegion();
         updateCaptureOutput();
+        ensureReplay();
     }
 
     // ---- overlay lifetime --------------------------------------------------
@@ -1200,11 +1289,11 @@ public class CaptureService extends Service {
     }
 
     private void handleBadgeHold() {
-        if(stoppingRecording) {
+        if(stoppingRecording && !replaySession) {
             Toast.makeText(this,"录屏正在保存，请稍候",Toast.LENGTH_SHORT).show();
             return;
         }
-        if(recorder!=null) {
+        if(recorder!=null && !replaySession) {
             stopRecording();
             Toast.makeText(this,"正在保存录屏；保存后再次长按可关闭识别",Toast.LENGTH_SHORT).show();
             return;
@@ -1997,6 +2086,7 @@ public class CaptureService extends Service {
             getSharedPreferences("mobile",0).edit().putBoolean("automatic_map_probe",enabled).apply();
             region.setText(enabled?"自动检测地图：开":"自动检测地图：关");
             if(enabled)scheduleIdleProbe();
+            else{main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel();}
         });
         actions.setPadding(0,0,0,Theme.px(this,8));
         int actionIndex=panel.indexOfChild(routeRow)+1;
@@ -2012,7 +2102,17 @@ public class CaptureService extends Service {
         }
         recordButton=button("屏幕录制",true);updateRecordingButton();recordButton.setOnClickListener(v->{if(projection==null){Toast.makeText(this,"录屏需要先在应用内开启屏幕共享",Toast.LENGTH_SHORT).show();return;}toggleRecording();});
         LinearLayout.LayoutParams recordParams=new LinearLayout.LayoutParams(-1,Theme.px(this,46));recordParams.setMargins(pad,Theme.px(this,10),pad,pad);
-        shell.addView(recordButton,recordParams);
+        if(!gameOnly && RecordPresets.storedReplaySeconds(this)>0){
+            // Side by side: the panel has a fixed height, a second row would squeeze the settings above.
+            replayButton=button(RecordPresets.replayLabel(RecordPresets.storedReplaySeconds(this)),true);
+            replayButton.setOnClickListener(v->{saveReplay();closeQuickSettings();});
+            LinearLayout recordRow=new LinearLayout(this);recordRow.setOrientation(LinearLayout.HORIZONTAL);
+            recordRow.addView(replayButton,new LinearLayout.LayoutParams(0,-1,1));
+            LinearLayout.LayoutParams beside=new LinearLayout.LayoutParams(0,-1,1);beside.leftMargin=Theme.px(this,8);
+            recordRow.addView(recordButton,beside);
+            shell.addView(recordRow,recordParams);
+            updateRecordingButton();
+        }else{replayButton=null;shell.addView(recordButton,recordParams);}
 
         quickSettings = shell;
         WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 320)),

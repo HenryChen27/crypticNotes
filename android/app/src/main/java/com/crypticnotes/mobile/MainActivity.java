@@ -22,7 +22,7 @@ public class MainActivity extends Activity {
     private int opacity = 30;
     private AppUpdater updater;
     private boolean capturePermissionPending;
-    private Theme.ChalkChoice recordingSound, recordingQuality, recordingFps;
+    private Theme.ChalkChoice recordingSound, recordingQuality, recordingFps, recordingReplay;
     private TextView recordingAudioHint, recordingSummary;
     /**
      * True while the recording rows are being repositioned from saved values.
@@ -214,7 +214,7 @@ public class MainActivity extends Activity {
         LinearLayout more = fold("辅助设置", false);
         Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
         powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
-        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","正常每秒、省电每两秒短暂检查低分辨率地图控件；确认展开后才启动完整识图。不会拦截触摸。省电进一步降低展开期间检查频率和小游戏动画开销。"),powerSaving,120),matchWrap());
+        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","正常每秒、省电每两秒检查一次低分辨率画面里的地图控件；确认展开后才启动完整识图。不会拦截触摸。省电进一步降低展开期间检查频率和小游戏动画开销。"),powerSaving,120),matchWrap());
         powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
         Theme.ChalkChoice highRefresh=new Theme.ChalkChoice(this,new String[]{"关","开"});
         highRefresh.setIndex(getSharedPreferences("mobile",0).getBoolean("game_high_refresh",false)?1:0);
@@ -228,7 +228,7 @@ public class MainActivity extends Activity {
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
         more.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
         feedback.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("touch_feedback",i==1).apply());
-        more.addView(Theme.helpLabel(this,"自动展开检测","低分辨率、间歇采集，只检查地图控件；不拦截触摸，无需无障碍权限。关闭后须从悬浮球点重新识别。"));
+        more.addView(Theme.helpLabel(this,"自动展开检测","低分辨率采集，只检查地图控件；不拦截触摸，无需无障碍权限。关闭后须从悬浮球点重新识别。"));
         Theme.ChalkToggle automaticProbe=new Theme.ChalkToggle(this,"启用",120);
         automaticProbe.setChecked(getSharedPreferences("mobile",0).getBoolean("automatic_map_probe",true));
         more.addView(automaticProbe,matchWrap());
@@ -284,12 +284,21 @@ public class MainActivity extends Activity {
             RecordPresets.setFpsIndex(this,i); syncRecordingRows();
         });
 
+        recordingReplay = new Theme.ChalkChoice(this,RecordPresets.REPLAY_LABELS);
+        recording.addView(choiceRow(Theme.helpLabel(this,"回溯录制","选一个时长后，横屏识图期间一直在后台录着，但只在内存里留最近这么多秒，不写文件；在悬浮球设置里点「回溯录屏」才存成视频。编码器会一直工作，更耗电，默认关闭。时长越长、画质越高越占内存：20s 约 7～28 MB，50s 约 17～66 MB。画质、帧率、声音沿用上面的设置。"),recordingReplay),matchWrap());
+        recordingReplay.setListener(i -> {
+            if(syncingRecording) return;
+            RecordPresets.setReplayIndex(this,i); syncRecordingRows();
+            CaptureService service=CaptureService.current;
+            if(service!=null) service.replaySettingChanged();
+        });
+
         recordingSummary = Theme.muted(this,"");
         LinearLayout.LayoutParams summaryParams = matchWrap();
         summaryParams.topMargin = Theme.px(this, 8);
         recording.addView(recordingSummary, summaryParams);
         syncRecordingRows();
-        recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
+        recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频；回溯录制转屏后从头开始攒。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
 
         content=gamesPage;
         LinearLayout games = fold("小游戏", true);
@@ -506,6 +515,7 @@ public class MainActivity extends Activity {
         recordingSound.setIndex(audio ? 1 : 0);
         recordingQuality.setIndex(quality);
         recordingFps.setIndex(fpsIndex);
+        recordingReplay.setIndex(RecordPresets.replayIndex(RecordPresets.storedReplaySeconds(this)));
         syncingRecording = false;
         boolean missingPermission = audio && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED;

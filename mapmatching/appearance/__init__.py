@@ -1,12 +1,14 @@
 """Optional appearance: player, speech, events and self-contained skins."""
 from .player import PetAnimation
 from .lantern import LanternAnimation
+from .puppet import PuppetAnimation
 from .speech import SpeechBubble
 from .events import reaction
 from .behavior import PetBehavior
+from .heist import Heist
 
 # Desk-pet bodies the player can choose between, in menu order.
-SKINS = (('doll', PetAnimation), ('lantern', LanternAnimation))
+SKINS = (('doll', PetAnimation), ('lantern', LanternAnimation), ('puppet', PuppetAnimation))
 DEFAULT_SKIN = 'doll'
 
 

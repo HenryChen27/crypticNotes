@@ -260,3 +260,90 @@ class PetGestureTests(unittest.TestCase):
             self.assertTrue(overlay.windowFlags() & C.Qt.WindowTransparentForInput)
             self.assertTrue(overlay.mask().isEmpty())
         overlay.close()
+
+
+class ManualOfferKeyTests(unittest.TestCase):
+    """The popup never takes focus: its confirm key and Esc are read in tick()."""
+    @classmethod
+    def setUpClass(cls):
+        from PySide6.QtWidgets import QApplication
+        cls.app=QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        trace_patch=patch('mapmatching.ui.trace')
+        trace_patch.start();self.addCleanup(trace_patch.stop)
+
+    def subject(self,edges,popup=True,enabled=True,close_key=0x1B,game=True):
+        state=ToggleState();state.open()
+        subject=SimpleNamespace(state=state,
+            keys=SimpleNamespace(toggle_key=71,hide_key=8,close_key=close_key,edges=lambda:set(edges)),
+            enabled=SimpleNamespace(isChecked=lambda:False),demo_window=None,connection=None,
+            is_game=lambda _:game,target=42,winId=lambda:43,foreground_lost=lambda:False,
+            rect_at_capture=None,follow=Mock(),
+            manual_popup=SimpleNamespace(winId=lambda:44) if popup else None,
+            confirm_hotkey='ENTER',confirm_key_enabled=SimpleNamespace(isChecked=lambda:enabled))
+        subject.accept_manual_alignment=Mock(side_effect=state.close)
+        subject.dismiss_manual_offer=Mock()
+        subject.close_map=Mock(side_effect=lambda **kwargs:state.close())
+        return subject
+
+    def tick(self,subject):
+        from mapmatching.ui import Companion,W,win32gui
+        with patch.object(W.QApplication,'activeModalWidget',return_value=None), \
+             patch.object(win32gui,'GetForegroundWindow',return_value=42):
+            Companion.tick(subject)
+
+    def test_keys_are_only_watched_while_the_popup_is_up(self):
+        from mapmatching.ui import Companion
+        self.assertEqual(Companion.manual_offer_keys(self.subject(set(),popup=False)),())
+        self.assertEqual(Companion.manual_offer_keys(self.subject(set())),(0x0D,0x1B))
+        self.assertEqual(Companion.manual_offer_keys(self.subject(set(),enabled=False)),(0x1B,))
+        idle=self.subject(set(),popup=False);self.tick(idle)
+        self.assertEqual(set(idle.keys.extra_keys),set())
+        offered=self.subject(set());self.tick(offered)
+        self.assertEqual(offered.keys.extra_keys,{0x0D,0x1B})
+
+    def test_confirm_key_accepts_the_offer(self):
+        subject=self.subject({0x0D});self.tick(subject)
+        subject.accept_manual_alignment.assert_called_once()
+        subject.dismiss_manual_offer.assert_not_called()
+        subject.close_map.assert_not_called()
+
+    def test_confirm_key_does_nothing_without_a_popup_or_when_switched_off(self):
+        for options in ({'popup':False},{'enabled':False}):
+            subject=self.subject({0x0D},**options);self.tick(subject)
+            subject.accept_manual_alignment.assert_not_called()
+
+    def test_confirm_key_typed_into_another_window_is_not_a_confirmation(self):
+        subject=self.subject({0x0D},game=False);self.tick(subject)
+        subject.accept_manual_alignment.assert_not_called()
+
+    def test_escape_ignores_the_offer_even_when_it_is_not_the_close_key(self):
+        subject=self.subject({0x1B},close_key=0x51);self.tick(subject)
+        subject.dismiss_manual_offer.assert_called_once()
+        subject.accept_manual_alignment.assert_not_called()
+        subject.close_map.assert_not_called()
+
+    def test_escape_as_close_key_still_closes_the_map(self):
+        subject=self.subject({0x1B});self.tick(subject)
+        subject.dismiss_manual_offer.assert_called_once()
+        subject.close_map.assert_called_once_with(background=True)
+
+    def test_buttons_show_the_keys_that_trigger_them(self):
+        from mapmatching.ui import ManualAlignmentPopup
+        popup=ManualAlignmentPopup(None,'ENTER')
+        self.assertEqual(popup.accept_button.keycap,'Enter')
+        self.assertEqual(popup.ignore_button.keycap,'Esc')
+        self.assertEqual(popup.accept_button.width(),popup.ignore_button.width())
+        # Mark, gap and cap all fit inside the button; both buttons fit the popup.
+        self.assertGreaterEqual(popup.accept_button.width(),46+popup.accept_button.cap_width()+8)
+        self.assertGreaterEqual(popup.width(),36+10+2*popup.accept_button.width())
+        popup.close()
+        wide=ManualAlignmentPopup(None,'PRINTSCREEN')
+        self.assertGreaterEqual(wide.accept_button.width(),46+wide.accept_button.cap_width()+8)
+        wide.close()
+        off=ManualAlignmentPopup()
+        self.assertIsNone(off.accept_button.keycap)
+        self.assertEqual(off.ignore_button.keycap,'Esc')
+        off.close()
+

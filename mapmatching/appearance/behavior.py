@@ -95,7 +95,8 @@ class PetBehavior(C.QObject):
 
     def busy(self):
         state = getattr(self.window, 'state', None)
-        return (getattr(self.gear, 'matching', False) or getattr(self.gear, 'game_background', False)
+        heist = getattr(self.window, 'heist', None)
+        return (getattr(self.gear, 'matching', False) or (heist is not None and heist.active) or getattr(self.gear, 'game_background', False)
                 or self.gear.pet.dragging or self.panel_open()
                 or (state is not None and getattr(state, 'opened', False))
                 or getattr(self.window, '_update_starting', False))

@@ -1,0 +1,332 @@
+[
+ {
+  "name": "穆修拉之核",
+  "quality": "虚妄",
+  "value": 1200000,
+  "file": "relic01.png"
+ },
+ {
+  "name": "被诅咒的蓝宝石",
+  "quality": "稀世",
+  "value": 600000,
+  "file": "relic02.png"
+ },
+ {
+  "name": "瓶装幽火",
+  "quality": "稀世",
+  "value": 500000,
+  "file": "relic03.png"
+ },
+ {
+  "name": "崇光权杖",
+  "quality": "稀世",
+  "value": 450000,
+  "file": "relic04.png"
+ },
+ {
+  "name": "南瓜冕下",
+  "quality": "稀世",
+  "value": 320000,
+  "file": "relic05.png"
+ },
+ {
+  "name": "舞会面具",
+  "quality": "稀世",
+  "value": 300000,
+  "file": "relic06.png"
+ },
+ {
+  "name": "金杯",
+  "quality": "稀世",
+  "value": 200000,
+  "file": "relic07.png"
+ },
+ {
+  "name": "努内希的庇护",
+  "quality": "稀世",
+  "value": 180000,
+  "file": "relic08.png"
+ },
+ {
+  "name": "红珊瑚",
+  "quality": "稀世",
+  "value": 150000,
+  "file": "relic09.png"
+ },
+ {
+  "name": "黄金残页",
+  "quality": "稀世",
+  "value": 100000,
+  "file": "relic10.png"
+ },
+ {
+  "name": "茶壶",
+  "quality": "稀世",
+  "value": 80000,
+  "file": "relic11.png"
+ },
+ {
+  "name": "红尾鵟吊坠",
+  "quality": "稀世",
+  "value": 50000,
+  "file": "relic12.png"
+ },
+ {
+  "name": "银质的忒耳普西科瑞的雕像",
+  "quality": "稀世",
+  "value": 40000,
+  "file": "relic13.png"
+ },
+ {
+  "name": "阿巴拉契亚的回响",
+  "quality": "稀世",
+  "value": 30000,
+  "file": "relic14.png"
+ },
+ {
+  "name": "银质的夜莺烛台",
+  "quality": "稀世",
+  "value": 20000,
+  "file": "relic15.png"
+ },
+ {
+  "name": "很大的油画",
+  "quality": "奇珍",
+  "value": 15000,
+  "file": "relic16.png"
+ },
+ {
+  "name": "律法碑",
+  "quality": "奇珍",
+  "value": 15000,
+  "file": "relic17.png"
+ },
+ {
+  "name": "幽灵水晶",
+  "quality": "奇珍",
+  "value": 14000,
+  "file": "relic18.png"
+ },
+ {
+  "name": "机械残躯",
+  "quality": "奇珍",
+  "value": 13000,
+  "file": "relic19.png"
+ },
+ {
+  "name": "新月南瓜挞",
+  "quality": "奇珍",
+  "value": 13000,
+  "file": "relic20.png"
+ },
+ {
+  "name": "药石之髓",
+  "quality": "奇珍",
+  "value": 12000,
+  "file": "relic21.png"
+ },
+ {
+  "name": "鬼娃娃",
+  "quality": "奇珍",
+  "value": 12000,
+  "file": "relic22.png"
+ },
+ {
+  "name": "单筒望远镜",
+  "quality": "奇珍",
+  "value": 10000,
+  "file": "relic23.png"
+ },
+ {
+  "name": "缪斯的秘密",
+  "quality": "奇珍",
+  "value": 10000,
+  "file": "relic24.png"
+ },
+ {
+  "name": "添页",
+  "quality": "奇珍",
+  "value": 10000,
+  "file": "relic25.png"
+ },
+ {
+  "name": "遗落的寰星",
+  "quality": "奇珍",
+  "value": 10000,
+  "file": "relic26.png"
+ },
+ {
+  "name": "厄运的馈赠",
+  "quality": "奇珍",
+  "value": 10000,
+  "file": "relic27.png"
+ },
+ {
+  "name": "藏宝图",
+  "quality": "奇珍",
+  "value": 9000,
+  "file": "relic28.png"
+ },
+ {
+  "name": "银梳",
+  "quality": "奇珍",
+  "value": 8000,
+  "file": "relic29.png"
+ },
+ {
+  "name": "金汤勺",
+  "quality": "奇珍",
+  "value": 8000,
+  "file": "relic30.png"
+ },
+ {
+  "name": "竞逐勋章",
+  "quality": "奇珍",
+  "value": 8000,
+  "file": "relic31.png"
+ },
+ {
+  "name": "紫宝石戒指",
+  "quality": "奇珍",
+  "value": 8000,
+  "file": "relic32.png"
+ },
+ {
+  "name": "水果盘",
+  "quality": "奇珍",
+  "value": 7000,
+  "file": "relic33.png"
+ },
+ {
+  "name": "弧光-磷光",
+  "quality": "奇珍",
+  "value": 5000,
+  "file": "relic34.png"
+ },
+ {
+  "name": "弧光",
+  "quality": "奇珍",
+  "value": 5000,
+  "file": "relic35.png"
+ },
+ {
+  "name": "首饰盒",
+  "quality": "奇珍",
+  "value": 5000,
+  "file": "relic36.png"
+ },
+ {
+  "name": "水壶",
+  "quality": "独特",
+  "value": 5000,
+  "file": "relic37.png"
+ },
+ {
+  "name": "矿镐",
+  "quality": "独特",
+  "value": 5000,
+  "file": "relic38.png"
+ },
+ {
+  "name": "古堡装饰铠甲头盔",
+  "quality": "独特",
+  "value": 5000,
+  "file": "relic39.png"
+ },
+ {
+  "name": "门牌",
+  "quality": "独特",
+  "value": 4200,
+  "file": "relic40.png"
+ },
+ {
+  "name": "起跑指示牌",
+  "quality": "独特",
+  "value": 4000,
+  "file": "relic41.png"
+ },
+ {
+  "name": "相框",
+  "quality": "独特",
+  "value": 3000,
+  "file": "relic42.png"
+ },
+ {
+  "name": "复古的钟表",
+  "quality": "独特",
+  "value": 2700,
+  "file": "relic43.png"
+ },
+ {
+  "name": "尖晶的调查日记",
+  "quality": "独特",
+  "value": 2000,
+  "file": "relic44.png"
+ },
+ {
+  "name": "破裂木板",
+  "quality": "独特",
+  "value": 2000,
+  "file": "relic45.png"
+ },
+ {
+  "name": "破损的玩偶",
+  "quality": "独特",
+  "value": 2000,
+  "file": "relic46.png"
+ },
+ {
+  "name": "共生原矿",
+  "quality": "独特",
+  "value": 2000,
+  "file": "relic47.png"
+ },
+ {
+  "name": "老式煤油灯",
+  "quality": "独特",
+  "value": 1600,
+  "file": "relic48.png"
+ },
+ {
+  "name": "糖果罐",
+  "quality": "独特",
+  "value": 1600,
+  "file": "relic49.png"
+ },
+ {
+  "name": "旧衣架",
+  "quality": "独特",
+  "value": 1200,
+  "file": "relic50.png"
+ },
+ {
+  "name": "小梳妆镜",
+  "quality": "独特",
+  "value": 1000,
+  "file": "relic51.png"
+ },
+ {
+  "name": "矿石涂料",
+  "quality": "独特",
+  "value": 1000,
+  "file": "relic52.png"
+ },
+ {
+  "name": "信纸堆",
+  "quality": "独特",
+  "value": 800,
+  "file": "relic53.png"
+ },
+ {
+  "name": "沙漏",
+  "quality": "独特",
+  "value": 600,
+  "file": "relic54.png"
+ },
+ {
+  "name": "干花",
+  "quality": "独特",
+  "value": 300,
+  "file": "relic55.png"
+ }
+]
