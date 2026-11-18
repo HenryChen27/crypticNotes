@@ -452,18 +452,24 @@ def reveal(widget,distance=6,duration=150):
     fade.setEndValue(1.)
     fade.setDuration(duration)
     fade.setEasingCurve(C.QEasingCurve.OutCubic)
-    start=widget.pos()
-    slide=C.QPropertyAnimation(widget,b'pos',widget)
-    slide.setStartValue(start+C.QPoint(0,distance))
-    slide.setEndValue(start)
-    slide.setDuration(duration)
-    slide.setEasingCurve(C.QEasingCurve.OutCubic)
     group=C.QParallelAnimationGroup(widget)
     group.addAnimation(fade)
-    group.addAnimation(slide)
+    # With no distance there is nothing to slide, and animating `pos` anyway
+    # would pin the widget to where it stood *before* its layout ran: the
+    # settings panel, moved above the pet by the layout, was dragged back down
+    # on top of it when the animation ended.
+    start=widget.pos()
+    if distance:
+        slide=C.QPropertyAnimation(widget,b'pos',widget)
+        slide.setStartValue(start+C.QPoint(0,distance))
+        slide.setEndValue(start)
+        slide.setDuration(duration)
+        slide.setEasingCurve(C.QEasingCurve.OutCubic)
+        group.addAnimation(slide)
     def done():
         widget.setGraphicsEffect(None)
-        widget.move(start)
+        if distance:
+            widget.move(start)
     group.finished.connect(done)
     group.start(C.QAbstractAnimation.DeleteWhenStopped)
     widget._reveal=group

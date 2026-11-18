@@ -390,6 +390,44 @@ def resolve_hotkeys(settings):
     return hotkey,hide
 
 
+def panel_side(slot_left, slot_right, width, area_left, area_right):
+    """设置面板从桌宠往哪边展开：'left' 或 'right'。
+
+    面板比桌宠宽得多，窗口展开时总得往一边长。以前固定往左长（保住右边缘），
+    桌宠贴着屏幕左边时窗口就伸出屏幕，被夹回来，桌宠跟着被顶到右边去。
+    现在桌宠不动：左边放得下就照旧往左，放不下就往右；两边都放不下（屏幕比
+    面板还窄）时选伸出去少的那边，剩下的交给 `clamp_to_screen`。
+
+    `slot_left` / `slot_right` 是桌宠连同窗口边距占的那一段，`width` 是展开后的
+    窗口宽度。`area_right` 传 Qt 的 `right()`（比真正的边缘少 1 像素）：
+    `clamp_to_screen` 就是按它夹的，两边用同一个边界，「放得下」才等于「不会被夹」。
+    """
+    over_left = area_left-(slot_right-width)      # 往左展开会伸出左边多少
+    over_right = (slot_left+width)-area_right     # 往右展开会伸出右边多少
+    if over_left <= 0:
+        return 'left'
+    if over_right <= 0:
+        return 'right'
+    return 'left' if over_left <= over_right else 'right'
+
+
+def panel_drop(slot_top, slot_bottom, height, area_top, area_bottom):
+    """设置面板在桌宠的哪一头：'down'（面板在下，一直以来的样子）或 'up'。
+
+    和 `panel_side` 同一个道理，只是方向换成上下、默认换成往下：下面放得下就
+    往下，放不下而上面放得下就往上，都放不下选伸出去少的那头。
+    `height` 是面板**不被屏幕压矮时**整个窗口想要的高度 —— 用压矮之后的高度来
+    判断，就永远「放得下」，桌宠贴着屏幕底边时面板会被挤成一条。
+    """
+    over_down = (slot_top+height)-area_bottom
+    over_up = area_top-(slot_bottom-height)
+    if over_down <= 0:
+        return 'down'
+    if over_up <= 0:
+        return 'up'
+    return 'down' if over_down <= over_up else 'up'
+
+
 def resolve_confirm_hotkey(settings, taken):
     """「是否需要直接叠图？」弹窗的确认键，默认回车。
 
@@ -1597,7 +1635,22 @@ class Companion(W.QWidget):
         self.resize_settings()
         if index==1:self.minigames.sync_catalog()
 
-    def resize_settings(self):
+    def set_panel_above(self, above):
+        """面板挪到桌宠上面或放回下面：在同一个竖排布局里换先后。"""
+        if above == getattr(self,'panel_above',False):
+            return
+        self.panel_above = above
+        layout = self.layout()
+        layout.removeWidget(self.panel)
+        layout.insertWidget(layout.indexOf(self.gear)+(0 if above else 1),self.panel)
+
+    def resize_settings(self, gear_at=None, decide=False):
+        """按内容量出面板高度，屏幕放不下的部分留给滚动条。
+
+        `decide` 只在面板刚展开时为真：这时才选面板在桌宠上面还是下面，之后
+        （展开、收起分组）沿用选好的那头，不在用户眼前换边。`gear_at` 是展开
+        前桌宠的位置；面板在上面时窗口是往上长的，量完要把桌宠放回去。
+        """
         # A previous fixed height must never feed back into the next sizeHint.
         # Measure nested folds from the inside out, using their actual contents.
         for section in reversed(self.panel.findChildren(FoldSection)):
@@ -1621,41 +1674,85 @@ class Companion(W.QWidget):
         self.settings_scroll.widget().layout().activate()
         wanted = self.settings_scroll.widget().sizeHint().height()
         area = self.screen().availableGeometry()
-        # Expand down from the current title position. Never move the whole
-        # window upward to fit an expanded group; overflow belongs in the scroll.
         overhead = self.gear.height()+8+6+36+30+60
-        available = area.bottom()-max(area.top(), self.y())-overhead
-        self.settings_scroll.setFixedHeight(min(wanted, max(100, available)))
-        self.panel_content.layout().invalidate()
-        self.panel_content.layout().activate()
-        self.panel.layout().invalidate()
-        self.panel.layout().activate()
-        self.panel.setFixedHeight(self.panel.layout().sizeHint().height())
-        self.adjustSize()
+        shown = self.panel.isVisible()
+        if shown and gear_at is None and (decide or getattr(self,'panel_above',False)):
+            gear_at = self.gear_pos()
+        margins = self.layout().contentsMargins()
+        if shown and decide:
+            self.set_panel_above(panel_drop(
+                gear_at.y()-margins.top(),gear_at.y()+self.gear.height()+margins.bottom(),
+                wanted+overhead,area.top(),area.bottom()) == 'up')
+        above = shown and getattr(self,'panel_above',False)
+        if above:
+            # The pet is the fixed end: everything from it up to the top of the screen.
+            available = gear_at.y()+self.gear.height()+margins.bottom()-area.top()-overhead
+        else:
+            # Expand down from the current title position. Never move the whole
+            # window upward to fit an expanded group; overflow belongs in the scroll.
+            available = area.bottom()-max(area.top(), self.y())-overhead
+        def fit(height):
+            self.settings_scroll.setFixedHeight(height)
+            self.panel_content.layout().invalidate()
+            self.panel_content.layout().activate()
+            self.panel.layout().invalidate()
+            self.panel.layout().activate()
+            self.panel.setFixedHeight(self.panel.layout().sizeHint().height())
+            self.adjustSize()
+        scroll = min(wanted, max(100, available))
+        fit(scroll)
+        if shown:
+            # `overhead` is an estimate (it came out 12 px short on a 1019 px
+            # screen). Whatever still sticks out past the screen comes off the
+            # scroll area, otherwise clamp_to_screen pushes the pet to make room.
+            room = (gear_at.y()+self.gear.height()+margins.bottom()-area.top() if above
+                    else area.bottom()-max(area.top(), self.y()))
+            excess = self.height()-room
+            if excess > 0 and scroll > 100:
+                fit(max(100, scroll-excess))
+        if above and not decide:
+            # A group opened or closed while the panel sits above the pet: the
+            # window changed height at its top-left corner, so the pet moved.
+            self.place_gear(gear_at)
 
     def toggle_panel(self):
         if getattr(self,'_update_starting',False):
             self.notify('更新中，请稍候…')
             return
         self.toast.hide()
-        right = self.geometry().right()
+        gear_at = self.gear_pos()
         if not self.panel.isVisible():
             games_only=self.minigames.running()
             self.module_tabs.buttons[0].setVisible(not games_only)
             if games_only:self.module_tabs.setCurrentIndex(1)
             self.settings_scroll.verticalScrollBar().setValue(0)
+        opening = not self.panel.isVisible()
         if self.panel.isVisible():self.panel.hide()
         else:reveal(self.panel,distance=0)
-        self.resize_settings()
+        self.resize_settings(gear_at=gear_at,decide=opening)
         self.adjustSize()
-        self.move(right-self.width()+1,self.y())
-        self.clamp_to_screen()
+        self.keep_gear_at(gear_at)
+
+    def keep_gear_at(self, gear_at):
+        """窗口大小变了之后把桌宠放回原处，面板落在放得下的那一侧。
+
+        桌宠在布局里靠右，窗口就往左长；靠左，就往右长。所以换边只需要换它的
+        对齐方式，再按桌宠的位置摆窗口。上下那一头由 `resize_settings` 在展开时
+        选好（`set_panel_above`），这里按桌宠摆窗口时自然就带上了。
+        """
+        margins = self.layout().contentsMargins()
+        middle = gear_at+C.QPoint(self.gear.width()//2,self.gear.height()//2)
+        area = (W.QApplication.screenAt(middle) or self.screen()).availableGeometry()
+        side = panel_side(gear_at.x()-margins.left(),gear_at.x()+self.gear.width()+margins.right(),
+                          self.width(),area.left(),area.right())
+        self.layout().setAlignment(self.gear,C.Qt.AlignLeft if side == 'right' else C.Qt.AlignRight)
+        self.place_gear(gear_at)
 
     def gear_pos(self):
         """齿轮的全局左上角（Qt 逻辑坐标）。
 
         存齿轮而不是窗口左上角：窗口宽度随面板开关变化，齿轮位置不变
-        （toggle_panel 始终保住右边缘，齿轮又是右对齐的）。
+        （toggle_panel 展开、收起后都用 `keep_gear_at` 把它放回原处）。
         """
         return self.gear.mapToGlobal(C.QPoint(0,0))
 
