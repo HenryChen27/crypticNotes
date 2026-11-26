@@ -57,7 +57,7 @@ public class MiniGameOverlayService extends Service {
         NotificationManager manager=getSystemService(NotificationManager.class);
         manager.createNotificationChannel(new NotificationChannel("mini-game","小游戏",NotificationManager.IMPORTANCE_LOW));
         startForeground(1907,new Notification.Builder(this,"mini-game").setSmallIcon(android.R.drawable.ic_media_play).setContentTitle("小游戏正在运行").setContentText("可在悬浮窗口中暂停、保存并退出").setContentIntent(PendingIntent.getForegroundService(this,0,new Intent(this,MiniGameOverlayService.class).setAction("show"),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE)).setOngoing(true).build());
-        MiniGameStore store=new MiniGameStore(this,activeGameId);if(!store.installed()||!Settings.canDrawOverlays(this)){stopSelf();return;}
+        MiniGameStore store=new MiniGameStore(this,activeGameId);if(!new MatchingModuleStore(this,"games").installed()||!store.installed()||!Settings.canDrawOverlays(this)){stopSelf();return;}
         root=new File(store.game,"game");File folder=new File(getFilesDir(),"minigame-saves/"+activeGameId);folder.mkdirs();save=new AtomicFile(new File(folder,"local-storage.json"));
         web=new WebView(this);
         web.setOverScrollMode(View.OVER_SCROLL_NEVER);
@@ -100,10 +100,7 @@ public class MiniGameOverlayService extends Service {
                         String page=MiniGameStore.read(f),saved="{}";
                         try(InputStream in=save.openRead()){saved=new String(MiniGameStore.bytes(in,1024*1024),StandardCharsets.UTF_8);}catch(IOException ignored){}
                         String script="<script>window.__crypticPowerSaving="+getSharedPreferences("mobile",0).getBoolean("power_saving",false)+";</script><style>*{-webkit-tap-highlight-color:transparent}html,body{overscroll-behavior:none}canvas{-webkit-user-select:none;user-select:none}</style><script>try{Object.entries(JSON.parse("+JSONObject.quote(saved)+")).forEach(([k,v])=>localStorage.setItem(k,v))}catch(e){}</script>";
-                        try(InputStream audio=getAssets().open("host-audio.js")){script+="<script>"+new String(MiniGameStore.bytes(audio,64*1024),StandardCharsets.UTF_8)+"</script>";}
-                        try(InputStream performance=getAssets().open("host-performance.js")){script+="<script>"+new String(MiniGameStore.bytes(performance,64*1024),StandardCharsets.UTF_8)+"</script>";}
-                        try(InputStream animation=getAssets().open("host-animation-cache.js")){script+="<script>"+new String(MiniGameStore.bytes(animation,64*1024),StandardCharsets.UTF_8)+"</script>";}
-                        try(InputStream bridge=getAssets().open("safe-exit.js")){script+="<script>window.__jellyfishHostPost=m=>NativeGame.safeExit(JSON.stringify(m));"+new String(MiniGameStore.bytes(bridge,64*1024),StandardCharsets.UTF_8)+"</script>";}
+                        for(String nameJS:new String[]{"host-audio.js","host-performance.js","host-animation-cache.js","safe-exit.js"})try(InputStream input=new FileInputStream(new File(getFilesDir(),"modules/games/"+nameJS))){script+="<script>"+(nameJS.equals("safe-exit.js")?"window.__jellyfishHostPost=m=>NativeGame.safeExit(JSON.stringify(m));":"")+new String(MiniGameStore.bytes(input,64*1024),StandardCharsets.UTF_8)+"</script>";}
                         page=page.replace("<head>","<head><meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; frame-src 'none'; object-src 'none'\">"+script);
                         return new WebResourceResponse("text/html","UTF-8",new ByteArrayInputStream(page.getBytes(StandardCharsets.UTF_8)));
                     }

@@ -35,19 +35,76 @@ public class MainActivity extends Activity {
      */
     private boolean syncingRecording;
     /** The scrolling column everything on this screen is added to. */
-    private LinearLayout content,mapPage,gamesPage,generalPage;
-    private Theme.SectionHeading moduleHeading;
-    private MatchingModuleManager moduleManager;
+    private LinearLayout content,mapPage,gamesPage,generalPage,pvpPage;
+    private LinearLayout mailSection;
+    private ScrollView scroll;
+    private ModulePage notesPackages,pvpPackages,gamePackages;
+    private TextView gearIcon,batchStatus;private boolean unread,hostUpdate,checkingPackages;
+    private long checkedPackagesAt;
+    private String activeModule;
+    private Runnable deferredCapture;
+    private MatchingModuleManager moduleManager,pvpManager;
+    private final android.content.SharedPreferences.OnSharedPreferenceChangeListener packagesChanged=(prefs,key)->{
+        if(uiReady&&key!=null&&(key.startsWith("matchingHash_")||key.equals("gameCatalog")))refreshPackages();
+    };
     private String pendingGame;
     private View mapActions;
-    private DarkTab notesTab,gamesTab;
-    private void switchModule(String name){mapPage.setVisibility(name.equals("notes")?View.VISIBLE:View.GONE);gamesPage.setVisibility(name.equals("games")?View.VISIBLE:View.GONE);generalPage.setVisibility(name.equals("settings")?View.VISIBLE:View.GONE);notesTab.select(name.equals("notes"));gamesTab.select(name.equals("games"));if(!name.equals("settings"))getSharedPreferences("mobile",0).edit().putString("last_module",name).apply();}
+    private DarkTab notesTab,gamesTab,pvpTab;
+    private boolean pendingPvp;
+    private TextView pvpStatus,pvpLast;
+    private void switchModule(String name){
+        if(!"pvp".equals(name)&&!"games".equals(name)&&!"settings".equals(name))name="notes";
+        boolean enteringSettings="settings".equals(name)&&!name.equals(activeModule);
+        activeModule=name;
+        if(enteringSettings){
+            setFoldExpanded(mailSection,true);
+            scroll.post(()->{if("settings".equals(activeModule))scroll.scrollTo(0,0);});
+        }
+        refreshPackages();
+        mapPage.setVisibility(name.equals("notes")?View.VISIBLE:View.GONE);gamesPage.setVisibility(name.equals("games")?View.VISIBLE:View.GONE);generalPage.setVisibility(name.equals("settings")?View.VISIBLE:View.GONE);pvpPage.setVisibility(name.equals("pvp")?View.VISIBLE:View.GONE);pvpTab.select(name.equals("pvp"));notesTab.select(name.equals("notes"));gamesTab.select(name.equals("games"));if(!name.equals("settings"))getSharedPreferences("mobile",0).edit().putString("last_module",name).apply();}
     private LinearLayout newPage(){LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);return page;}
-    private void updateModuleUi(){boolean installed=new MatchingModuleStore(this).installed();for(int i=0;i<mapPage.getChildCount();i++){View child=mapPage.getChildAt(i);boolean visible=installed;if(child.getTag() instanceof Theme.SectionHeading){Object state=((Theme.SectionHeading)child.getTag()).getTag();visible=installed&&!Boolean.FALSE.equals(state);}child.setVisibility(visible?View.VISIBLE:View.GONE);}moduleHeading.setVisibility(installed?View.VISIBLE:View.GONE);moduleManager.setVisibility(View.VISIBLE);moduleHeading.setExpanded(installed);}
+
+    private final class ModulePage {
+        final LinearLayout first,body,versions;final MatchingModuleManager core;final Theme.SectionHeading heading;
+        ModulePage(LinearLayout page,String id){
+            body=newPage();while(page.getChildCount()>0){View view=page.getChildAt(0);page.removeViewAt(0);body.addView(view);}
+            first=card();page.addView(first);page.addView(body);content=page;versions=fold("版本",false);heading=(Theme.SectionHeading)versions.getTag();
+            heading.setOnClickListener(view->{boolean open=versions.getVisibility()!=View.VISIBLE;setFoldExpanded(versions,open);
+                if(open){checkPackages(false);if(id.equals("games"))inlineGames.probe();}});
+            core=new MatchingModuleManager(MainActivity.this,id);core.changed=MainActivity.this::moduleActionChanged;
+        }
+        void refresh(boolean update){boolean installed=core.store.installed();LinearLayout slot=installed?versions:first;
+            if(core.getParent()!=slot){if(core.getParent()!=null)((LinearLayout)core.getParent()).removeView(core);slot.addView(core,0);}
+            first.setVisibility(installed?View.GONE:View.VISIBLE);body.setVisibility(installed?View.VISIBLE:View.GONE);
+            heading.setVisibility(installed?View.VISIBLE:View.GONE);versions.setVisibility(installed&&Boolean.TRUE.equals(heading.getTag())?View.VISIBLE:View.GONE);
+            heading.setUpdateAvailable(update);core.refresh();
+        }
+    }
+    private void moduleActionChanged(){refreshPackages();if(inlineGames!=null)inlineGames.refresh();}
+    private void refreshPackages(){
+        if(gamePackages==null||isDestroyed())return;
+        boolean notes=ModuleUpdates.flag(this,"notes")||ModuleUpdates.flag(this,"lianghapi")||ModuleUpdates.flag(this,"zhanshi"),pvp=ModuleUpdates.flag(this,"pvp"),games=ModuleUpdates.flag(this,"games")||MiniGameUpdates.available(this);
+        notes&=notesPackages.core.store.installed();pvp&=pvpPackages.core.store.installed();games&=gamePackages.core.store.installed();
+        notesPackages.refresh(notes);gamePackages.refresh(games);pvpPackages.refresh(pvp);moduleManager.refresh();
+        inlineGames.setCorePresent(gamePackages.core.store.installed());
+        notesTab.setUpdate(notes);pvpTab.setUpdate(pvp);gamesTab.setUpdate(games);if(libraryChoice!=null){libraryChoice.refresh();libraryChoice.changed.run();}
+    }
+    private void checkPackages(boolean install){
+        if(install&&(checkingPackages||MatchingModuleManager.operationRunning||MiniGameOverlayService.running)){Toast.makeText(this,"请先结束当前检查、下载或小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(!install&&(checkingPackages||MatchingModuleManager.operationRunning||SystemClock.elapsedRealtime()-checkedPackagesAt<60000&&checkedPackagesAt!=0))return;
+        if(install){MatchingModuleManager.operationRunning=true;batchStatus.setVisibility(View.VISIBLE);batchStatus.setText("正在检查已安装的包…");moduleActionChanged();}else checkingPackages=true;
+        new Thread(()->{String result;
+            try{result=ModuleUpdates.process(this,install,text->runOnUiThread(()->{if(!isDestroyed())batchStatus.setText(text);}),()->runOnUiThread(this::refreshPackages));}
+            catch(Exception error){result="检查未完成："+error.getMessage();}
+            String message=result;runOnUiThread(()->{if(install)MatchingModuleManager.operationRunning=false;else checkingPackages=false;checkedPackagesAt=SystemClock.elapsedRealtime();if(isDestroyed())return;if(install)batchStatus.setText(message);inlineGames.refresh();refreshPackages();});
+        },install?"module-update-installed":"module-check").start();
+    }
 
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        if(state!=null){pendingGame=state.getString("pendingGame");pendingPvp=state.getBoolean("pendingPvp");capturePermissionPending=state.getBoolean("capturePermissionPending");}
+        MapLibraryChoice.providerOf(getSharedPreferences("mobile",0));
         LinearLayout loading=new LinearLayout(this);loading.setOrientation(LinearLayout.VERTICAL);
         loading.setGravity(Gravity.CENTER);loading.setBackgroundColor(0xff1d3040);
         loading.addView(new DollLoadingView(this),new LinearLayout.LayoutParams(Theme.px(this,152),Theme.px(this,171)));
@@ -59,6 +116,8 @@ public class MainActivity extends Activity {
             try{
                 Theme.typeface(getApplicationContext());
                 MapCatalog.load(getApplicationContext());
+                MailboxSync.box(getApplicationContext());
+                PackageEvents.launched(getApplicationContext());
             }catch(Exception error){android.util.Log.w("CrypticNotes","Startup preload failed; continuing",error);}
             runOnUiThread(()->{if(!isDestroyed()&&!isFinishing())buildContent(state);});
         },"startup-preload").start();
@@ -73,7 +132,7 @@ public class MainActivity extends Activity {
         root.addView(wallpaper, new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        ScrollView scroll = new ScrollView(this);
+        scroll = new ScrollView(this);
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         int pad = Theme.px(this, 20);
@@ -98,10 +157,11 @@ public class MainActivity extends Activity {
         content.addView(rule, ruleParams);
 
         LinearLayout host=content;
-        LinearLayout navigation=new LinearLayout(this);notesTab=new DarkTab(this,"加页手记");gamesTab=new DarkTab(this,"小游戏");TextView gear=new TextView(this);ActionIcon.set(gear,ActionIcon.GEAR,false);gear.setGravity(Gravity.CENTER);
-        navigation.addView(notesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1));navigation.addView(gamesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1));navigation.addView(gear,new LinearLayout.LayoutParams(Theme.px(this,48),Theme.px(this,48)));host.addView(navigation);
-        mapPage=newPage();gamesPage=newPage();generalPage=newPage();host.addView(mapPage);host.addView(gamesPage);host.addView(generalPage);content=mapPage;
-        notesTab.setOnClickListener(v->switchModule("notes"));gamesTab.setOnClickListener(v->switchModule("games"));gear.setOnClickListener(v->switchModule("settings"));
+        LinearLayout navigation=new LinearLayout(this);notesTab=new DarkTab(this,"加页手记");pvpTab=new DarkTab(this,"禁选辅助");gamesTab=new DarkTab(this,"小游戏");TextView gear=new TextView(this);gearIcon=gear;ActionIcon.set(gear,ActionIcon.GEAR,false);gear.setGravity(Gravity.CENTER);
+        gear.setContentDescription("通用设置");gear.setTooltipText("通用设置");
+        navigation.addView(notesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1.2f));navigation.addView(pvpTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1.2f));navigation.addView(gamesTab,new LinearLayout.LayoutParams(0,Theme.px(this,48),1));navigation.addView(gear,new LinearLayout.LayoutParams(Theme.px(this,48),Theme.px(this,48)));host.addView(navigation);
+        mapPage=newPage();gamesPage=newPage();generalPage=newPage();pvpPage=newPage();host.addView(mapPage);host.addView(pvpPage);host.addView(gamesPage);host.addView(generalPage);content=mapPage;
+        notesTab.setOnClickListener(v->switchModule("notes"));pvpTab.setOnClickListener(v->switchModule("pvp"));gamesTab.setOnClickListener(v->switchModule("games"));gear.setOnClickListener(v->switchModule("settings"));
         // Starting is what this screen is for, so it sits above everything else
         // and outside the fold: the primary surface, the largest control, and
         // the only one that never scrolls out of the way.
@@ -134,9 +194,11 @@ public class MainActivity extends Activity {
         // was, so the screen now opens with the settings in evidence. The state
         // is a reading preference, not a setting, so it is not persisted.
         LinearLayout settings = fold("游戏设置", true);
+        LinearLayout mapSettings = fold("地图设置", false);
 
         libraryChoice = new MapLibraryChoice(this);
         settings.addView(libraryChoice);
+        mapSettings.addView(libraryChoice.detachProvider());
         difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
         LinearLayout difficultyRow=choiceRow(fieldLabel("难度"), difficulty);
         settings.addView(difficultyRow, matchWrap());
@@ -147,12 +209,12 @@ public class MainActivity extends Activity {
         party = new Theme.ChalkChoice(this, new String[]{"单人路线", "多人路线"});
         LinearLayout routeRow = choiceRow(routeLabel, party);
         settings.addView(routeRow, matchWrap());
-        difficulty.setIndex(getSharedPreferences("mobile", 0).getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
+        libraryChoice.refreshDifficulty(difficulty);
         party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
         difficulty.setListener(i -> {
-            getSharedPreferences("mobile", 0).edit().putString("difficulty", i == 0 ? "hard" : "nightmare").apply();
+            getSharedPreferences("mobile", 0).edit().putString("difficulty",libraryChoice.selected(difficulty)).apply();
             // Solo/duo routes exist only for 厄运之女 噩梦 by 凉哈皮.
-            int partyShown = i == 1 && !libraryChoice.isZhanshi() && !libraryChoice.isLinguang() ? View.VISIBLE : View.GONE;
+            int partyShown = libraryChoice.selected(difficulty).equals("nightmare") && libraryChoice.hasParty() ? View.VISIBLE : View.GONE;
             party.setVisibility(partyShown);
             routeLabel.setVisibility(partyShown);
             routeRow.setVisibility(partyShown);
@@ -162,11 +224,12 @@ public class MainActivity extends Activity {
         routeRow.setVisibility(party.getVisibility());
         party.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("mode", i == 0 ? "solo" : "duo").apply());
         libraryChoice.changed=()->{
+            libraryChoice.refreshDifficulty(difficulty);
             boolean linguang=libraryChoice.isLinguang();
             // 磷光症: both authors offer 困难 and 噩梦.
             difficultyRow.setVisibility(View.VISIBLE);
-            sceneNote.setVisibility(linguang?View.VISIBLE:View.GONE);
-            routeRow.setVisibility(!linguang&&!libraryChoice.isZhanshi()&&difficulty.getIndex()==1?View.VISIBLE:View.GONE);
+            sceneNote.setVisibility(linguang&&!libraryChoice.provider().equals("original")?View.VISIBLE:View.GONE);
+            routeRow.setVisibility(libraryChoice.hasParty()&&libraryChoice.selected(difficulty).equals("nightmare")?View.VISIBLE:View.GONE);
             routeLabel.setVisibility(routeRow.getVisibility());
             party.setVisibility(routeRow.getVisibility());
         };
@@ -176,10 +239,10 @@ public class MainActivity extends Activity {
         // survives a restart instead of being reset here on every launch.
         opacity = getSharedPreferences("mobile", 0).getInt("opacity", 30);
         final TextView opacityLabel = fieldLabel("叠图不透明度 " + opacity + "%");
-        settings.addView(opacityLabel);
+        mapSettings.addView(opacityLabel);
         Theme.ChalkSlider slider = new Theme.ChalkSlider(this, 65,
                 Math.max(0, Math.min(65, opacity - 5)));
-        settings.addView(slider, matchWrap());
+        mapSettings.addView(slider, matchWrap());
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
                 opacity = value + 5;
@@ -196,10 +259,26 @@ public class MainActivity extends Activity {
         // slider can carry it.
         float badgeScale = getSharedPreferences("mobile", 0).getFloat("badge_scale", 1f);
         final TextView badgeLabel = fieldLabel("悬浮球尺寸 " + Math.round(badgeScale * 100) + "%");
-        settings.addView(badgeLabel);
+        content=generalPage;
+        Theme.ChalkButton batch=new Theme.ChalkButton(this,"一键更新");
+        generalPage.addView(batch,matchWrap());batch.setOnClickListener(v->checkPackages(true));
+        batchStatus=Theme.muted(this,"");batchStatus.setVisibility(View.GONE);generalPage.addView(batchStatus,matchWrap());
+        mailSection=fold("邮箱",true);
+        Theme.SectionHeading mailHeading=((Theme.SectionHeading)mailSection.getTag()).setHeightDp(44);
+        MailboxView mailbox=new MailboxView(this);
+        mailSection.addView(mailbox,matchWrap());
+        mailbox.setUnreadChanged(count->{
+            mailHeading.setLabel(count>0?"邮箱（"+count+"）":"邮箱");
+            mailHeading.setContentDescription(count>0?"邮箱，"+count+" 封未读":"邮箱");
+            unread=count>0;ActionIcon.set(gear,ActionIcon.GEAR,unread||hostUpdate);
+            gear.setContentDescription(count>0?"通用设置，有未读邮件":"通用设置");
+        });
+        LinearLayout floating=fold("悬浮球",false);
+        content=mapPage;
+        floating.addView(badgeLabel);
         Theme.ChalkSlider badgeSlider = new Theme.ChalkSlider(this, 90,
                 Math.max(0, Math.min(90, Math.round(badgeScale * 100) - 70)));
-        settings.addView(badgeSlider, matchWrap());
+        floating.addView(badgeSlider, matchWrap());
         badgeSlider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             public void onProgressChanged(SeekBar bar, int value, boolean fromUser) {
                 int percent = value + 70;
@@ -212,13 +291,9 @@ public class MainActivity extends Activity {
         });
 
         LinearLayout more = fold("辅助设置", false);
-        Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
-        powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
-        more.addView(choiceRow(Theme.helpLabel(this,"省电模式","正常每秒、省电每两秒检查一次低分辨率画面里的地图控件；确认展开后才启动完整识图。不会拦截触摸。省电进一步降低展开期间检查频率和小游戏动画开销。"),powerSaving,120),matchWrap());
-        powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
         Theme.ChalkChoice highRefresh=new Theme.ChalkChoice(this,new String[]{"关","开"});
         highRefresh.setIndex(getSharedPreferences("mobile",0).getBoolean("game_high_refresh",false)?1:0);
-        more.addView(choiceRow(Theme.helpLabel(this,"小游戏高刷新率","开启后小游戏窗口按屏幕最高刷新率运行，更顺滑但更耗电、更热；默认 60 帧。省电模式下始终 60 帧。"),highRefresh,120),matchWrap());
+        View highRefreshRow=choiceRow(Theme.helpLabel(this,"小游戏高刷新率","开启后小游戏窗口按屏幕最高刷新率运行；默认 60 帧，省电模式下仍为 60 帧。"),highRefresh,120);
         highRefresh.setListener(i -> {
             getSharedPreferences("mobile",0).edit().putBoolean("game_high_refresh",i==1).apply();
             MiniGameOverlayService game=MiniGameOverlayService.current;
@@ -226,33 +301,37 @@ public class MainActivity extends Activity {
         });
         Theme.ChalkChoice feedback = new Theme.ChalkChoice(this,new String[]{"关","开"});
         feedback.setIndex(getSharedPreferences("mobile",0).getBoolean("touch_feedback",true)?1:0);
-        more.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
+        floating.addView(choiceRow(fieldLabel("轻触反馈"),feedback,120),matchWrap());
         feedback.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("touch_feedback",i==1).apply());
         more.addView(Theme.helpLabel(this,"自动展开检测","低分辨率采集，只检查地图控件；不拦截触摸，无需无障碍权限。关闭后须从悬浮球点重新识别。"));
         Theme.ChalkToggle automaticProbe=new Theme.ChalkToggle(this,"启用",120);
         automaticProbe.setChecked(getSharedPreferences("mobile",0).getBoolean("automatic_map_probe",true));
         more.addView(automaticProbe,matchWrap());
         automaticProbe.setListener(value->{getSharedPreferences("mobile",0).edit().putBoolean("automatic_map_probe",value).apply();pushDisplayPreferences();});
-        Theme.ChalkButton manage = new Theme.ChalkButton(this, "地图管理");
-        more.addView(manage, matchWrap());
+        Theme.ChalkButton diagnostic=new Theme.ChalkButton(this,"复制识图诊断");more.addView(diagnostic,matchWrap());
+        diagnostic.setOnClickListener(v->{CaptureService service=CaptureService.current;
+            if(service!=null)service.copyRecognitionDiagnostic();else Toast.makeText(this,"请先启动识图",Toast.LENGTH_SHORT).show();});
+        Theme.ChalkButton manage = new Theme.ChalkButton(this, "地图库");
+        mapSettings.addView(manage, matchWrap());
         manage.setOnClickListener(v -> startActivity(new Intent(this, MapLibraryActivity.class)));
         // Dragging the button is easier than explaining where it went, so the
         // reset only has to forget the stored spot; the next start puts it back
         // at the default corner.
         Theme.ChalkButton reset = new Theme.ChalkButton(this, "重置悬浮球位置");
-        more.addView(reset, matchWrap());
+        floating.addView(reset, matchWrap());
         reset.setOnClickListener(v -> {
             getSharedPreferences("mobile", 0).edit()
                     .remove("badge_x").remove("badge_y").apply();
             pushDisplayPreferences();
             Toast.makeText(this, "悬浮球已回到默认位置", Toast.LENGTH_SHORT).show();
         });
-        more.addView(Theme.helpLabel(this, "悬浮操作", "拖动悬浮按钮移动位置，点击打开设置，长按关闭识别。通知栏也可停止采集。"));
+        floating.addView(Theme.helpLabel(this, "悬浮操作", "拖动悬浮按钮移动位置，点击打开设置，长按关闭识别。通知栏也可停止采集。"));
         TextView footnote = new TextView(this);
         footnote.setText("识图全程单线程，避免与游戏争抢 CPU。采集期间请保持横屏，退出游戏后点通知栏停止。");
         LinearLayout.LayoutParams footnoteParams = matchWrap();
         footnoteParams.topMargin = Theme.px(this, 12);
 
+        content=generalPage;
         LinearLayout recording = fold("录屏设置", false);
         recordingSound = new Theme.ChalkChoice(this,new String[]{"无声","内部声音"});
         recording.addView(choiceRow(Theme.helpLabel(this,"声音","内部声音需要系统录音授权，但不采集麦克风。Android 10+ 可用；游戏不允许采集时仍可能静音，也可能录到其他应用播放的媒体声音。"),recordingSound),matchWrap());
@@ -300,20 +379,57 @@ public class MainActivity extends Activity {
         syncRecordingRows();
         recording.addView(Theme.helpLabel(this,"保存与操作","从悬浮球设置开始／停止录制。Android 10+ 保存到相册 Movies/CrypticNotes，转屏会保存当前视频；回溯录制转屏后从头开始攒。录叠图演示请选择共享整个屏幕。设置改动在下次录制生效。"));
 
+        content=pvpPage;
+        // Same shape as the 加页手记 page: the one action first, outside any fold.
+        LinearLayout pvpActions = card();
+        content.addView(pvpActions);
+        LinearLayout pvpButtons = new LinearLayout(this);
+        pvpActions.addView(pvpButtons, matchWrap());
+        Theme.ChalkButton pvpStart = new Theme.ChalkButton(this, "开启禁选辅助", true);
+        Theme.text(pvpStart, 16, Theme.INK);
+        LinearLayout.LayoutParams pvpStartParams = new LinearLayout.LayoutParams(0, Theme.px(this, 46), 1);
+        pvpStartParams.rightMargin = Theme.px(this, 8);
+        pvpButtons.addView(pvpStart, pvpStartParams);
+        pvpStart.setOnClickListener(v -> startPvp());
+        Theme.ChalkButton pvpStop = new Theme.ChalkButton(this, "停止");
+        pvpButtons.addView(pvpStop, new LinearLayout.LayoutParams(Theme.px(this, 76), Theme.px(this, 46)));
+        pvpStop.setOnClickListener(v -> { stopService(new Intent(this, CaptureService.class)); pvpStatus.setText("已停止"); });
+        pvpStatus = Theme.status(this);
+        pvpStatus.setText("准备就绪");
+        LinearLayout.LayoutParams pvpStatusParams = matchWrap();
+        pvpStatusParams.topMargin = Theme.px(this, 12);
+        pvpActions.addView(pvpStatus, pvpStatusParams);
+        LinearLayout pvpSetup = fold("对局设置", true);
+        // Short labels: the ranks have to share one row. The first segment is "not chosen", so a
+        // player who never touched this is not reported as 一阶.
+        final String[] rankNames = {"", "一阶", "二阶", "三阶", "四阶", "五阶", "六阶", "七阶", "巅峰七阶"};
+        Theme.ChalkChoice rank = new Theme.ChalkChoice(this, new String[]{"未选", "一", "二", "三", "四", "五", "六", "七", "巅七"});
+        String savedRank = getSharedPreferences("mobile", 0).getString("pvp_rank", "");
+        for (int i = 0; i < rankNames.length; i++) if (rankNames[i].equals(savedRank)) rank.setIndex(i);
+        rank.setListener(i -> getSharedPreferences("mobile", 0).edit().putString("pvp_rank", rankNames[i]).apply());
+        pvpSetup.addView(choiceRow(Theme.helpLabel(this, "段位", "你当前的排位段位。和禁用角色、地图一起发给服务器，用来估计监管者。也可以在悬浮球面板里改。"), rank), matchWrap());
+        LinearLayout pvpResult = fold("识别结果", true);
+        pvpLast = Theme.text(new TextView(this), 15, Theme.TEXT);
+        pvpResult.addView(pvpLast, matchWrap());
+        pvpActions.addView(Theme.helpLabel(this,"选角识别","回到选角界面双击悬浮球识别，点头像或地图纠正结果。确认后发送段位、地图和禁选结果，不上传画面。"));
         content=gamesPage;
         LinearLayout games = fold("小游戏", true);
         gameHeading=(Theme.SectionHeading)games.getTag();
         gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
         inlineGames=new InlineGameManager(this);
-        inlineGames.stateChanged=()->gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));
+        inlineGames.stateChanged=this::refreshPackages;
         games.addView(inlineGames,matchWrap());
+        LinearLayout gameSettings=fold("小游戏设置",false);inlineGames.movePreferencesTo(gameSettings);gameSettings.addView(highRefreshRow,matchWrap());
         content=generalPage;
-        content.addView(Theme.muted(this,"主程序版本 "+BuildConfig.VERSION_NAME+"（"+BuildConfig.VERSION_CODE+"）"));
-        LinearLayout appearance=fold("界面设置",true);
-        Theme.ChalkChoice fontChoice=new Theme.ChalkChoice(this,new String[]{"游戏字体","系统字体"});fontChoice.setIndex(getSharedPreferences("mobile",0).getBoolean("fontSystem",false)?1:0);appearance.addView(choiceRow(fieldLabel("字体"),fontChoice));fontChoice.setListener(i->{getSharedPreferences("mobile",0).edit().putBoolean("fontSystem",i==1).apply();recreate();});
-        SeekBar fontSize=new SeekBar(this);fontSize.setMax(10);fontSize.setProgress(getSharedPreferences("mobile",0).getInt("fontSize",16)-12);appearance.addView(Theme.muted(this,"字号（12～22）"));appearance.addView(fontSize);fontSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean user){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){getSharedPreferences("mobile",0).edit().putInt("fontSize",12+s.getProgress()).apply();recreate();}});
-        LinearLayout updates = fold("应用更新", false);
-        Theme.ChalkButton update = new Theme.ChalkButton(this, "检查应用更新");
+        LinearLayout systemSettings=fold("系统设置",true);
+        Theme.ChalkChoice powerSaving=new Theme.ChalkChoice(this,new String[]{"关","开"});
+        powerSaving.setIndex(getSharedPreferences("mobile",0).getBoolean("power_saving",false)?1:0);
+        systemSettings.addView(choiceRow(Theme.helpLabel(this,"省电模式","降低后台识图检查和小游戏动画的频率。"),powerSaving,120),matchWrap());
+        powerSaving.setListener(i -> getSharedPreferences("mobile",0).edit().putBoolean("power_saving",i==1).apply());
+        Theme.ChalkChoice fontChoice=new Theme.ChalkChoice(this,new String[]{"游戏字体","系统字体"});fontChoice.setIndex(getSharedPreferences("mobile",0).getBoolean("fontSystem",false)?1:0);systemSettings.addView(choiceRow(fieldLabel("字体"),fontChoice));fontChoice.setListener(i->{getSharedPreferences("mobile",0).edit().putBoolean("fontSystem",i==1).apply();recreate();});
+        SeekBar fontSize=new SeekBar(this);fontSize.setMax(10);fontSize.setProgress(getSharedPreferences("mobile",0).getInt("fontSize",16)-12);systemSettings.addView(Theme.muted(this,"字号（12～22）"));systemSettings.addView(fontSize);fontSize.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){public void onProgressChanged(SeekBar s,int p,boolean user){}public void onStartTrackingTouch(SeekBar s){}public void onStopTrackingTouch(SeekBar s){getSharedPreferences("mobile",0).edit().putInt("fontSize",12+s.getProgress()).apply();recreate();}});
+        LinearLayout updates = fold("版本", false);
+        Theme.ChalkButton update = new Theme.ChalkButton(this, "检查更新");
         updates.addView(update, matchWrap());
         // The emblem turns while the check runs, in place of a progress bar:
         // the same object, and the same motion, as the in-game button uses to
@@ -324,19 +440,22 @@ public class MainActivity extends Activity {
         spinnerParams.topMargin = Theme.px(this, 12);
         spinnerParams.gravity = Gravity.CENTER_HORIZONTAL;
         updates.addView(spinner, spinnerParams);
-        TextView updateStatus = Theme.muted(this, "当前版本 " + BuildConfig.VERSION_NAME + " · 检查新版本，保留已有设置");
+        updates.addView(Theme.muted(this,"插件主程序 · "+BuildConfig.VERSION_NAME));
+        TextView updateStatus = Theme.muted(this, "");
         LinearLayout.LayoutParams updateStatusParams = matchWrap();
         updateStatusParams.topMargin = Theme.px(this, 8);
         updates.addView(updateStatus, updateStatusParams);
         updater = new AppUpdater(this, updateStatus, spinner);
         Theme.SectionHeading updateHeading = (Theme.SectionHeading) updates.getTag();
-        updater.onAvailability(updateHeading::setUpdateAvailable);
+        updater.onAvailability(available->{hostUpdate=available;updateHeading.setUpdateAvailable(available);update.setUpdateDot(available);update.setText(available?"更新":"检查更新");ActionIcon.set(gearIcon,ActionIcon.GEAR,unread||available);});
         update.setOnClickListener(v -> updater.check());
         updater.checkSilently();
-        content=mapPage;moduleManager=new MatchingModuleManager(this);moduleHeading=heading("版本");moduleHeading.setExpanded(false);mapPage.addView(moduleHeading);mapPage.addView(moduleManager);moduleHeading.setOnClickListener(v->{boolean open=moduleManager.getVisibility()!=View.VISIBLE;moduleManager.setVisibility(open?View.VISIBLE:View.GONE);moduleHeading.setExpanded(open);});moduleManager.changed=()->{updateModuleUi();};updateModuleUi();
-        if(new MatchingModuleStore(this).installed()){moduleManager.setVisibility(View.GONE);moduleHeading.setExpanded(false);}
-        switchModule(getIntent().getStringExtra("open_module")!=null?getIntent().getStringExtra("open_module"):getSharedPreferences("mobile",0).getString("last_module","notes"));
-        if(state!=null)pendingGame=state.getString("pendingGame");
+        notesPackages=new ModulePage(mapPage,"notes");moduleManager=new MatchingModuleManager(this);notesPackages.versions.addView(moduleManager);moduleManager.changed=this::moduleActionChanged;
+        pvpPackages=new ModulePage(pvpPage,"pvp");pvpManager=pvpPackages.core;
+        gamePackages=new ModulePage(gamesPage,"games");gamePackages.versions.addView(inlineGames.takeVersions());
+        String initial=state==null?null:state.getString("activeModule");
+        if(initial==null)initial=getIntent().getStringExtra("open_module");
+        switchModule(initial!=null?initial:getSharedPreferences("mobile",0).getString("last_module","notes"));
         String launch=getIntent().getStringExtra("launch_game");if(launch!=null){getIntent().removeExtra("launch_game");startGame(launch);}
         root.post(()->{
             if(isDestroyed()||isFinishing()||loadingOverlay==null)return;
@@ -344,9 +463,11 @@ public class MainActivity extends Activity {
             overlay.animate().alpha(0f).setDuration(180).withEndAction(()->{
                 startupHost.removeView(overlay);
                 if(loadingOverlay==overlay)loadingOverlay=null;
+                ReleaseNews.show(this);
             }).start();
         });
         uiReady=true;
+        if(deferredCapture!=null){Runnable delivery=deferredCapture;deferredCapture=null;delivery.run();}
         if(resumed)refreshResumedUi();
         // Test builds may carry a game map inside the APK (assets/bundled); merge
         // it into the library once per package. Release builds have no asset.
@@ -385,22 +506,24 @@ public class MainActivity extends Activity {
      *
      * Returns the body, for the caller to fill.
      */
-    private LinearLayout fold(String title, boolean expanded) { return fold(title, expanded, null); }
     private LinearLayout fold(String title, boolean expanded, String icon) {
         Theme.SectionHeading bar = heading(title).setIcon(icon);
         content.addView(bar);
         LinearLayout body = card();
         body.setTag(bar);
         content.addView(body);
-        body.setVisibility(expanded ? View.VISIBLE : View.GONE);
-        bar.setExpanded(expanded);bar.setTag(expanded);
-        bar.setOnClickListener(v -> {
-            boolean open = body.getVisibility() != View.VISIBLE;
-            body.setVisibility(open ? View.VISIBLE : View.GONE);
-            bar.setExpanded(open);bar.setTag(open);
-        });
+        setFoldExpanded(body,expanded);
+        bar.setOnClickListener(v -> setFoldExpanded(body,body.getVisibility()!=View.VISIBLE));
         return body;
     }
+
+    private static void setFoldExpanded(LinearLayout body,boolean expanded){
+        Theme.SectionHeading bar=(Theme.SectionHeading)body.getTag();
+        body.setVisibility(expanded?View.VISIBLE:View.GONE);
+        bar.setExpanded(expanded);bar.setTag(expanded);
+    }
+
+    private LinearLayout fold(String title, boolean expanded) { return fold(title, expanded, null); }
 
     private Theme.SectionHeading heading(String label) {
         Theme.SectionHeading view = new Theme.SectionHeading(this, label);
@@ -448,19 +571,37 @@ public class MainActivity extends Activity {
     }
 
     public void startGame(String id){
-        if(!new MiniGameStore(this,id).installed()){Toast.makeText(this,"请先下载小游戏",Toast.LENGTH_SHORT).show();return;}
+        if(!new MatchingModuleStore(this,"games").installed()||!new MiniGameStore(this,id).installed()){switchModule("games");Toast.makeText(this,"请先下载小游戏",Toast.LENGTH_SHORT).show();return;}
         if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         if(!Settings.canDrawOverlays(this)){Toast.makeText(this,"请允许显示悬浮窗后再次打开",Toast.LENGTH_LONG).show();startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));return;}
         boolean detection=getSharedPreferences("mobile",0).getBoolean("gameSceneEnabled",true);
         CaptureService service=CaptureService.current;
         if(service!=null&&(!detection||service.hasProjection())){service.openGame(id);return;}
         if(!detection){startForegroundService(new Intent(this,CaptureService.class).setAction("games_only").putExtra("gameOnly",true).putExtra("launchGame",id));return;}
-        if(capturePermissionPending)return;pendingGame=id;requestCapturePermission();
+        if(capturePermissionPending)return;pendingGame=id;pendingPvp=false;requestCapturePermission();
     }
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(!uiReady)return;String module=intent.getStringExtra("open_module");if(module!=null)switchModule(module);String game=intent.getStringExtra("launch_game");if(game!=null){intent.removeExtra("launch_game");startGame(game);}}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("pendingGame",pendingGame);}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putString("activeModule",activeModule);state.putString("pendingGame",pendingGame);state.putBoolean("pendingPvp",pendingPvp);state.putBoolean("capturePermissionPending",capturePermissionPending);}
+
+    private void startPvp() {
+        if(!pvpManager.store.installed()){refreshPackages();return;}
+        if (capturePermissionPending) return;
+        if (!Settings.canDrawOverlays(this)) {
+            pvpStatus.setText("请允许显示在其他应用上层，返回后再次点击开启。");
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+            return;
+        }
+        pendingGame=null;pendingPvp=true;capturePermissionPending=true;
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
+            return;
+        }
+        requestCapturePermission();
+    }
 
     private void startCapture() {
+        pendingPvp=false;
         if(!new MatchingModuleStore(this,libraryChoice.provider()).installed()){
             status.setText("请先下载所选作者的地图库，再开始共享");return;
         }
@@ -525,11 +666,13 @@ public class MainActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();resumed=true;
+        getSharedPreferences("mobile",0).registerOnSharedPreferenceChangeListener(packagesChanged);
         if(uiReady)refreshResumedUi();
     }
     private void refreshResumedUi(){
+        refreshPackages();checkPackages(false);if(inlineGames!=null)inlineGames.probe();
+        moduleManager.refresh();
         if(inlineGames!=null)inlineGames.refresh();
-        if(gameHeading!=null){gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));MiniGameUpdates.check(this,()->{if(!isDestroyed()&&gameHeading!=null)gameHeading.setUpdateAvailable(MiniGameUpdates.available(this));if(inlineGames!=null)inlineGames.refresh();});}
         if (updater != null) {
             // Re-attach before resuming: a download started from this screen keeps
             // running after it is left, and its progress should still be here.
@@ -547,15 +690,17 @@ public class MainActivity extends Activity {
             }, "update-reconcile").start();
         }
         syncRecordingRows();
+        if (pvpLast != null) pvpLast.setText(getSharedPreferences("mobile",0).getString("pvp_last","还没有识别到禁用角色"));
         if (libraryChoice != null) {libraryChoice.refresh();libraryChoice.changed.run();}
         if (difficulty != null) {
-            difficulty.setIndex(getSharedPreferences("mobile", 0).getString("difficulty", "hard").equals("nightmare") ? 1 : 0);
+            libraryChoice.refreshDifficulty(difficulty);
             party.setIndex(getSharedPreferences("mobile", 0).getString("mode", "solo").equals("duo") ? 1 : 0);
         }
     }
 
     @Override protected void onPause() {
         resumed=false;super.onPause();
+        getSharedPreferences("mobile",0).unregisterOnSharedPreferenceChangeListener(packagesChanged);
         UpdateService.unobserve();
     }
 
@@ -563,9 +708,14 @@ public class MainActivity extends Activity {
         super.onActivityResult(request, result, data);
         if(DataBackup.handle(this,request,result,data))return;
         if (request != 10) return;
+        if(!uiReady){deferredCapture=()->finishCaptureRequest(result,data);return;}
+        finishCaptureRequest(result,data);
+    }
+    private void finishCaptureRequest(int result,Intent data){
         capturePermissionPending = false;
+        if(pendingPvp&&!pvpManager.store.installed()){pendingPvp=false;refreshPackages();return;}
         if (result != RESULT_OK || data == null) {
-            pendingGame=null;status.setText("未授权屏幕采集，未启动采集");
+            pendingGame=null;pendingPvp=false;status.setText("未授权屏幕采集，未启动采集");pvpStatus.setText("未授权屏幕采集，未启动采集");
             return;
         }
         stopService(new Intent(this, CaptureService.class));
@@ -573,11 +723,12 @@ public class MainActivity extends Activity {
                 .putExtra("projection", data).putExtra("result", result)
                 .putExtra("provider", libraryChoice.provider())
                 .putExtra("scene", libraryChoice.scene())
-                .putExtra("difficulty", libraryChoice.difficulty(difficulty.getIndex() == 0 ? "hard" : "nightmare"))
+                .putExtra("difficulty", libraryChoice.selected(difficulty))
                 .putExtra("mode", libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"))
                 .putExtra("opacity", opacity)
-                .putExtra("gameOnly",pendingGame!=null).putExtra("launchGame",pendingGame);
+                .putExtra("gameOnly",pendingGame!=null).putExtra("launchGame",pendingGame).putExtra("pvp",pendingPvp);
         startForegroundService(service);pendingGame=null;
+        if(pendingPvp){pendingPvp=false;pvpStatus.setText("悬浮球已开启。回到游戏，在排位选角界面双击悬浮球读取禁用角色。通知栏可随时停止。");return;}
         status.setText("正在启动，准备好后请回到游戏。通知栏可随时停止。");
     }
 }

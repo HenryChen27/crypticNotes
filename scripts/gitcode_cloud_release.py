@@ -30,6 +30,7 @@ def refresh_readme(receipt):
     rows=['## 下载','', '[GitCode 国内下载](https://gitcode.com/weixin_51917701/crypticNotes/releases) · [GitHub 备用下载](https://github.com/HenryChen27/crypticNotes/releases/latest)','',
           '当前发布：'+receipt['tag']+'。以下安装包和地图库均已核对大小及 SHA-256，并通过匿名下载验证。','', '| 平台 / 模块 | 下载 | 大小 |','| --- | --- | --- |']
     names={'IdentityVMapAssistant-Windows-x64.zip':'Windows', 'IdentityVMapAssistant-Android-arm64.apk':'Android ARM64', 'IdentityVMapAssistant-macOS-arm64.zip':'Apple 芯片 Mac','IdentityVMapAssistant-macOS-x64.zip':'Intel Mac','IdentityVMapAssistant-Maps-lianghapi.zip':'凉哈皮地图库','IdentityVMapAssistant-Maps-zhanshi.zip':'展十地图库'}
+    names.update({'IdentityVMapAssistant-PVP.zip':'禁选辅助主程序','IdentityVMapAssistant-Notes.zip':'加页手记主程序（含小布偶）','IdentityVMapAssistant-Games-Android.zip':'安卓小游戏主程序'})
     for f in receipt['files']:
         if f['name'] in names:rows.append('| '+names[f['name']]+' | ['+f['name']+']('+f['url']+') | '+format(f['size']/1000000,'.1f')+' MB |')
     rows+=['','Source code 不是安装包。完整文件名、大小及 SHA-256 见 [发布清单](published-files.json)。','']

@@ -84,6 +84,8 @@ def raw_layer(shape, original, reference, candidate, excluded_boxes=(), *, full_
     for x0,y0,x1,y1 in reference.exclusions:
         alpha[y0:y1,x0:x1] = 0
     source = cv2.cvtColor(original, cv2.COLOR_BGR2BGRA)
+    if original.shape[2] == 4:
+        alpha = cv2.bitwise_and(alpha, original[:, :, 3])
     source[:,:,3] = alpha
     h,w = shape[:2]
     layer = cv2.warpAffine(source, np.array([[p.scale,0,p.tx],[0,p.scale,p.ty]],float), (w,h))
@@ -367,16 +369,19 @@ class SharedTerrainMatcher:
 
 def worker(connection, root, difficulty, mode, provider='lianghapi', scene='curse'):
     """Persistent, event-driven process. Parent can terminate active work."""
+    if provider == 'original':
+        from .layout_library import serve
+        return serve(connection, root, difficulty, scene)
     from pathlib import Path
     import time
     from .matcher import MapMatcher
-    from .reference import read_image
+    from .display_art import read_display_map
     from .ui_trace import enable_crash_logging
     enable_crash_logging('matcher')
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
     from functools import lru_cache
-    read_source=lru_cache(maxsize=1)(read_image)
+    read_source=lru_cache(maxsize=1)(read_display_map)
     root = Path(root)
     recorder = None
     options = {}

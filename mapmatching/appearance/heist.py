@@ -868,9 +868,10 @@ class Heist(C.QObject):
         feet = self.pos+pet.widget_point((206, puppet.GROUND_Y))
         behind = 1 if pet.facing > 0 else -1        # facing left, the sack flies off to the right
         end = C.QPointF(feet.x()+behind*96*self.scale, feet.y())
-        margin = 80*self.scale
-        end.setX(min(max(end.x(), self.area.left()+margin), self.area.right()-margin))
-        end.setY(min(max(end.y(), self.area.top()+margin*2), self.area.bottom()-6))
+        # Far enough from the edges that what bursts out of it stays on screen.
+        side, above = 200*self.scale, 240*self.scale
+        end.setX(min(max(end.x(), self.area.left()+side), self.area.right()-side))
+        end.setY(min(max(end.y(), self.area.top()+above), self.area.bottom()-6))
         pet.has_sack = False
         if self.sack is None:
             self.sack = SackWindow(self.sack_hit)

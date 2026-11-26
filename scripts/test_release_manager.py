@@ -5,6 +5,22 @@ from unittest.mock import patch
 import release_manager as manager
 
 class ReleaseTests(unittest.TestCase):
+    def test_release_notes_reuse_popup_copy_for_selected_platforms(self):
+        source=manager.ROOT/'mapmatching/assets/update-news.json'
+        import json
+        news=json.loads(source.read_text(encoding='utf8'))
+        windows=manager.read_notes(source,{'windows'})
+        android=manager.read_notes(source,{'android'})
+        combined=manager.read_notes(source,{'android','windows'})
+        self.assertEqual(windows,android);self.assertEqual(android,combined)
+        self.assertEqual(combined.splitlines()[2:],[f"1. **{news['important']}**",*(f'{index}. {item}' for index,item in enumerate(news['changes'],2))])
+        with tempfile.TemporaryDirectory() as directory:
+            plain=Path(directory)/'notes.md';plain.write_text('原样保留\n',encoding='utf8')
+            self.assertEqual(manager.read_notes(plain,{'android'}),'原样保留\n')
+            platform=plain.with_suffix('.json');platform.write_text(json.dumps(dict(changes=['通用'],desktop='电脑',android='手机')),encoding='utf8')
+            self.assertEqual(manager.read_notes(platform,{'windows'}).splitlines()[2:],['1. 通用','2. 电脑'])
+            self.assertEqual(manager.read_notes(platform,{'android'}).splitlines()[2:],['1. 通用','2. 手机'])
+
     def test_unchanged_publication_returns_before_sync_and_build(self):
         with tempfile.TemporaryDirectory() as d:
             class Fake:

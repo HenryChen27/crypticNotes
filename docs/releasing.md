@@ -13,6 +13,8 @@
 
 ## 命令行
 
+发布之前更新 `mapmatching/assets/update-news.json`：`changes` 是两端共用的更新条目，`android` 是可选的手机端条目，`important` 是可选的红色提醒。新一期公告请换 `id`，不要改设置迁移键。公告打进主程序，不联网也能显示；同一个安装版本只弹一次。命令行的 `--notes` 用于发布页正文。PVP 资源包由 `scripts/build_pvp_package.py` 生成，发布批次会一起上传 `IdentityVMapAssistant-PVP.zip`；APK 和桌面主包不应包含这些资源。
+
 以下参数仅供自动化使用，日常双击 CMD 操作即可。
 
 在项目根目录的 PowerShell 中运行：
@@ -20,6 +22,9 @@
 ```powershell
 # 只打包 Android，不上传
 .venv\Scripts\python.exe scripts\release_manager.py --platforms android
+
+# Windows 和 Android 正式候选：只在本机打包，从弹窗公告生成同文发布说明，不上传
+.venv\Scripts\python.exe scripts\release_manager.py --platforms windows android --notes mapmatching\assets\update-news.json
 
 # 打包并发布 Windows 和 Android
 .venv\Scripts\python.exe scripts\release_manager.py --platforms windows android --publish
@@ -32,6 +37,20 @@
 ```
 
 `--resume` 会真正发布，不是预览。仅可用于已经完成构建并生成 `release-job.json` 的批次。正式发布前会校验文件没有被修改，并拒绝覆盖更高的已发布版本。
+
+## 玩家灰度：两个下载链接，有效期 24 小时
+
+灰度不走发布菜单，不改正式更新清单。Windows 用 `scripts/build_windows.py --preview-dir out/gray/<批次>` 生成独立 ZIP。安卓先准备 `release/IdentityVMapAssistant-PVP.zip` 并运行 `scripts/prepare_android.py`。用 `python -c "import secrets; print(secrets.token_urlsafe(32))"` 为资源生成一次性随机路径，再用项目 Gradle 工具链运行 `assembleRelease -PgrayLabel=<日期.序号> -PgrayPvpToken=<随机路径>`。APK 固定本批资源的 HTTPS 地址、大小和 SHA-256，保留原签名和 versionCode；正式构建不给这两个参数，仍从正式发布附件取包。
+
+仅修安卓时，使用全新的私有目录，放入 `IdentityVMapAssistant-Android-arm64-gray.<日期.序号>.apk` 和 `IdentityVMapAssistant-PVP.zip`。上传核对后运行 `gray_downloads.py issue <目录> https://smgfxyjq.cfd --android-label <日期.序号> --pvp-token <同一随机路径>`。用 `gray_caddy.py` 为这次签发生成两条精确匹配的路径，在已有域名配置中引入并验证；二者共用 24 小时截止时间。不要覆盖、续期或重新签发上轮安卓和 Windows 链接。
+
+两端一起更新时，把带灰度编号的 APK、`IdentityVMapAssistant-Windows-x64.zip`、`IdentityVMapAssistant-PVP.zip` 都放进同一个新的服务器私有目录。核对三个文件的 SHA-256 后，在上述带 `--android-label` 和 `--pvp-token` 的签发命令末尾加 `--include-windows`。三条路径共用一个新的 24 小时窗口；只向玩家分享 APK 和 Windows ZIP，PVP 由应用按需下载。旧批次保留原截止时间。
+
+如果只分发不带灰度编号的 APK 和 Windows ZIP，可使用不带参数的双文件模式：文件名为 `IdentityVMapAssistant-Android-arm64.apk` 与 `IdentityVMapAssistant-Windows-x64.zip`。所有模式的目录都必须在静态根目录之外，不要另设永久直链。
+
+- 将下载域名的 `/jysj-gray/` 配置为 HTTPS 反向代理，保留完整路径，转发至本机专用端口。关闭该路径的代理/CDN 缓存和含链接的访问日志。
+- **准备好分享时才签发**：在服务器上运行 `python3 gray_downloads.py issue <私有目录> <HTTPS源站>`。它返回两条不同的随机链接，以及同一个 UTC 截止时间。用 `python3 gray_downloads.py serve <私有目录> --port <专用端口>` 在回环地址提供下载。重复签发或重启不会刷新时间。
+- 分享前从外网匿名下载两个文件并核对 SHA-256，同时确认没有不经校验的静态入口。可在独立测试批次验证过期行为，不修改生产服务器时间。到点后新的下载、HEAD 和续传都返回 410；已下载到玩家设备的文件不受影响。
 
 ## 自动完成的步骤
 

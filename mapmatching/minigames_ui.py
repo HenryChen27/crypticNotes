@@ -6,7 +6,8 @@ from PySide6 import QtCore as C, QtWidgets as W, QtGui as G
 from .paths import DATA_ROOT
 from .game_icons import game_pixmap,cache_catalog_icons
 from .theme import ChalkButton, FoldSection
-from .minigames import GameStore, CollectionGameStore, read_collection, read_catalog, package_info, platform_key,game_title,LauncherStore
+from .minigames import GameStore, CollectionGameStore, read_collection,game_title,LauncherStore
+from .package_ui import PackageCaption,package_action
 
 
 def game_profile(controls):
@@ -29,17 +30,19 @@ class GameListCard(W.QWidget):
     """Reserve action width; long titles must never push the launch button out."""
     def __init__(self,title):
         super().__init__()
-        self.row=W.QHBoxLayout(self);self.row.setContentsMargins(0,7,0,7);self.row.setSpacing(10)
+        layout=W.QVBoxLayout(self);layout.setContentsMargins(0,7,0,7)
+        self.package=PackageCaption(title);layout.addWidget(self.package)
+        self.row=W.QHBoxLayout();self.row.setSpacing(10);layout.addLayout(self.row)
         self.icon=W.QLabel();self.icon.setFixedSize(38,38);self.icon.setAlignment(C.Qt.AlignCenter);self.row.addWidget(self.icon)
-        text=W.QWidget();column=W.QVBoxLayout(text);column.setContentsMargins(0,0,0,0);column.setSpacing(3)
+        text=self.name_box=W.QWidget();column=W.QVBoxLayout(text);column.setContentsMargins(0,0,0,0);column.setSpacing(3)
         text.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
         self.title=W.QLabel(title);self.title.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
         self.subtitle=W.QLabel();self.subtitle.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
         self.subtitle.setStyleSheet('color:rgba(187,204,216,145);font-size:12px;background:transparent;')
         column.addWidget(self.title);column.addWidget(self.subtitle);self.row.addWidget(text,1)
         self.launch=ChalkButton('启动');self.download=ChalkButton('下载')
-        for button in (self.launch,self.download):
-            button.setFixedWidth(84);button.setStyleSheet('font-size:15px;');self.row.addWidget(button)
+        self.launch.setFixedWidth(84)
+        for button in (self.launch,self.download):button.setStyleSheet('font-size:15px;');self.row.addWidget(button)
 
 
 class DownloadTask(C.QThread):
@@ -64,7 +67,7 @@ class CatalogTask(C.QThread):
     result=C.Signal(object,str)
     def run(self):
         try:
-            catalog=read_collection();cache_catalog_icons(catalog);catalog['_launcher']=package_info(read_catalog(),platform_key())
+            catalog=read_collection();cache_catalog_icons(catalog)
             self.result.emit(catalog,'')
         except Exception as error:self.result.emit(None,str(error))
 
@@ -80,7 +83,6 @@ class GameControls(W.QWidget):
         try:cached=json.loads(self.catalog_cache.read_text(encoding='utf-8'));specs=cached['games']
         except (OSError,ValueError,KeyError):cached={};specs={}
         remote=[CollectionGameStore(DATA_ROOT,spec) for spec in specs.values()]
-        for store in remote:store.launcher_info=cached.get('_launcher')
         self.stores=remote or [self.store]
         ids={store.game_id for store in self.stores}
         self.stores += [store for store in self.local_stores if store.game_id not in ids]
@@ -96,7 +98,7 @@ class GameControls(W.QWidget):
         self.preferences_path=DATA_ROOT/'out/minigames/preferences.json'
         try:self.preferences=json.loads(self.preferences_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):self.preferences={}
-        self.catalog_task=None
+        self.catalog_task=None;self.catalog_confirmed=False;self.catalog_failed=False;self.catalog_checked_at=None
         self.task = None
         self.process = C.QProcess(self)
         self.process.setProcessChannelMode(C.QProcess.MergedChannels)
@@ -118,11 +120,11 @@ class GameControls(W.QWidget):
         self.window_timer.timeout.connect(self.check_window_state)
         layout = W.QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        self.sync_button=ChalkButton('同步游戏列表 / 检查更新')
+        self.sync_button=ChalkButton('刷新列表')
         self.sync_button.clicked.connect(self.sync_catalog)
         self.version_section=FoldSection('版本')
         self.shortcut_section=FoldSection('快捷键')
-        for fold in (self.version_section,self.shortcut_section):fold.changed.connect(lambda:C.QTimer.singleShot(0,self.companion.resize_settings))
+        self.version_section.changed.connect(lambda:C.QTimer.singleShot(0,self.companion.resize_settings))
         self.rows_widget=W.QWidget();self.rows_layout=W.QVBoxLayout(self.rows_widget)
         self.rows_layout.setContentsMargins(0,0,0,0);layout.addWidget(self.rows_widget)
         self.rebuild_rows()
@@ -152,10 +154,10 @@ class GameControls(W.QWidget):
             row.toggle.toggled.connect(lambda enabled,a=action:self.set_shortcut_enabled(a,enabled))
             self.shortcut_rows[action]=row;self.shortcut_buttons[action]=(row.edit,label)
             self.shortcut_section.body.addWidget(row)
-        layout.addWidget(self.shortcut_section);layout.addWidget(self.version_section)
+        layout.addWidget(self.version_section)
         self.update_shortcut_labels()
         self.refresh()
-        C.QTimer.singleShot(1200,self.sync_catalog)
+        if LauncherStore(DATA_ROOT).installed():C.QTimer.singleShot(1200,self.sync_catalog)
 
     def rebuild_rows(self):
         # Keep the sync control alive while rebuilding per-game version rows.
@@ -164,7 +166,6 @@ class GameControls(W.QWidget):
             while target.count():
                 item=target.takeAt(0)
                 if item.widget():item.widget().deleteLater()
-        self.launcher_version=W.QLabel();self.launcher_version.setWordWrap(True);self.version_section.body.addWidget(self.launcher_version)
         self.game_rows=[];self.row_layouts=[];self.version_cards=[];self.size_labels=[];self.game_icon_labels=[];self.game_cards=[]
         for index,store in enumerate(self.stores):
             card=GameListCard(getattr(store,'title','小游戏'));self.game_cards.append(card)
@@ -172,7 +173,7 @@ class GameControls(W.QWidget):
             download,remove=ChalkButton('下载'),ChalkButton('删除')
             self.rows_layout.addWidget(card)
             version=W.QWidget();vbox=W.QVBoxLayout(version);vbox.setContentsMargins(0,0,0,6)
-            size_label=W.QLabel();size_label.setWordWrap(True);size_label.setStyleSheet('color:rgba(187,204,216,145);font-size:12px;background:transparent;');vbox.addWidget(size_label);self.size_labels.append(size_label)
+            size_label=PackageCaption(store.title);vbox.addWidget(size_label);self.size_labels.append(size_label)
             actions=W.QHBoxLayout();actions.addWidget(download,1);actions.addWidget(remove);vbox.addLayout(actions)
             self.version_section.body.addWidget(version)
             for button,action in ((download,'download'),(card.download,'download'),(launch,'launch'),(remove,'delete')):
@@ -182,24 +183,27 @@ class GameControls(W.QWidget):
         index=self.stores.index(self.store) if self.store in self.stores else 0
         self.game_title,self.download,self.launch,self.remove=self.game_rows[index]
 
+    def probe_catalog(self):
+        if self.catalog_checked_at is None or time.monotonic()-self.catalog_checked_at>=60:self.sync_catalog()
+
     def sync_catalog(self):
         if getattr(self,"closing",False) or self.catalog_task or self.task:return
         self.sync_button.setEnabled(False);self.sync_button.setText('正在同步…')
         self.catalog_task=CatalogTask(self)
         self.catalog_task.result.connect(self.catalog_received)
-        self.catalog_task.finished.connect(self.catalog_finished);self.catalog_task.start()
+        self.catalog_task.finished.connect(self.catalog_finished);self.refresh();self.catalog_task.start()
 
     def catalog_received(self,catalog,error):
-        if not error:self.sync_catalog()
+        self.catalog_confirmed=False;self.catalog_failed=bool(error);self.catalog_error=error
         if error:
             self.status.setText('同步失败，保留已有游戏：'+error);return
         self.catalog_cache.parent.mkdir(parents=True,exist_ok=True)
         temp=self.catalog_cache.with_suffix('.tmp');temp.write_text(json.dumps(catalog,ensure_ascii=False),encoding='utf-8');temp.replace(self.catalog_cache)
         if self.running() or self.task:
             self.status.setText('列表已同步，退出游戏后刷新显示');return
+        self.catalog_confirmed=True
         old_id=self.store.game_id
         stores=[CollectionGameStore(DATA_ROOT,spec) for spec in catalog['games'].values()]
-        for store in stores:store.launcher_info=catalog.get('_launcher')
         ids={store.game_id for store in stores}
         for store in self.stores:
             if store.game_id not in ids and store.installed():
@@ -212,7 +216,8 @@ class GameControls(W.QWidget):
 
     def catalog_finished(self):
         task,self.catalog_task=self.catalog_task,None
-        task.deleteLater();self.sync_button.setEnabled(True);self.sync_button.setText('同步游戏列表 / 检查更新')
+        task.deleteLater();self.catalog_checked_at=time.monotonic();self.sync_button.setEnabled(True);self.sync_button.setText('刷新列表');self.refresh()
+        if self.catalog_failed:self.status.setText('同步失败，保留已有游戏：'+self.catalog_error)
 
     def save_preferences(self):
         self.preferences.update(sound=self.sound.isChecked(),detect=self.detect.isChecked())
@@ -236,8 +241,7 @@ class GameControls(W.QWidget):
         dialog=HotkeyDialog(current,self.companion)
         if dialog.exec()!=W.QDialog.Accepted:return
         key=dialog.selected
-        reserved={HOTKEYS[k] for k in (self.companion.hotkey,self.companion.close_hotkey,self.companion.hide_hotkey,self.companion.confirm_hotkey)}
-        if HOTKEYS[key] in reserved or any(HOTKEYS.get(self.preferences.get(a+'_key'))==HOTKEYS[key] for a in self.shortcut_buttons if a!=action):
+        if any(HOTKEYS.get(self.preferences.get(a+'_key'))==HOTKEYS[key] for a in self.shortcut_buttons if a!=action):
             self.status.setText('快捷键已被使用，请选择其他按键');return
         self.preferences[action+'_key']=key;self.preferences[action+'_enabled']=True
         self.shortcut_rows[action].toggle.setChecked(True);self.update_shortcut_labels();self.save_preferences()
@@ -273,7 +277,7 @@ class GameControls(W.QWidget):
         self.select_game(index)
         if action=='launch':self.launch_game()
         elif action=='download':
-            if self.store.installed() and not hasattr(self.store,'spec') and not getattr(self.store,'local',False):self.sync_catalog()
+            if self.store.installed() and (not self.catalog_confirmed or not hasattr(self.store,'spec')):self.sync_catalog()
             else:self.download_game()
         elif action=='delete':self.delete_game()
 
@@ -374,11 +378,8 @@ class GameControls(W.QWidget):
 
     def refresh(self):
         busy = self.task is not None
-        installed = self.store.installed()
-        local=getattr(self.store,'local',False)
         switching=getattr(self,'pending_game_index',None) is not None
-        launcher=LauncherStore(DATA_ROOT)
-        self.launcher_version.setText('公共小游戏启动器版本 '+str(launcher.version() or '未安装'))
+        self.game_updates=False
         for index,(store,(_,download,launch,remove)) in enumerate(zip(self.stores,self.game_rows)):
             self.game_icon_labels[index].setPixmap(game_pixmap(store).scaled(36,36,C.Qt.KeepAspectRatio,C.Qt.SmoothTransformation))
             present=store.installed();source=getattr(store,'local',False);selected=store is self.store
@@ -392,11 +393,15 @@ class GameControls(W.QWidget):
             details='当前版本：'+str(current or '未安装')+'\n最新版本：'+str(latest or '待同步')
             details+='\n已安装：'+f'{installed_size/1048576:.1f}MB'+'\n安装包：'+(f'{download_size/1048576:.1f}MB' if download_size else '待同步')
             card.setToolTip(details)
-            self.size_labels[index].setText(getattr(store,'title','小游戏')+' · '+caption)
-            legacy=present and not store.native()
-            available=getattr(store,'update_available',lambda:True)()
-            download.setEnabled(not source and not getattr(store,'withdrawn',False) and not self.running() and (not busy or selected) and (not present or available or (busy and selected)))
-            download.setText('本地源码' if source else '已下架' if getattr(store,'withdrawn',False) else '取消下载' if busy and selected else '升级轻量版' if legacy else '更新' if present and available else '已是最新版' if present else '下载')
+            withdrawn=self.catalog_confirmed and getattr(store,'withdrawn',False)
+            available=store.update_available() if present and self.catalog_confirmed and hasattr(store,'spec') and not withdrawn else None
+            checking=self.catalog_task is not None
+            update=available is True and not checking;self.game_updates|=update;download.set_update_available(update)
+            package_size=store.receipt().get('downloadSize') if present and not source else 0
+            self.size_labels[index].describe(present,current if present else latest,(package_size or (download_size if available is False else 0) or installed_size) if present else download_size)
+            label,enabled=package_action(present,available,checking,self.catalog_failed)
+            download.setText('本地源码' if source else '已下架' if withdrawn else '取消下载' if busy and selected else label)
+            download.setEnabled(not source and not withdrawn and not self.running() and not getattr(self.companion,'batch_task',None) and (selected if busy else enabled))
             launch.setEnabled(present and not busy and not switching)
             launch.setText('回到游戏' if selected and self.running() else '启动')
             remove.setEnabled(not source and present and not busy and not self.running())
@@ -404,19 +409,22 @@ class GameControls(W.QWidget):
             # Reparenting a download button during refresh can hide it in Qt.
             payload=(getattr(store,'game_root',store.folder/'game')/'index.html').is_file()
             show_launch=present or payload
+            card.package.setVisible(not show_launch);card.icon.setVisible(show_launch);card.name_box.setVisible(show_launch)
+            if not show_launch:card.package.describe(False,latest,download_size)
             launch.setVisible(show_launch)
             launch.setToolTip('' if present else '公共启动器尚未就绪，请在版本管理中重新下载或更新')
             card.download.setVisible(not show_launch)
             card.download.setEnabled(download.isEnabled());card.download.setText(download.text())
-            remove.setVisible(show_launch);self.version_cards[index][0].setVisible(show_launch)
-        any_installed=any(store.installed() or (getattr(store,'game_root',store.folder/'game')/'index.html').is_file() for store in self.stores)
-        for widget in (self.sound,self.detect,self.shortcut_section,self.version_section):widget.setVisible(any_installed)
+            remove.setVisible(show_launch);self.version_cards[index][0].setVisible(not source)
+        self.version_section.setVisible(True)
+        if hasattr(self.companion,'package_badges'):self.companion.package_badges()
         C.QTimer.singleShot(0,self.companion.resize_settings)
         if not busy:
             self.status.setText('')
 
     def download_game(self):
         if getattr(self.store,'local',False):return
+        if not LauncherStore(DATA_ROOT).installed() or (not self.task and self.companion.packages_busy()):return
         if self.task:
             self.task.requestInterruption()
             self.download.setEnabled(False)
@@ -448,8 +456,10 @@ class GameControls(W.QWidget):
         error = getattr(self, 'download_error', '')
         if error:
             self.status.setText('小游戏包尚未上架，请稍后重试。' if 'HTTP Error 404' in error else error)
+        elif not self.catalog_confirmed:self.sync_catalog()
 
     def launch_game(self):
+        if not LauncherStore(DATA_ROOT).installed() or self.companion.packages_busy():return
         if self.running():
             if self.companion.panel.isVisible():
                 self.companion.toggle_panel()
@@ -572,6 +582,7 @@ class GameControls(W.QWidget):
             self.status.setText('系统运行组件已安装，可以启动小游戏')
 
     def delete_game(self):
+        if self.companion.packages_busy():return
         if getattr(self.store,'local',False):return
         if self.task or self.running():
             return

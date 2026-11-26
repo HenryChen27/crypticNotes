@@ -184,7 +184,8 @@ def main():
     for module in ('torch','tensorflow','matplotlib','pandas','IPython','pytest','notebook','tkinter','win32gui','win32api','win32ui','win32con',
                    'PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtWebEngineQuick'):
         args += ['--exclude-module',module]
-    data=[ROOT/'mapmatching/assets',ROOT/'mapmatching/correct.png',ROOT/'docs/images',
+    from app_assets import desktop_assets
+    data=[*desktop_assets(),ROOT/'mapmatching/correct.png',ROOT/'docs/images',
           ROOT/'README.md']
     data.extend(p for p in (ROOT/'mapmatching/appearance/skins').rglob('*')
                 if p.is_file() and p.suffix.lower() in ('.png','.jpg','.webp','.json'))

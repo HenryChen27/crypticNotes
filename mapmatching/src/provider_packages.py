@@ -11,6 +11,10 @@ def validate(provider):
 def entries(maps):return read(Path(maps)/'floors.json',{'references':[]}).get('references',[])
 
 def installed(maps,provider):
+    if provider=='original':
+        # Not an author package: two files per level, no entries in floors.json.
+        from .layout_library import installed as original_installed
+        return original_installed(maps)
     validate(provider);maps=Path(maps)
     return any(e.get('provider','lianghapi')==provider and child(maps.parent,e['source']).is_file() for e in entries(maps))
 

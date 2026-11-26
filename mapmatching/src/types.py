@@ -24,6 +24,15 @@ class Pose:
     ty: float
 
 
+@dataclass(frozen=True)
+class LayoutMemory:
+    layers: tuple[int, ...]
+    anchor: Pose
+    frame_size: tuple[int, int]
+    platform: str
+    frame_key: str | None
+
+
 @dataclass
 class Candidate:
     map_id: str
@@ -34,3 +43,4 @@ class Candidate:
     explained: float | None = None
     contradiction: float | None = None
     floor: int | None = None
+    layout_memory: LayoutMemory | None = None

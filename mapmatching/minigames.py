@@ -94,6 +94,13 @@ class GameStore:
     def folder(self):
         return self.root / self.game_id
 
+    def receipt(self):
+        try:return json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
+        except (OSError,ValueError):return {}
+
+    def version(self):
+        return self.receipt().get('version')
+
     def installed(self):
         try:
             metadata = json.loads((self.folder / 'package.json').read_text(encoding='utf-8'))
@@ -194,6 +201,7 @@ class GameStore:
             metadata = json.loads((staging/'package.json').read_text(encoding='utf-8'))
             self.validate_package(staging, metadata)
             metadata['downloadSha256'] = actual
+            metadata['downloadSize'] = archive.stat().st_size
             (staging/'package.json').write_text(json.dumps(metadata, ensure_ascii=False), encoding='utf-8')
             if backup.exists():
                 shutil.rmtree(backup)
@@ -228,10 +236,7 @@ class GameStore:
         catalog = read_catalog(self.catalog_url, self.game_id)
         if catalog.get('schema') == 2:
             launcher = LauncherStore(self.root.parent)
-            launcher_info = package_info(catalog, platform_key())
-            if not launcher.installed() or not launcher.matches_download(launcher_info):
-                launcher.download_package(launcher_info,
-                    lambda value, text: progress(value // 10, '正在安装公共小游戏启动器…'), cancelled)
+            if not launcher.installed():raise ValueError('请先下载小游戏主程序')
             game_info = package_info(catalog)
             if self.installed() and self.native():
                 metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
@@ -266,7 +271,11 @@ class GameStore:
             if cancelled():
                 raise InterruptedError('已取消下载')
             progress(96, '正在校验并安装…')
+            previous = self.receipt().get('downloadSha256') or (self.version() if self.installed() else None)
             self.install(temporary, info['sha256'], info['size'])
+            from . import package_stats
+            component = 'games' if isinstance(self, LauncherStore) else 'game:' + self.game_id
+            package_stats.installed(component, previous, info['sha256'], self.version())
             progress(100, '下载完成')
         finally:
             temporary.unlink(missing_ok=True)
@@ -287,9 +296,6 @@ class LauncherStore(GameStore):
         return self.root / 'runtime'
 
     def entry(self):
-        from .paths import FROZEN
-        development=self.root.parent/'out/minigames-dev/runtime/GameLauncher.exe'
-        if not FROZEN and sys.platform=='win32' and development.is_file():return development
         return self.folder / ('GameLauncher.app/Contents/MacOS/GameLauncher' if sys.platform == 'darwin'
                               else 'GameLauncher.exe')
 
@@ -300,12 +306,6 @@ class LauncherStore(GameStore):
         except (OSError, ValueError):
             return False
 
-    def version(self):
-        try:
-            return json.loads((self.folder/'package.json').read_text(encoding='utf-8')).get('version')
-        except (OSError, ValueError):
-            return None
-
     def satisfies(self, required):
         try:
             installed = tuple(int(n) for n in self.version().split('.'))
@@ -315,13 +315,10 @@ class LauncherStore(GameStore):
             return False
 
     def matches_download(self, info):
-        try:
-            metadata = json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
-            if metadata.get('version') == info.get('version'):
-                return metadata.get('downloadSha256') == info.get('sha256')
-            return self.satisfies(info.get('version'))
-        except (OSError, ValueError):
-            return False
+        metadata=self.receipt()
+        if info.get('sha256') and metadata.get('downloadSha256')==info['sha256']:return True
+        version=info.get('version')
+        return bool(version and metadata.get('version')!=version and self.satisfies(version))
 
     def validate_package(self, staging, metadata):
         relative = Path('GameLauncher.app/Contents/MacOS/GameLauncher' if sys.platform=='darwin' else 'GameLauncher.exe')
@@ -337,10 +334,6 @@ class CollectionGameStore(GameStore):
         self.title=game_title(self.game_id,spec.get('name'))
 
     def update_available(self):
-        info=getattr(self,'launcher_info',None)
-        if info:
-            launcher=LauncherStore(self.root.parent)
-            if not launcher.installed() or not launcher.matches_download(info):return True
         try:
             meta=json.loads((self.folder/'package.json').read_text(encoding='utf-8'))
             return meta.get('downloadSha256')!=self.spec['sha256']
@@ -352,9 +345,7 @@ class CollectionGameStore(GameStore):
         if spec is None:raise ValueError('游戏已下架，已安装内容仍可使用')
         self.spec=spec
         launcher=LauncherStore(self.root.parent)
-        info=package_info(read_catalog(),platform_key())
-        if not launcher.installed() or not launcher.matches_download(info):
-            launcher.download_package(info,lambda value,text:progress(value//10,'正在安装公共小游戏启动器…'),cancelled)
+        if not launcher.installed():raise ValueError('请先下载小游戏主程序')
         if self.installed() and not self.update_available():
             progress(100,'游戏已是最新版');return
         self.download_package(package_info({'schema':2,'game':spec}),lambda value,text:progress(10+value*90//100,text),cancelled)

@@ -18,15 +18,16 @@ class ClosedMapFallbackTests(unittest.TestCase):
                     rejected = Candidate(identity, 'nightmare', 'solo', 3,
                                          Pose(1, 0, 0), .2, .8, 2)
                     result = MatchResult(candidates=[rejected], diagnostics={'anchors': anchors})
-                    reference = SimpleNamespace(map_id=cached.map_id, source='unused',
+                    reference = SimpleNamespace(map_id=cached.map_id, source='unused', terrain_id=None,
                                                 regions=[{'floor': 2, 'bbox': [0,0,100,100]}])
                     matcher = Mock(references=[reference])
                     matcher.match.return_value = result
+                    matcher._match_view.return_value = result
                     matcher.register_known.return_value = result
                     connection = Mock()
                     connection.recv.side_effect = [(1,np.zeros((200,300,3),np.uint8),cached),None]
                     with patch('mapmatching.src.matcher.MapMatcher', return_value=matcher), \
-                         patch('mapmatching.src.reference.read_image') as read:
+                         patch('mapmatching.src.display_art.read_display_map') as read:
                         worker(connection, Path(__file__).resolve().parents[2], 'nightmare', 'solo')
                     kind, payload = connection.send.call_args_list[1].args[0]
                     self.assertEqual(kind, 'result')

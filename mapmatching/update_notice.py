@@ -19,7 +19,7 @@ def newer_build(root, fetch=read_json):
     if not stamp.is_file():
         return False
     local=json.loads(stamp.read_text(encoding='utf-8-sig'))
-    release=load_release(fetch)
+    release=load_release(fetch,('windows-update.json','IdentityVMapAssistant-Windows-x64.zip'))
     assets={a['name']:a for a in release['assets']}
     manifest=fetch(assets['windows-update.json']['browser_download_url'])
     package=assets['IdentityVMapAssistant-Windows-x64.zip']

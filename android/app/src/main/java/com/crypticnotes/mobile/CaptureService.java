@@ -59,17 +59,17 @@ public class CaptureService extends Service {
     private volatile String lastGateResult="尚未检测",lastMatchResult="尚未匹配",lastPauseReason="";
     private int loadedMapCount;
     private long lastFreshFrameAt;
-    private void copyRecognitionDiagnostic(){
+    void copyRecognitionDiagnostic(){
         long now=SystemClock.elapsedRealtime();
         String protection="未知";
         try{protection=String.valueOf(android.provider.Settings.Secure.getInt(getContentResolver(),"screen_share_protection_on",-1));}catch(Exception ignored){}
-        String report="小布偶识图诊断（测试包1）\n版本="+BuildConfig.VERSION_NAME+" ("+BuildConfig.VERSION_CODE+")"
+        String report="小布偶识图诊断\n版本="+BuildConfig.VERSION_NAME+" ("+BuildConfig.VERSION_CODE+")"
             +"\n设备="+Build.MANUFACTURER+" "+Build.MODEL+", Android "+Build.VERSION.RELEASE+", "+Build.VERSION.INCREMENTAL
             +"\n系统共享防护="+protection+"\n已加载地图="+loadedMapCount
             +"\n界面="+width+"x"+height+", 共享源="+capturedWidth+"x"+capturedHeight
             +"\n有共享="+(projection!=null)+", 可见="+capturedVisible+", 比例符合="+captureFitsScreen()
             +"\n初始化="+initializing+", 就绪="+ready+", 小游戏模式="+gameOnly+", 隐藏叠图="+overlayHidden
-            +"\n采集模式=无触摸注入, 自动展开检测="+automaticMapProbe()+", 会话活动="+touchCapture.awake()+", 待机检查次数="+idleProbeChecks+", 正在录屏="+(recorder!=null)
+            +"\n自动展开检测="+automaticMapProbe()+", 省电="+powerSaving()+", 会话活动="+touchCapture.awake()+", 待机检查次数="+idleProbeChecks+", 正在录屏="+(recorder!=null)
             +"\n忙碌="+busy+", 检测中="+checking+", 排队="+manualRetry+", 状态="+state
             +"\n匹配耗时ms="+(busy?now-busySince:0)+", 检测耗时ms="+(checking?now-checkingSince:0)
             +"\n新帧数="+freshCaptureCount+", 距新帧ms="+(lastFreshFrameAt==0?-1:now-lastFreshFrameAt)
@@ -88,7 +88,7 @@ public class CaptureService extends Service {
         PendingIntent action=PendingIntent.getService(this,0,new Intent(this,CaptureService.class).setAction("stop"),
                 PendingIntent.FLAG_IMMUTABLE|PendingIntent.FLAG_UPDATE_CURRENT);
         Notification.Builder builder=new Notification.Builder(this,"capture").setSmallIcon(android.R.drawable.ic_menu_mapmode)
-                .setContentTitle(gameOnly?"加页手记小游戏悬浮窗":recorder==null?"加页手记正在本机识图":replaySession?"加页手记正在识图（回溯录制已开）":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
+                .setContentTitle(gameOnly?"加页手记小游戏悬浮窗":pvp&&recorder==null?"禁选辅助":recorder==null?"加页手记正在本机识图":replaySession?"加页手记正在识图（回溯录制已开）":"加页手记正在识图并录屏"+(recorder.hasAudio()?"（内部声音）":"（无声）"))
                 .setContentText(gameOnly&&projection==null?"小游戏专用模式，不采集屏幕、不识别地图":"点击停止可结束屏幕采集").setOngoing(true)
                 .addAction(new Notification.Action.Builder(null,"停止全部",action).build());
         if(recorder!=null && replaySession) {
@@ -238,7 +238,7 @@ public class CaptureService extends Service {
         try {
             startActivity(new Intent(this,AudioPermissionActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
         } catch(Exception e) {
-            Toast.makeText(this,"录屏是无声的：到首页「录屏设置 → 声音」授予录音权限",Toast.LENGTH_LONG).show();
+            Toast.makeText(this,"录屏是无声的：到「通用设置 → 录屏设置 → 声音」授予录音权限",Toast.LENGTH_LONG).show();
         }
     }
     /**
@@ -341,6 +341,7 @@ public class CaptureService extends Service {
      */
     static final class RawFrame {
         final byte[] bytes; final int width, height, stride;
+        long captureStartedAt, nativeFloorMs;
         RawFrame(byte[] bytes,int width,int height,int stride){this.bytes=bytes;this.width=width;this.height=height;this.stride=stride;}
     }
     /** Copies the pixels out; the caller still owns (and recycles) the Bitmap. */
@@ -442,9 +443,10 @@ public class CaptureService extends Service {
     private long badgeTapAt;
     private float badgeTapX, badgeTapY;
     private boolean badgeSecondTap;
-    private final Runnable badgeSingleTap = () -> { badgeTapAt = 0; if (!destroyed) toggleQuickSettings(); };
+    private final Runnable badgeSingleTap = () -> { badgeTapAt = 0; if (destroyed) return; if (this.pvp && this.pvpScanning) { if (this.pvpEntry == null) showPvpEntry(); } else toggleQuickSettings(); };
 
     private void retryFromBadge() {
+        if(pvp&&!gameOnly&&!MiniGameOverlayService.running){togglePvpScan();return;}
         if(gameOnly&&!MiniGameOverlayService.running){startActivity(new Intent(this,MainActivity.class).putExtra("launch_game",getSharedPreferences("mobile",0).getString("active_game","jellyfish")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));return;}
         if(MiniGameOverlayService.running){if(MiniGameOverlayService.hidden)startForegroundService(new Intent(this,MiniGameOverlayService.class).setAction("show"));return;}
         badgeText = ""; // Explicit actions must acknowledge every tap.
@@ -486,13 +488,13 @@ public class CaptureService extends Service {
     private long idleProbeChecks;
     private boolean automaticMapProbe(){return getSharedPreferences("mobile",0).getBoolean("automatic_map_probe",true);}
     private void scheduleIdleProbe(){
-        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe() || idleProbeScheduled || idleChecking || idleProbe.active())return;
+        if(destroyed || pvp || !ready || !recognitionIdle() || !automaticMapProbe() || idleProbeScheduled || idleChecking || idleProbe.active())return;
         idleProbeScheduled=true;
         main.postDelayed(idleProbeTick,powerSaving()?2000:1000);
     }
     private final Runnable idleProbeTick=()->{
         idleProbeScheduled=false;
-        if(destroyed || !ready || !recognitionIdle() || !automaticMapProbe()){
+        if(destroyed || this.pvp || !ready || !recognitionIdle() || !automaticMapProbe()){
             // The mirror stays attached between checks, so switching the
             // automatic check off has to release it explicitly.
             if(!automaticMapProbe())idleProbe.cancel();
@@ -538,7 +540,912 @@ public class CaptureService extends Service {
         });}catch(RejectedExecutionException error){idleChecking=false;frame.recycle();scheduleIdleProbe();}
     }
     private final TouchCaptureSession touchCapture = new TouchCaptureSession();
-    private boolean recognitionIdle(){return !gameOnly && !MiniGameOverlayService.running && !touchCapture.awake();}
+
+    // ---- PVP mode -------------------------------------------------------
+    // Nothing is captured until the player double-taps the ball in the lobby.
+    // A scan then reads the screen until the ban cards are confirmed (or it
+    // gives up), and detaches again; the player can also enter them by hand.
+    /** The ban cards are on screen for a couple of seconds; two agreeing frames are needed. */
+    private static final int PVP_POLL_MS = 400;
+    /** How long a scan waits for the cards before giving up. */
+    private static final int PVP_SCAN_MS = 90_000;
+    /** After the first confirmed list: time left for a longer list and the map line. */
+    private static final int PVP_SETTLE_MS = 2500;
+    /** How long the bubble with the result stays unfolded, and the room it needs besides the ball and its text. */
+    private static final int PVP_RESULT_MS = 1000, PVP_MESSAGE_DP = 44;
+    private PvpBanReader pvpReader;
+    private final PvpBanText.Vote pvpVote = new PvpBanText.Vote();
+    private PvpBanReader.Reading pvpLastReading;
+    private long pvpLastReadingAt, pvpDeadline;
+    private boolean pvpScanning, pvpReading, pvpFound;
+    private java.util.List<String> pvpBans;
+    private String pvpLastRaw;
+    /**
+     * Debug builds only: read a still frame through the same regions and
+     * matcher and log the outcome, so recognition can be checked against
+     * saved frames without touching what is on screen.
+     *   adb shell am broadcast -a com.crypticnotes.mobile.PVP_TEST -p <package> --es path <file in the app's files dir>
+     */
+    private BroadcastReceiver pvpTestReceiver;
+    private void registerPvpTest() {
+        if (!BuildConfig.DEBUG || pvpTestReceiver != null) return;
+        pvpTestReceiver = new BroadcastReceiver() { @Override public void onReceive(Context context, Intent intent) {
+            final String path = intent.getStringExtra("path");
+            if (intent.hasExtra("picker")) {
+                // Shows one stage of the overlay for a made-up lobby, to look at it without playing a match:
+                // "strip" the read bans awaiting the tick, "demo" a server answer with made-up chances,
+                // "rates" the default list (bundled pick rates of the chosen rank), anything else the real request.
+                final String stage = intent.getStringExtra("picker");
+                main.post(() -> {
+                    pvpBans = java.util.Arrays.asList("祭司", "小说家", "“逃脱大师”"); pvpMap = "里奥的回忆";
+                    pvpAsked = null; pvpPrediction = null; pvpRequest++;
+                    closePvpPicker(); closePvpEntry(); closePvpBars();
+                    pvpAwaiting = "strip".equals(stage);
+                    if ("strip".equals(stage)) { showPvpHud(); return; }
+                    if (!"demo".equals(stage) && !"rates".equals(stage)) { requestPvpPrediction(); return; }
+                    try {
+                        String[] hunters = PvpRoster.get(CaptureService.this).hunters;
+                        PvpClient.Prediction sample = new PvpClient.Prediction();
+                        if ("rates".equals(stage)) {
+                            // The bundled default list for the chosen rank, as shown when the server says nothing.
+                            String chosen = getSharedPreferences("mobile", 0).getString("pvp_rank", "");
+                            java.util.Map<String, Double> table = PvpRoster.get(CaptureService.this).pickRates(chosen.isEmpty() ? null : chosen);
+                            sample.hunters = PvpRanking.order(hunters, new java.util.ArrayList<>(table.keySet()), new java.util.ArrayList<>(table.values()));
+                            sample.defaults = true; sample.offline = "出场率";
+                        } else sample.hunters = PvpRanking.order(hunters,
+                                java.util.Arrays.asList("红夫人", "宿伞之魂", "歌剧演员", "隐士", "守夜人", "“使徒”", "红蝶", "蜡像师", "“杰克”", "破轮", "雕刻家", "渔女"),
+                                java.util.Arrays.asList(.214, .163, .121, .094, .077, .061, .048, .039, .031, .022, .012, .004));
+                        pvpAsked = new Object[]{getSharedPreferences("mobile", 0).getString("pvp_rank", ""), pvpMap, pvpBans, 1.0};
+                        pvpPrediction = sample;
+                        showPvpHud(); showPvpBars(false);
+                    } catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP overlay demo failed", error); }
+                });
+                return;
+            }
+            inspect.execute(() -> {
+                try {
+                    Bitmap frame = BitmapFactory.decodeFile(new File(getFilesDir(), path).getPath());
+                    if (frame == null) throw new IOException("cannot decode " + path);
+                    int w = frame.getWidth(), h = frame.getHeight();
+                    int[] banBox = PvpBanText.banRegion(w, h), mapBox = PvpBanText.mapRegion(w, h), lineBox = PvpBanText.gotoRegion(w, h);
+                    byte[] ban = pvpBytes(frame, banBox), map = pvpBytes(frame, mapBox), line = pvpBytes(frame, lineBox);
+                    boolean cards = PvpBanText.hasPaleLabel(ban), written = PvpBanText.hasWriting(line);
+                    frame.recycle();
+                    long started = SystemClock.elapsedRealtime();
+                    if (pvpReader == null) pvpReader = new PvpBanReader(CaptureService.this);
+                    PvpBanReader.Reading reading = pvpReader.read(cards ? ban : null, banBox[2] - banBox[0], banBox[3] - banBox[1], cards ? map : null, mapBox[2] - mapBox[0], mapBox[3] - mapBox[1],
+                            written ? line : null, lineBox[2] - lineBox[0], lineBox[3] - lineBox[1]);
+                    android.util.Log.i("CrypticNotes", "PVP test " + path + " " + w + "x" + h + ": pale=" + cards + ", line=" + written
+                            + ", bans=" + reading.bans + ", map=" + reading.map + ", scores=" + reading.raw + ", ms=" + (SystemClock.elapsedRealtime() - started));
+                } catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP test failed: " + path, error); }
+            });
+        } };
+        IntentFilter filter = new IntentFilter("com.crypticnotes.mobile.PVP_TEST");
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(pvpTestReceiver, filter, Context.RECEIVER_EXPORTED);
+        else registerReceiver(pvpTestReceiver, filter);
+    }
+    private static byte[] pvpBytes(Bitmap frame, int[] box) {
+        Bitmap region = Bitmap.createBitmap(frame, box[0], box[1], box[2] - box[0], box[3] - box[1]);
+        ByteBuffer bytes = ByteBuffer.allocate(region.getWidth() * region.getHeight() * 4);
+        region.copyPixelsToBuffer(bytes);
+        region.recycle();
+        return bytes.array();
+    }
+    private String pvpMap;
+    private final Runnable pvpPoll = new Runnable() { public void run() {
+        if (destroyed || !pvpScanning) return;
+        if (SystemClock.elapsedRealtime() > pvpDeadline) {
+            stopPvpScan(pvpFound ? null : "未识别到");
+            return;
+        }
+        try { pvpTick(); }
+        catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP read failed", error); }
+        main.postDelayed(this, PVP_POLL_MS);
+    } };
+    /** Double-tap on the ball: start a scan, or cancel the one running. */
+    private void togglePvpScan() {
+        badgeText = "";
+        if (pvpScanning) { stopPvpScan("已停止"); return; }
+        if (projection == null) { setStatus(S_FAILED, "屏幕共享已结束，请回到应用重新开启"); return; }
+        if (quickSettings != null) closeQuickSettings();
+        pvpVote.reset(); pvpBans = null; pvpMap = null; pvpFound = false; pvpLastReading = null; pvpAwaiting = false;
+        // The hunter of the lobby before, never answered: ask again now, while reading the new one.
+        final boolean owed = pvpAsked != null && pvpPrediction != null;
+        if (!owed) { pvpAsked = null; pvpPrediction = null; pvpRequest++; pvpBarsForced = false; closePvpPicker(); closePvpBars(); }
+        pvpReadBans = null; pvpReadMap = null;
+        closePvpEntry();
+        pvpScanning = true; pvpDeadline = SystemClock.elapsedRealtime() + PVP_SCAN_MS;
+        updateCaptureOutput();
+        showPvpHud();
+        if (owed) {
+            pvpHudFolded = false; pvpBarsForced = true; showPvpBars(true);
+            // Said in the bubble, then back to the turning emblem of a read in progress.
+            setStatus(S_IDLE, "请选择上局的监管者"); state = S_MATCHING;
+        } else setStatus(S_MATCHING, "识别中…");
+        main.removeCallbacks(pvpPoll); main.postDelayed(pvpPoll, 150);
+        android.util.Log.i("CrypticNotes", "PVP scan started");
+    }
+    private void stopPvpScan(String message) {
+        boolean found = pvpFound;
+        pvpScanning = false; pvpReading = false; pvpLastReading = null;
+        main.removeCallbacks(pvpPoll);
+        updateCaptureOutput();
+        // With a result the bubble already says it; only stop the emblem turning.
+        if (message == null) { state = found ? S_MATCHED : S_IDLE; setSpinning(false); }
+        else { badgeText = ""; setStatus(S_IDLE, message); }
+        // What was read now waits at the top left for the player's tick; nothing is sent before that.
+        // A by-hand window still open from during the read is overtaken by the read succeeding.
+        if (found) closePvpEntry();
+        showPvpHud();
+        android.util.Log.i("CrypticNotes", "PVP scan stopped: found=" + found);
+    }
+    /** The green tick: these bans and this map are right, ask for the hunters. */
+    private void confirmPvp() {
+        if (pvpBans == null) return;
+        if (pvpScanning) stopPvpScan(null);
+        requestPvpPrediction();
+    }
+    /** The red cross: drop the lobby being confirmed and go back to waiting for a double tap. */
+    private void resetPvp() {
+        if (pvpScanning) { pvpFound = false; stopPvpScan(null); }
+        pvpBans = null; pvpMap = null; pvpAwaiting = false;
+        pvpReadBans = null; pvpReadMap = null;
+        closePvpEntry(); closePvpHud();
+        state = S_IDLE; setSpinning(false);
+        main.removeCallbacks(hideBadgeMessage); main.post(hideBadgeMessage);
+    }
+    private void pvpTick() {
+        if (pvpReading || gameOnly || projection == null || reader == null || !capturedVisible || width <= height
+                || quickSettings != null || calibration != null) return;
+        final int[] banBox = PvpBanText.banRegion(width, height), mapBox = PvpBanText.mapRegion(width, height), lineBox = PvpBanText.gotoRegion(width, height);
+        final byte[] ban, map, line;
+        if (recorder != null) recorder.requestPreview();
+        try (Image image = reader.acquireLatestImage()) {
+            if (image == null) {
+                // An unchanged screen still shows what the last frame showed.
+                if (pvpLastReading != null && SystemClock.elapsedRealtime() - pvpLastReadingAt < 1500) pvpFeed(pvpLastReading);
+                return;
+            }
+            Image.Plane plane = image.getPlanes()[0];
+            if (plane.getPixelStride() != 4 || image.getWidth() < banBox[2] || image.getHeight() < mapBox[3]) return;
+            ban = pvpRegion(plane, banBox); map = pvpRegion(plane, mapBox); line = pvpRegion(plane, lineBox);
+        }
+        // The cards are up for two seconds; the map is also written at the top left well before them.
+        final boolean cards = PvpBanText.hasPaleLabel(ban), written = PvpBanText.hasWriting(line);
+        if (!cards && !written) { pvpLastReading = null; return; }
+        pvpReading = true;
+        inspect.execute(() -> {
+            PvpBanReader.Reading reading = null;
+            try {
+                if (pvpReader == null) pvpReader = new PvpBanReader(this);
+                reading = pvpReader.read(cards ? ban : null, banBox[2] - banBox[0], banBox[3] - banBox[1], cards ? map : null, mapBox[2] - mapBox[0], mapBox[3] - mapBox[1],
+                        written ? line : null, lineBox[2] - lineBox[0], lineBox[3] - lineBox[1]);
+            } catch (Exception error) {
+                android.util.Log.w("CrypticNotes", "PVP name matching failed", error);
+            }
+            final PvpBanReader.Reading result = reading;
+            main.post(() -> {
+                pvpReading = false;
+                if (destroyed || !pvpScanning || result == null) return;
+                pvpLastReading = result; pvpLastReadingAt = SystemClock.elapsedRealtime();
+                if (!result.raw.equals(pvpLastRaw)) { pvpLastRaw = result.raw; android.util.Log.i("CrypticNotes", "PVP frame: " + result.raw); }
+                pvpFeed(result);
+            });
+        });
+    }
+    /** Copies one screen region out of the capture buffer as tight RGBA rows. */
+    private static byte[] pvpRegion(Image.Plane plane, int[] box) {
+        int w = box[2] - box[0], h = box[3] - box[1], stride = plane.getRowStride();
+        ByteBuffer source = plane.getBuffer().duplicate();
+        byte[] packed = new byte[w * h * 4];
+        for (int y = 0; y < h; y++) { source.position((box[1] + y) * stride + box[0] * 4); source.get(packed, y * w * 4, w * 4); }
+        return packed;
+    }
+    private void pvpFeed(PvpBanReader.Reading reading) {
+        long now = SystemClock.elapsedRealtime();
+        java.util.List<String> confirmed = pvpVote.feed(reading.bans, reading.map, now);
+        boolean changed = confirmed != null || (pvpBans != null && pvpVote.map() != null && !pvpVote.map().equals(pvpMap));
+        if (confirmed != null) {
+            pvpBans = confirmed;
+            // Found: stop soon, but leave a moment for cards still sliding in and for the map line.
+            pvpFound = true; pvpAwaiting = true; pvpDeadline = now + PVP_SETTLE_MS;
+        }
+        if (!changed) return;
+        pvpMap = pvpVote.map();
+        pvpReadBans = new java.util.ArrayList<>(pvpBans); pvpReadMap = pvpMap;
+        publishPvp(pvpBans, pvpMap, "识别");
+        showPvpHud();
+    }
+    /** One place for a result, read or typed: remember it and unfold the ball's bubble with it. */
+    private void publishPvp(java.util.List<String> bans, String map, String source) {
+        StringBuilder text = new StringBuilder("ban位是：");
+        for (int i = 0; i < bans.size(); i++) text.append(i == 0 ? "" : " ").append(PvpBanText.plain(bans.get(i)));
+        if (bans.isEmpty()) text.append("留空");
+        text.append("  地图是：").append(map == null ? "留空" : map);
+        android.util.Log.i("CrypticNotes", "PVP bans (" + source + "): " + text);
+        getSharedPreferences("mobile", 0).edit().putString("pvp_last", text.toString()).apply();
+        badgeText = "";
+        // The portraits at the top left carry the detail; the ball only says it worked.
+        setStatus(S_MATCHED, "手动".equals(source) ? "已录入" : "识别成功");
+        main.removeCallbacks(hideBadgeMessage);
+        main.postDelayed(hideBadgeMessage, PVP_RESULT_MS);
+    }
+    /** A tap-to-select name; overlay windows take no keyboard, so entry is by picking. */
+    private TextView pvpChip(String name, boolean selected) {
+        TextView chip = new TextView(this);
+        chip.setText(PvpBanText.plain(name)); chip.setTag(name);
+        chip.setGravity(Gravity.CENTER); chip.setSingleLine(true);
+        chip.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 12);
+        chip.setSelected(selected); paintPvpChip(chip);
+        return chip;
+    }
+    private void paintPvpChip(TextView chip) {
+        android.graphics.drawable.GradientDrawable plate = new android.graphics.drawable.GradientDrawable();
+        plate.setCornerRadius(Theme.px(this, 6));
+        if (chip.isSelected()) plate.setColor(0xffd5dbe2); else plate.setStroke(Theme.px(this, 1), 0x66ffffff);
+        chip.setBackground(plate); chip.setTextColor(chip.isSelected() ? Theme.INK : Theme.TEXT);
+    }
+    /** Lays chips out in rows; `single` makes the group behave like radio buttons. */
+    private java.util.List<TextView> pvpChipGrid(LinearLayout panel, String[] names, java.util.Collection<String> selected, int columns, boolean single, Runnable changed) {
+        java.util.List<TextView> chips = new java.util.ArrayList<>();
+        LinearLayout row = null;
+        for (int i = 0; i < names.length; i++) {
+            if (i % columns == 0) { row = new LinearLayout(this); panel.addView(row, new LinearLayout.LayoutParams(-1, Theme.px(this, 40))); }
+            TextView chip = pvpChip(names[i], selected.contains(names[i]));
+            LinearLayout.LayoutParams cell = new LinearLayout.LayoutParams(0, -1, 1);
+            int gap = Theme.px(this, 2); cell.setMargins(gap, gap, gap, gap);
+            row.addView(chip, cell); chips.add(chip);
+            pvpTap(chip, () -> {
+                boolean on = !chip.isSelected();
+                if (single && on) for (TextView other : chips) if (other.isSelected()) { other.setSelected(false); paintPvpChip(other); }
+                chip.setSelected(on); paintPvpChip(chip);
+                if (changed != null) changed.run();
+            });
+        }
+        for (int i = names.length; i % columns != 0; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, -1, 1));
+        return chips;
+    }
+    private void buildPvpPanel(LinearLayout panel, SharedPreferences prefs) {
+        panel.removeAllViews();
+        panel.addView(label(prefs.getString("pvp_last", "还没有记录禁用角色"), 15, Theme.TEXT, 8));
+        Theme.ChalkButton scan = button(pvpScanning ? "停止识别" : "识别禁用角色（也可双击悬浮球）", true);
+        panel.addView(scan);
+        scan.setOnClickListener(v -> { closeQuickSettings(); togglePvpScan(); });
+        Theme.ChalkButton manual = button("手动选择禁用角色和地图", true);
+        panel.addView(manual);
+        manual.setOnClickListener(v -> { closeQuickSettings(); showPvpEntry(); });
+        final PvpRoster roster;
+        try { roster = PvpRoster.get(this); }
+        catch (Exception error) { panel.addView(label("角色名单读取失败", 13, Theme.MUTED, 8)); return; }
+        panel.addView(label("我的段位", 13, Theme.MUTED, 12));
+        final java.util.List<TextView> ranks = new java.util.ArrayList<>();
+        ranks.addAll(pvpChipGrid(panel, roster.ranks, java.util.Collections.singletonList(prefs.getString("pvp_rank", "")), 4, true, () -> {
+            String chosen = "";
+            for (TextView chip : ranks) if (chip.isSelected()) chosen = (String) chip.getTag();
+            prefs.edit().putString("pvp_rank", chosen).apply();
+        }));
+    }
+
+    // ---- PVP: what floats over the game --------------------------------
+    // One small window at the top left, above the game's own ban cards, whose
+    // content follows the flow: a "by hand" button while scanning, then the
+    // banned portraits with a tick and a cross, then the hunters as meters.
+    // Pictures instead of captions wherever a picture can carry it.
+    private View pvpHud, pvpEntry;
+    /** The small triangle: the player folded the hunter list away. */
+    private boolean pvpHudFolded;
+    /** What the screen gave, to tell afterwards whether the player changed it; null when nothing was read. */
+    private java.util.List<String> pvpReadBans;
+    private String pvpReadMap;
+    /** True from the moment bans are read until the player ticks or crosses them. */
+    private boolean pvpAwaiting;
+    private static final int PVP_ROWS = 5;
+    private void closePvpHud() { if (pvpHud != null) { windows.removeView(pvpHud); pvpHud = null; } }
+    private void closePvpEntry() { if (pvpEntry != null) { windows.removeView(pvpEntry); pvpEntry = null; } }
+    private android.graphics.drawable.GradientDrawable pvpPlate(int fill, int stroke, float radiusDp) {
+        android.graphics.drawable.GradientDrawable plate = new android.graphics.drawable.GradientDrawable();
+        plate.setCornerRadius(Theme.px(this, radiusDp));
+        if (fill != 0) plate.setColor(fill);
+        if (stroke != 0) plate.setStroke(Math.max(2, Theme.px(this, 1.5f)), stroke);
+        return plate;
+    }
+    private void showPvpHud() {
+        closePvpHud();
+        // While the screen is still being read nothing sits on the game's ban cards;
+        // the portraits come once the read has settled. (Picking by hand: tap the ball.)
+        if (destroyed || !pvp || pvpScanning || !pvpAwaiting || pvpBans == null) return;
+        View content;
+        try { content = pvpBanStrip(); }
+        catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP overlay failed", error); return; }
+        WindowManager.LayoutParams p = params(-2, -2, true);
+        p.x = Theme.px(this, 28); p.y = Theme.px(this, 4);
+        pvpHud = content;
+        windows.addView(content, p);
+    }
+    // The hunter list is a window of its own: it belongs to the lobby already
+    // confirmed, and stays up - owed an answer - while the next lobby is read.
+    private View pvpBars;
+    private WindowManager.LayoutParams pvpBarsParams;
+    /** The list was put aside once and is being asked again: it can no longer be folded. */
+    private boolean pvpBarsForced;
+    /** The player asked to close down while an answer was owed: close once it is given or given up. */
+    private boolean pvpStopAfterAnswer;
+    private void closePvpBars() {
+        if (pvpBars != null) { windows.removeView(pvpBars); pvpBars = null; }
+    }
+    /** The player closed the list without answering: that lobby is not reported. A read in progress goes on. */
+    private void abandonPvpAnswer() {
+        pvpAsked = null; pvpPrediction = null; pvpRequest++; pvpBarsForced = false;
+        closePvpPicker(); closePvpBars();
+        if (pvpStopAfterAnswer) { pvpStopAfterAnswer = false; stopRecognition(); }
+    }
+    /** The hunter list hangs this far below the top edge of the screen. */
+    private static final int PVP_BARS_TOP_DP = 4;
+    private void movePvpBars(int dx, int dy) {
+        if (pvpBars == null) return;
+        WindowManager.LayoutParams p = pvpBarsParams;
+        p.x = Math.max(0, Math.min(width - pvpBars.getWidth(), p.x + dx));
+        // It lives on the top edge, folded or open: a drag slides it along, never down.
+        windows.updateViewLayout(pvpBars, p);
+        getSharedPreferences("mobile", 0).edit().putFloat("pvp_bars_x", p.x / (float) width).apply();
+    }
+    /**
+     * Shows the hunter list on the top edge, as far along it as the player
+     * left it (by default beside the match timer, left of centre), folded or
+     * not. `clearOfRead`: a read
+     * is running, so the list starts to the right of the game's ban cards
+     * rather than on them; the player may still drag it anywhere.
+     */
+    private void showPvpBars(boolean clearOfRead) {
+        closePvpBars();
+        if (destroyed || !pvp || pvpAsked == null || pvpPrediction == null) return;
+        View content;
+        try { content = pvpHunterBars(); }
+        catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP overlay failed", error); return; }
+        SharedPreferences prefs = getSharedPreferences("mobile", 0);
+        WindowManager.LayoutParams p = params(-2, -2, true);
+        p.x = Math.round(prefs.getFloat("pvp_bars_x", .26f) * width); p.y = Theme.px(this, PVP_BARS_TOP_DP);
+        int room = Theme.px(this, 250);
+        if (clearOfRead) {
+            int[] cards = PvpBanText.banRegion(width, height);
+            if (p.x < cards[2] && p.x + room > cards[0] && p.y < cards[3]) p.x = cards[2] + Theme.px(this, 6);
+        }
+        p.x = Math.max(0, Math.min(width - room, p.x)); pvpBars = content; pvpBarsParams = p;
+        windows.addView(content, p);
+    }
+    /** Pressed views dim, so a tap is seen to land; the click itself also ticks. */
+    private void pvpTap(final View view, final Runnable action) {
+        view.setClickable(true);
+        view.setOnTouchListener((v, event) -> {
+            int what = event.getActionMasked();
+            if (what == MotionEvent.ACTION_DOWN) v.setAlpha(.55f);
+            else if (what == MotionEvent.ACTION_UP || what == MotionEvent.ACTION_CANCEL) v.setAlpha(1f);
+            return false;
+        });
+        // These two tick by themselves when clicked.
+        view.setOnClickListener(v -> { if (!(v instanceof HeaderClose) && !(v instanceof PvpGlyph)) TouchFeedback.click(v); action.run(); });
+    }
+    /**
+     * What was read: one portrait per ban slot of this rank (unused slots stay
+     * empty frames), the map centred under them. Each portrait, and the map,
+     * is tapped on its own to correct just that one. Tick to go on, cross to
+     * drop it.
+     */
+    private View pvpBanStrip() throws Exception {
+        PvpRoster roster = PvpRoster.get(this);
+        LinearLayout strip = new LinearLayout(this); strip.setGravity(Gravity.CENTER_VERTICAL);
+        strip.setBackground(pvpPlate(0xb3101a24, 0, 10));
+        int inner = Theme.px(this, 5); strip.setPadding(inner, inner, inner, inner);
+        LinearLayout read = new LinearLayout(this); read.setOrientation(LinearLayout.VERTICAL); read.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout faces = new LinearLayout(this); faces.setGravity(Gravity.CENTER_VERTICAL);
+        String rank = getSharedPreferences("mobile", 0).getString("pvp_rank", "");
+        int slots = Math.max(roster.banLimit(rank.isEmpty() ? null : rank), pvpBans.size()), size = Theme.px(this, 72);
+        for (int i = 0; i < slots; i++) {
+            final int at = i;
+            LinearLayout.LayoutParams slot = new LinearLayout.LayoutParams(size, size);
+            if (i > 0) slot.leftMargin = Theme.px(this, 4);
+            String ban = i < pvpBans.size() ? pvpBans.get(i) : null;
+            Bitmap face = ban == null ? null : roster.portrait(ban);
+            View view;
+            if (face != null) {
+                ImageView portrait = new ImageView(this); portrait.setImageBitmap(face);
+                view = portrait;
+            } else {
+                // An unused slot is an empty frame; a name without a bundled portrait is written in one.
+                TextView frame = label(ban == null ? "" : PvpBanText.plain(ban), 12, Theme.TEXT, 0);
+                frame.setGravity(Gravity.CENTER); frame.setBackground(pvpPlate(0x14ffffff, 0x55ffffff, 8));
+                view = frame;
+            }
+            view.setContentDescription((ban == null ? "空的禁用位" : PvpBanText.plain(ban)) + "，点击修改");
+            pvpTap(view, () -> showPvpSlot(at));
+            faces.addView(view, slot);
+        }
+        read.addView(faces, new LinearLayout.LayoutParams(-2, -2));
+        TextView map = label(pvpMap == null ? "—" : pvpMap, 13, pvpMap == null ? Theme.MUTED : Theme.TITLE, 0);
+        map.setSingleLine(true); map.setGravity(Gravity.CENTER); map.setMinWidth(size); map.setMinHeight(Theme.px(this, 24));
+        map.setContentDescription("地图 " + (pvpMap == null ? "留空" : pvpMap) + "，点击修改");
+        pvpTap(map, () -> showPvpSlot(-1));
+        read.addView(map, new LinearLayout.LayoutParams(-1, -2));
+        strip.addView(read, new LinearLayout.LayoutParams(-2, -2));
+        // Side by side along the bottom, not stacked: some phones' game modes swallow taps
+        // in a band along the top edge of the screen, and a tick up there could not be pressed.
+        LinearLayout verdict = new LinearLayout(this);
+        PvpGlyph yes = new PvpGlyph(this, PvpGlyph.CHECK, "确认禁用角色和地图"), no = new PvpGlyph(this, PvpGlyph.CROSS, "取消");
+        int button = Theme.px(this, 44);
+        LinearLayout.LayoutParams second = new LinearLayout.LayoutParams(button, button); second.leftMargin = Theme.px(this, 6);
+        verdict.addView(yes, new LinearLayout.LayoutParams(button, button)); verdict.addView(no, second);
+        LinearLayout.LayoutParams aside = new LinearLayout.LayoutParams(-2, -2); aside.leftMargin = Theme.px(this, 8); aside.gravity = Gravity.BOTTOM;
+        strip.addView(verdict, aside);
+        pvpTap(yes, this::confirmPvp);
+        pvpTap(no, this::resetPvp);
+        return strip;
+    }
+    /**
+     * Corrects one thing on the strip: ban slot `slot`, or the map when it is
+     * negative. One tap picks and closes; "left blank" empties just that slot.
+     */
+    private void showPvpSlot(final int slot) {
+        if (destroyed || pvpBans == null) return;
+        closePvpEntry();
+        final PvpRoster roster;
+        try { roster = PvpRoster.get(this); } catch (Exception error) { return; }
+        final String blank = "留空";
+        final boolean forMap = slot < 0;
+        int pad = Theme.px(this, 12);
+        final Theme.MistPanel shell = new Theme.MistPanel(this);
+        shell.setPadding(0, 0, 0, 0);
+        DraggableHeader header = new DraggableHeader(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(pad, 0, pad, 0);
+        header.addView(label(forMap ? "地图" : "禁用角色", 15, Theme.TITLE, 0), new LinearLayout.LayoutParams(0, -2, 1));
+        HeaderClose dismiss = new HeaderClose(this);
+        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 40), Theme.px(this, 40)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
+        dismiss.setOnClickListener(v -> closePvpEntry());
+        LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(pad, 0, pad, pad);
+        if (forMap) {
+            String[] mapNames = new String[roster.maps.length + 1];
+            mapNames[0] = blank; System.arraycopy(roster.maps, 0, mapNames, 1, roster.maps.length);
+            final java.util.List<TextView> chips = new java.util.ArrayList<>();
+            chips.addAll(pvpChipGrid(body, mapNames, java.util.Collections.singletonList(pvpMap == null ? blank : pvpMap), 5, true, () -> {
+                String map = null;
+                for (TextView chip : chips) if (chip.isSelected() && !blank.equals(chip.getTag())) map = (String) chip.getTag();
+                pvpMap = map;
+                closePvpEntry(); showPvpHud();
+            }));
+        } else {
+            final String current = slot < pvpBans.size() ? pvpBans.get(slot) : null;
+            final int columns = 8;
+            LinearLayout row = null;
+            // Cell 0 is "left blank"; the survivors follow.
+            for (int i = 0; i <= roster.survivors.length; i++) {
+                final String survivor = i == 0 ? null : roster.survivors[i - 1];
+                if (i % columns == 0) { row = new LinearLayout(this); body.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+                LinearLayout cell = new LinearLayout(this); cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER_HORIZONTAL);
+                int inner = Theme.px(this, 4); cell.setPadding(inner, inner, inner, inner);
+                int size = Theme.px(this, 42);
+                Bitmap face = survivor == null ? null : roster.portrait(survivor);
+                if (face != null) {
+                    ImageView portrait = new ImageView(this); portrait.setImageBitmap(face);
+                    cell.addView(portrait, new LinearLayout.LayoutParams(size, size));
+                } else {
+                    View frame = new View(this); frame.setBackground(pvpPlate(0x14ffffff, 0x55ffffff, 8));
+                    cell.addView(frame, new LinearLayout.LayoutParams(size, size));
+                }
+                TextView name = label(survivor == null ? blank : PvpBanText.plain(survivor), 10, Theme.TEXT, 0);
+                name.setGravity(Gravity.CENTER); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                cell.addView(name, new LinearLayout.LayoutParams(-1, -2));
+                cell.setContentDescription(survivor == null ? blank : PvpBanText.plain(survivor));
+                row.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+                pvpMark(cell, survivor == null ? current == null : survivor.equals(current));
+                // A survivor already in another slot cannot be banned twice.
+                if (survivor != null && !survivor.equals(current) && pvpBans.contains(survivor)) { cell.setAlpha(.3f); continue; }
+                pvpTap(cell, () -> {
+                    java.util.List<String> bans = new java.util.ArrayList<>(pvpBans);
+                    if (survivor == null) { if (slot < bans.size()) bans.remove(slot); }
+                    else if (slot < bans.size()) bans.set(slot, survivor);
+                    else bans.add(survivor);
+                    pvpBans = bans;
+                    closePvpEntry(); showPvpHud();
+                });
+            }
+            for (int i = roster.survivors.length + 1; i % columns != 0; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        }
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        shell.addView(scroll, new LinearLayout.LayoutParams(-1, forMap ? -2 : 0, forMap ? 0 : 1));
+        final WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 520)), forMap ? -2 : Math.min(height - pad * 2, Theme.px(this, 330)), true);
+        final int tall = forMap ? Theme.px(this, 150) : p.height;
+        p.x = (width - p.width) / 2; p.y = (height - tall) / 2;
+        header.mover = (dx, dy) -> { p.x = Math.max(0, Math.min(width - p.width, p.x + dx)); p.y = Math.max(0, Math.min(height - tall, p.y + dy)); windows.updateViewLayout(shell, p); };
+        pvpEntry = shell;
+        windows.addView(shell, p);
+        shell.setAlpha(0f);
+        shell.animate().alpha(1f).setDuration(150).start();
+    }
+    /**
+     * The hunters as meters, most likely first: the five the server thinks
+     * most likely, or - when the server says nothing usable - every hunter's
+     * pick rate at the player's rank. Tapping a row frames it and turns the button into
+     * "confirm"; with nothing framed the button opens the full picker.
+     *
+     * Answering is what the list is for, so putting it aside is the easy
+     * gesture and dropping it the deliberate one: the gold triangle on the
+     * bottom edge folds it to a short plain bar, while the cross is small,
+     * quiet, and only there when the list is open. Asked a second time
+     * (pvpBarsForced) there is no folding: answer, or give it up.
+     * The top edge and the folded bar drag the window.
+     */
+    private View pvpHunterBars() throws Exception {
+        PvpRoster roster = PvpRoster.get(this);
+        final PvpClient.Prediction prediction = pvpPrediction;
+        java.util.List<PvpRanking.Guess> rows = PvpRanking.leading(prediction.hunters, prediction.defaults ? 0 : PVP_ROWS);
+        // Asked a second time (a new read, or closing down): answer or give it up, no putting it aside again.
+        final boolean forced = pvpBarsForced;
+        final LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setGravity(Gravity.CENTER_HORIZONTAL);
+        box.setBackground(pvpPlate(0xb3101a24, 0, 10));
+        final int inner = Theme.px(this, 5), wide = Theme.px(this, 236);
+        // Folded: half as long, and thinner.
+        final int[] openBar = {wide, Theme.px(this, 30)}, foldedBar = {wide / 2, Theme.px(this, 18)};
+        final LinearLayout open = new LinearLayout(this); open.setOrientation(LinearLayout.VERTICAL);
+        final Theme.ChalkButton action = button("手动选择", true);
+        final View[] chosen = new View[1];
+        DraggableHeader top = new DraggableHeader(this); top.setGravity(Gravity.CENTER_VERTICAL);
+        top.mover = this::movePvpBars;
+        TextView caption = label(prediction.defaults ? "出场率" : "本局监管者", 10, Theme.MUTED, 0);
+        caption.setPadding(Theme.px(this, 4), 0, 0, 0);
+        top.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
+        // The cross sits at the bottom beside the button, clear of the top edge (see pvpBanStrip)
+        // and of this header, where a finger that slides a little starts a drag instead of a tap.
+        PvpGlyph close = new PvpGlyph(this, PvpGlyph.CLOSE, "放弃提交");
+        pvpTap(close, this::abandonPvpAnswer);
+        open.addView(top, new LinearLayout.LayoutParams(wide, Theme.px(this, 24)));
+        LinearLayout lines = new LinearLayout(this); lines.setOrientation(LinearLayout.VERTICAL);
+        // Drawn against the leader, so a handful of small numbers still differ.
+        double full = rows.isEmpty() ? 1 : rows.get(0).probability;
+        int rowHeight = Theme.px(this, 40);
+        for (final PvpRanking.Guess guess : rows) {
+            final LinearLayout row = new LinearLayout(this); row.setGravity(Gravity.CENTER_VERTICAL);
+            row.setPadding(Theme.px(this, 4), 0, Theme.px(this, 6), 0);
+            ImageView portrait = new ImageView(this);
+            Bitmap face = roster.portrait(guess.name);
+            if (face != null) portrait.setImageBitmap(face);
+            row.addView(portrait, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
+            LinearLayout.LayoutParams meter = new LinearLayout.LayoutParams(0, Theme.px(this, 8), 1);
+            meter.leftMargin = Theme.px(this, 8);
+            row.addView(new PvpBar(this, (float) (guess.probability / full)), meter);
+            TextView share = label(PvpRanking.percent(guess.probability), 13, Theme.TITLE, 0);
+            share.setGravity(Gravity.RIGHT); share.setSingleLine(true);
+            row.addView(share, new LinearLayout.LayoutParams(Theme.px(this, 42), -2));
+            row.setTag(guess.name);
+            row.setContentDescription(PvpBanText.plain(guess.name) + " " + PvpRanking.percent(guess.probability));
+            pvpTap(row, () -> {
+                View before = chosen[0];
+                if (before != null) before.setBackground(null);
+                chosen[0] = before == row ? null : row;
+                if (chosen[0] != null) row.setBackground(pvpPlate(0x26dcb96c, 0xffdcb96c, 6));
+                action.setText(chosen[0] == null ? "手动选择" : "确认");
+            });
+            lines.addView(row, new LinearLayout.LayoutParams(wide, rowHeight));
+        }
+        if (rows.size() > PVP_ROWS) {
+            ScrollView scroll = new ScrollView(this); scroll.setVerticalScrollBarEnabled(false);
+            scroll.addView(lines, new ScrollView.LayoutParams(wide, -2));
+            open.addView(scroll, new LinearLayout.LayoutParams(wide, rowHeight * PVP_ROWS));
+        } else open.addView(lines, new LinearLayout.LayoutParams(wide, -2));
+        LinearLayout.LayoutParams below = new LinearLayout.LayoutParams(wide, Theme.px(this, 46));
+        below.topMargin = rows.isEmpty() ? 0 : Theme.px(this, 2);
+        LinearLayout foot = new LinearLayout(this); foot.setGravity(Gravity.CENTER_VERTICAL);
+        foot.addView(action, new LinearLayout.LayoutParams(0, -1, 1));
+        foot.addView(close, new LinearLayout.LayoutParams(Theme.px(this, 44), -1));
+        open.addView(foot, below);
+        action.setOnClickListener(v -> { if (chosen[0] != null) reportPvpHunter((String) chosen[0].getTag()); else showPvpPicker(); });
+        box.addView(open, new LinearLayout.LayoutParams(wide, -2));
+        final PvpGlyph fold = new PvpGlyph(this, PvpGlyph.UP, "收起或展开");
+        if (!forced) box.addView(fold, new LinearLayout.LayoutParams(openBar[0], openBar[1]));
+        final Runnable dress = () -> {
+            boolean folded = pvpHudFolded && !forced;
+            fold.kind(folded ? PvpGlyph.DOWN : PvpGlyph.UP);
+            // Folded it is a plain small bar, nothing calling for attention; open, the way to fold is the gold one.
+            fold.tint(folded ? Theme.TEXT : 0xffdcb96c);
+            open.setVisibility(folded ? View.GONE : View.VISIBLE);
+            box.setPadding(folded ? 0 : inner, folded ? 0 : inner, folded ? 0 : inner, forced ? inner : 0);
+            int[] bar = folded ? foldedBar : openBar;
+            fold.setLayoutParams(new LinearLayout.LayoutParams(bar[0], bar[1]));
+        };
+        dress.run();
+        // The bar is both the fold switch (a tap) and a handle (a drag).
+        fold.setOnTouchListener(new View.OnTouchListener() {
+            private float downX, downY; private int startX; private boolean dragging;
+            @Override public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX = event.getRawX(); downY = event.getRawY(); dragging = false;
+                        startX = pvpBarsParams == null ? 0 : pvpBarsParams.x;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        if (!dragging && Math.hypot(event.getRawX() - downX, event.getRawY() - downY) > ViewConfiguration.get(CaptureService.this).getScaledTouchSlop()) dragging = true;
+                        // Measured from where the finger went down, so slow drags lose nothing to rounding.
+                        if (dragging && pvpBarsParams != null) movePvpBars(startX + Math.round(event.getRawX() - downX) - pvpBarsParams.x, 0);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (!dragging) { TouchFeedback.click(v); pvpHudFolded = !pvpHudFolded; dress.run(); }
+                        return true;
+                    default:
+                        return true;
+                }
+            }
+        });
+        return box;
+    }
+    private void pvpMark(View cell, boolean on) {
+        cell.setSelected(on);
+        cell.setBackground(on ? pvpPlate(0x33ffffff, 0xccffffff, 6) : null);
+    }
+    /**
+     * The banned survivors and the map, picked by hand: replaces whatever was
+     * read and goes straight on. Both may be left blank - a hunter need not
+     * use every slot, and the map line is not always readable.
+     */
+    private void showPvpEntry() {
+        if (destroyed) return;
+        closePvpEntry();
+        if (quickSettings != null) closeQuickSettings();
+        final PvpRoster roster;
+        try { roster = PvpRoster.get(this); } catch (Exception error) { return; }
+        final String blank = "留空";
+        int pad = Theme.px(this, 12);
+        final boolean duringRead = pvpScanning;
+        int boxW = Math.min(width - pad * 2, Theme.px(this, 520)), boxH = Math.min(height - pad * 2, Theme.px(this, 350));
+        int boxX = (width - boxW) / 2, boxY = (height - boxH) / 2;
+        if (duringRead) {
+            // Right of the ban cards and above the map line, so the read can still succeed behind it.
+            int left = Math.round(height * 1.22f), room = width - pad - left, floor = Math.round(height * .78f);
+            if (room >= Theme.px(this, 300)) { boxX = left; boxW = room; boxY = pad / 2; boxH = Math.min(boxH, floor - boxY); }
+        }
+        final Theme.MistPanel shell = new Theme.MistPanel(this);
+        shell.setPadding(0, 0, 0, 0);
+        DraggableHeader header = new DraggableHeader(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(pad, 0, pad, 0);
+        header.addView(label("禁用角色 · 地图", 15, Theme.TITLE, 0), new LinearLayout.LayoutParams(0, -2, 1));
+        HeaderClose dismiss = new HeaderClose(this);
+        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 40), Theme.px(this, 40)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
+        // Opened in place of the read: the cross gives the lobby up, back to waiting.
+        dismiss.setOnClickListener(v -> { if (duringRead) resetPvp(); else closePvpEntry(); });
+
+        LinearLayout body = new LinearLayout(this); body.setOrientation(LinearLayout.VERTICAL);
+        body.setPadding(pad, 0, pad, 0);
+        final java.util.List<View> faces = new java.util.ArrayList<>();
+        final View[] none = new View[1];
+        final int columns = boxW < Theme.px(this, 420) ? 6 : 8, most = roster.mostBans;
+        LinearLayout row = null;
+        // Cell 0 is "left blank"; the survivors follow.
+        for (int i = 0; i <= roster.survivors.length; i++) {
+            final String survivor = i == 0 ? null : roster.survivors[i - 1];
+            if (i % columns == 0) { row = new LinearLayout(this); body.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+            final LinearLayout cell = new LinearLayout(this); cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            int inner = Theme.px(this, 4); cell.setPadding(inner, inner, inner, inner);
+            int size = Theme.px(this, 42);
+            Bitmap face = survivor == null ? null : roster.portrait(survivor);
+            if (face != null) {
+                ImageView portrait = new ImageView(this); portrait.setImageBitmap(face);
+                cell.addView(portrait, new LinearLayout.LayoutParams(size, size));
+            } else {
+                View frame = new View(this); frame.setBackground(pvpPlate(0x14ffffff, 0x55ffffff, 8));
+                cell.addView(frame, new LinearLayout.LayoutParams(size, size));
+            }
+            TextView name = label(survivor == null ? blank : PvpBanText.plain(survivor), 10, Theme.TEXT, 0);
+            name.setGravity(Gravity.CENTER); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            cell.addView(name, new LinearLayout.LayoutParams(-1, -2));
+            cell.setContentDescription(survivor == null ? blank : PvpBanText.plain(survivor));
+            row.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+            if (survivor == null) {
+                none[0] = cell;
+                pvpTap(cell, () -> { for (View other : faces) pvpMark(other, false); pvpMark(cell, true); });
+                continue;
+            }
+            cell.setTag(survivor); faces.add(cell);
+            pvpMark(cell, pvpBans != null && pvpBans.contains(survivor));
+            pvpTap(cell, () -> {
+                int marked = 0;
+                for (View other : faces) if (other.isSelected()) marked++;
+                if (!cell.isSelected() && marked >= most) { Toast.makeText(this, "最多禁用 " + most + " 名求生者", Toast.LENGTH_SHORT).show(); return; }
+                pvpMark(cell, !cell.isSelected());
+                marked += cell.isSelected() ? 1 : -1;
+                pvpMark(none[0], marked == 0);
+            });
+        }
+        for (int i = roster.survivors.length + 1; i % columns != 0; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        pvpMark(none[0], pvpBans == null || pvpBans.isEmpty());
+        body.addView(label("地图", 12, Theme.MUTED, 8));
+        String[] mapNames = new String[roster.maps.length + 1];
+        mapNames[0] = blank; System.arraycopy(roster.maps, 0, mapNames, 1, roster.maps.length);
+        final java.util.List<TextView> maps = pvpChipGrid(body, mapNames, java.util.Collections.singletonList(pvpMap == null ? blank : pvpMap), 5, true, null);
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(body, new ScrollView.LayoutParams(-1, -2));
+        shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        Theme.ChalkButton save = button("确认", true);
+        LinearLayout.LayoutParams saveParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 46));
+        saveParams.setMargins(pad, Theme.px(this, 8), pad, pad);
+        shell.addView(save, saveParams);
+        save.setOnClickListener(v -> {
+            java.util.List<String> bans = new java.util.ArrayList<>();
+            for (View cell : faces) if (cell.isSelected()) bans.add((String) cell.getTag());
+            String map = null;
+            for (TextView chip : maps) if (chip.isSelected() && !blank.equals(chip.getTag())) map = (String) chip.getTag();
+            // What the player picked replaces whatever a running scan had.
+            if (pvpScanning) { pvpFound = false; stopPvpScan(null); }
+            pvpBans = bans; pvpMap = map;
+            closePvpEntry();
+            publishPvp(bans, map, "手动");
+            requestPvpPrediction();
+        });
+
+        final WindowManager.LayoutParams p = params(boxW, boxH, true);
+        p.x = boxX; p.y = boxY;
+        header.mover = (dx, dy) -> { p.x = Math.max(0, Math.min(width - p.width, p.x + dx)); p.y = Math.max(0, Math.min(height - p.height, p.y + dy)); windows.updateViewLayout(shell, p); };
+        pvpEntry = shell;
+        windows.addView(shell, p);
+        shell.setAlpha(0f);
+        shell.animate().alpha(1f).setDuration(150).start();
+    }
+    /** The player's answer, from a framed row or from the full picker: send it and close this lobby. */
+    @SuppressWarnings("unchecked")
+    private void reportPvpHunter(final String hunter) {
+        if (pvpAsked == null) return;
+        final PvpClient.Prediction prediction = pvpPrediction;
+        final String rank = (String) pvpAsked[0], map = (String) pvpAsked[1];
+        final java.util.List<String> bans = (java.util.List<String>) pvpAsked[2];
+        final double recognized = (Double) pvpAsked[3];
+        pvpAsked = null; pvpPrediction = null;
+        final boolean thenStop = pvpStopAfterAnswer;
+        pvpStopAfterAnswer = false; pvpBarsForced = false;
+        closePvpPicker(); closePvpBars();
+        badgeText = ""; setStatus(S_MATCHED, "已记录");
+        if (pvpScanning) state = S_MATCHING;
+        compute.execute(() -> {
+            try {
+                boolean sent = PvpClient.report(this, prediction, rank.isEmpty() ? null : rank, map, bans, recognized, hunter);
+                android.util.Log.i("CrypticNotes", "PVP report: " + PvpBanText.plain(hunter) + (sent ? " sent" : " kept for later"));
+            } catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP report failed", error); }
+            // Closing down waited for this answer; it is on its way (or queued) now.
+            if (thenStop) main.post(() -> { if (!destroyed) stopRecognition(); });
+        });
+    }
+
+    // ---- PVP: ask the server, show the hunters, send back which one it was ----
+    /** {rank, map, bans} of the lobby the server was last asked about; null before the first one. */
+    private Object[] pvpAsked;
+    private PvpClient.Prediction pvpPrediction;
+    private int pvpRequest;
+    private View pvpPicker;
+    @SuppressWarnings("unchecked")
+    private void requestPvpPrediction() {
+        if (pvpBans == null) return;
+        final String rank = getSharedPreferences("mobile", 0).getString("pvp_rank", "");
+        final String map = pvpMap;
+        final java.util.List<String> bans = new java.util.ArrayList<>(pvpBans);
+        final int ticket = ++pvpRequest;
+        // How much of this the screen gave, against the ban slots of this rank plus the map.
+        int slots = 3;
+        try { slots = PvpRoster.get(this).banLimit(rank.isEmpty() ? null : rank); } catch (Exception ignored) {}
+        final double recognized = PvpBanText.recognized(pvpReadBans, pvpReadMap, bans, map, slots);
+        pvpAsked = new Object[]{rank, map, bans, recognized}; pvpPrediction = null;
+        pvpAwaiting = false; pvpBarsForced = false; pvpStopAfterAnswer = false;
+        closePvpPicker(); closePvpBars(); showPvpHud();
+        compute.execute(() -> {
+            PvpClient.Prediction prediction;
+            try { prediction = PvpClient.predict(this, rank.isEmpty() ? null : rank, map, bans, recognized); }
+            catch (Exception error) { android.util.Log.w("CrypticNotes", "PVP prediction failed", error); return; }
+            main.post(() -> {
+                if (destroyed || ticket != pvpRequest) return;
+                pvpPrediction = prediction;
+                android.util.Log.i("CrypticNotes", "PVP prediction: " + (prediction.offline != null ? prediction.offline : "server, first=" + prediction.hunters.get(0).name) + ", recognized=" + recognized);
+                showPvpBars(pvpScanning);
+            });
+        });
+    }
+    private void closePvpPicker() { if (pvpPicker != null) { windows.removeView(pvpPicker); pvpPicker = null; } }
+    /**
+     * Every hunter, most likely first, for when the one actually met is not
+     * among the meters. Same frame as the in-game panel: a mist panel with a
+     * draggable header and a cross that goes back to the meters.
+     */
+    @SuppressWarnings("unchecked")
+    private void showPvpPicker() {
+        if (destroyed || pvpPrediction == null || pvpAsked == null) return;
+        closePvpPicker();
+        if (quickSettings != null) closeQuickSettings();
+        final PvpRoster roster;
+        try { roster = PvpRoster.get(this); } catch (Exception error) { return; }
+        final PvpClient.Prediction prediction = pvpPrediction;
+        final String rank = (String) pvpAsked[0], map = (String) pvpAsked[1];
+        final java.util.List<String> bans = (java.util.List<String>) pvpAsked[2];
+        int pad = Theme.px(this, 14);
+        Theme.MistPanel shell = new Theme.MistPanel(this);
+        shell.setPadding(0, 0, 0, 0);
+        DraggableHeader header = new DraggableHeader(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.setPadding(pad, 0, pad, 0);
+        header.addView(label("本局监管者是谁？", 16, Theme.TITLE, 0), new LinearLayout.LayoutParams(0, -2, 1));
+        HeaderClose dismiss = new HeaderClose(this);
+        header.addView(dismiss, new LinearLayout.LayoutParams(Theme.px(this, 34), Theme.px(this, 34)));
+        shell.addView(header, new LinearLayout.LayoutParams(-1, Theme.px(this, 44)));
+        dismiss.setOnClickListener(v -> closePvpPicker());
+
+        StringBuilder about = new StringBuilder(rank.isEmpty() ? "未选段位" : rank);
+        if (map != null) about.append(" · ").append(map);
+        about.append(" · 禁用");
+        for (String ban : bans) about.append(' ').append(PvpBanText.plain(ban));
+        if (prediction.offline != null) about.append("\n").append(prediction.offline);
+        TextView summary = label(about.toString(), 12, Theme.MUTED, 0);
+        summary.setPadding(pad, 0, pad, Theme.px(this, 6));
+        shell.addView(summary);
+
+        final int columns = 6;
+        LinearLayout grid = new LinearLayout(this); grid.setOrientation(LinearLayout.VERTICAL);
+        grid.setPadding(pad - Theme.px(this, 3), 0, pad - Theme.px(this, 3), 0);
+        final Theme.ChalkButton confirm = button("先点选一位监管者", true);
+        confirm.setEnabled(false); confirm.setAlpha(.5f);
+        final View[] chosen = new View[1];
+        LinearLayout row = null;
+        // Picking by hand: in the order the hunters came out in, where the player expects each one.
+        final java.util.List<PvpRanking.Guess> listed = PvpRanking.byRoster(roster.hunters, prediction.hunters);
+        for (int i = 0; i < listed.size(); i++) {
+            final PvpRanking.Guess guess = listed.get(i);
+            if (i % columns == 0) { row = new LinearLayout(this); grid.addView(row, new LinearLayout.LayoutParams(-1, -2)); }
+            LinearLayout cell = new LinearLayout(this); cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            int inner = Theme.px(this, 4); cell.setPadding(inner, inner, inner, inner);
+            ImageView portrait = new ImageView(this);
+            Bitmap face = roster.portrait(guess.name);
+            if (face != null) portrait.setImageBitmap(face);
+            cell.addView(portrait, new LinearLayout.LayoutParams(Theme.px(this, 44), Theme.px(this, 44)));
+            TextView name = label(PvpBanText.plain(guess.name), 11, Theme.TEXT, 0);
+            name.setGravity(Gravity.CENTER); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            cell.addView(name, new LinearLayout.LayoutParams(-1, -2));
+            String percent = PvpRanking.percent(guess.probability);
+            if (!percent.isEmpty()) {
+                TextView chance = label(percent, 10, Theme.MUTED, 0);
+                chance.setGravity(Gravity.CENTER);
+                cell.addView(chance, new LinearLayout.LayoutParams(-1, -2));
+            }
+            cell.setTag(guess.name);
+            cell.setContentDescription(PvpBanText.plain(guess.name) + (percent.isEmpty() ? "" : " " + percent));
+            pvpTap(cell, () -> {
+                if (chosen[0] != null) chosen[0].setBackground(null);
+                android.graphics.drawable.GradientDrawable mark = new android.graphics.drawable.GradientDrawable();
+                mark.setCornerRadius(Theme.px(this, 6)); mark.setColor(0x33ffffff); mark.setStroke(Theme.px(this, 1), 0xccffffff);
+                cell.setBackground(mark); chosen[0] = cell;
+                confirm.setText("确定：" + PvpBanText.plain(guess.name)); confirm.setEnabled(true); confirm.setAlpha(1f);
+            });
+            LinearLayout.LayoutParams slot = new LinearLayout.LayoutParams(0, -2, 1);
+            row.addView(cell, slot);
+        }
+        for (int i = prediction.hunters.size(); i % columns != 0; i++) row.addView(new View(this), new LinearLayout.LayoutParams(0, 1, 1));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(grid, new ScrollView.LayoutParams(-1, -2));
+        shell.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout.LayoutParams confirmParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 44));
+        confirmParams.setMargins(pad, Theme.px(this, 8), pad, pad);
+        shell.addView(confirm, confirmParams);
+        confirm.setOnClickListener(v -> {
+            if (chosen[0] == null) return;
+            reportPvpHunter((String) chosen[0].getTag());
+        });
+
+        WindowManager.LayoutParams p = params(Math.min(width - pad * 2, Theme.px(this, 430)), Math.min(height - pad * 2, Theme.px(this, 330)), true);
+        p.x = (width - p.width) / 2; p.y = (height - p.height) / 2;
+        header.mover = (dx, dy) -> { p.x = Math.max(0, Math.min(width - p.width, p.x + dx)); p.y = Math.max(0, Math.min(height - p.height, p.y + dy)); windows.updateViewLayout(shell, p); };
+        pvpPicker = shell;
+        windows.addView(shell, p);
+        shell.setAlpha(0f);
+        shell.animate().alpha(1f).setDuration(150).start();
+    }
+
+    private boolean recognitionIdle(){return !gameOnly && !pvpScanning && !MiniGameOverlayService.running && !touchCapture.awake();}
     private void updateCaptureOutput(){
         if(display==null || reader==null || recorder!=null || stoppingRecording)return;
         // While idle the low-resolution mirror, once attached, is left alone:
@@ -599,6 +1506,8 @@ public class CaptureService extends Service {
     @android.annotation.SuppressLint("StaticFieldLeak")   // a Service, not a context to leak
     static CaptureService current;
     boolean gameOnly;
+    /** PVP mode: no map matching; the ranked lobby is read for the hunter's bans. */
+    boolean pvp;
     private MediaProjection.Callback projectionCallback;
     void releaseGameCapture(){
         // The replay buffer is ours to stop; a recording the user started is not.
@@ -614,6 +1523,7 @@ public class CaptureService extends Service {
     /** The ball shows the game icon while a mini-game is hidden; redraw when that changes. */
     void refreshBadge(){if(badgeEmblem!=null)badgeEmblem.invalidate();}
     void openGame(String id){
+        if(!new MatchingModuleStore(this,"games").installed()||!new MiniGameStore(this,id).installed())return;
         if(MiniGameOverlayService.current!=null&&!id.equals(MiniGameOverlayService.activeGameId)){MiniGameOverlayService.current.switchTo(id);return;}
         gameOnly=true;generation++;clearOverlay();setSpinning(false);updateCaptureOutput();refreshTapRegion();
         // Mini-game mode does not look at the screen; the replay buffer must not either.
@@ -641,15 +1551,18 @@ public class CaptureService extends Service {
             gameOnly=true;
             if(Build.VERSION.SDK_INT>=34)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             else startForeground(1,captureNotification());
+            if(!new MatchingModuleStore(this,"games").installed()){stopSelf();return START_NOT_STICKY;}
             if(badge==null){DisplayMetrics m=new DisplayMetrics();windows.getDefaultDisplay().getRealMetrics(m);width=m.widthPixels;height=m.heightPixels;density=m.densityDpi;setupOverlay();}
             initializing=false;ready=true;setStatus(S_IDLE,"小游戏模式");
             if(launchGame!=null)openGame(launchGame);repoll(1500);return START_NOT_STICKY;
         }
         if (projection != null) {if(launchGame!=null)openGame(launchGame);return START_NOT_STICKY;}
-        gameOnly=requestedGameOnly;
+        gameOnly=requestedGameOnly;pvp=!gameOnly&&intent.getBooleanExtra("pvp",false);
         if(Build.VERSION.SDK_INT>=29)startForeground(1,captureNotification(),android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         else startForeground(1, captureNotification());
         try {
+            if(pvp&&!new MatchingModuleStore(this,"pvp").installed()){stopSelf();return START_NOT_STICKY;}
+            if(!pvp&&!new MatchingModuleStore(this,gameOnly?"games":"notes").installed()){stopSelf();return START_NOT_STICKY;}
             Intent permission = intent.getParcelableExtra("projection");
             projection = ((MediaProjectionManager) getSystemService(MEDIA_PROJECTION_SERVICE))
                     .getMediaProjection(intent.getIntExtra("result", -1), permission);
@@ -658,7 +1571,7 @@ public class CaptureService extends Service {
                 @Override public void onCapturedContentVisibilityChanged(boolean visible) {
                     capturedVisible=visible;
                     android.util.Log.i("CrypticNotes","Shared content visibility: "+visible);
-                    if(!visible){lastPauseReason="共享应用不可见";clearOverlay();if(!gameOnly)sleepRecognition();setStatus(S_IDLE,"共享应用不可见，请切回所选游戏");}
+                    if(!visible){lastPauseReason="共享应用不可见";clearOverlay();if(!gameOnly&&!pvp)sleepRecognition();setStatus(S_IDLE,"共享应用不可见，请切回所选游戏");}
                 }
                 @Override public void onCapturedContentResize(int w,int h) {
                     boolean changed=capturedWidth!=w || capturedHeight!=h;
@@ -674,6 +1587,7 @@ public class CaptureService extends Service {
                     getSharedPreferences("mobile", 0).getInt("opacity", 30)));
             if(badge==null)setupOverlay(); resizeCapture();
             if(gameOnly){initializing=false;ready=true;setStatus(S_IDLE,"小游戏模式 · 画面检测已启用");if(launchGame!=null)openGame(launchGame);repoll(0);return START_NOT_STICKY;}
+            if(pvp){initializing=false;ready=true;registerPvpTest();setStatus(S_IDLE,"双击开始识别");return START_NOT_STICKY;}
             android.util.Log.i("CrypticNotes", "Overlay attached; initialization started");
             setStatus(S_IDLE, preparationText);
             String difficulty = intent.getStringExtra("difficulty"), mode = intent.getStringExtra("mode");
@@ -685,7 +1599,7 @@ public class CaptureService extends Service {
             if(provider.equals("lianghapi"))getSharedPreferences("mobile", 0).edit().putString("difficulty", difficulty).putString("mode", mode).apply();
             compute.execute(() -> {
                 try {
-                    if(!new MatchingModuleStore(this).installed())throw new IOException("请先下载加页手记模块");
+                    if(!new MatchingModuleStore(this,provider).installed())throw new IOException("请先在地图设置下载所选地图库");
                     preparationStatus("正在加载识图引擎…");
                     MatchingModuleStore.python(this);
                     bridge = Python.getInstance().getModule("mobile_bridge");
@@ -954,6 +1868,9 @@ public class CaptureService extends Service {
         // message stays whole at the larger sizes instead of being cut off.
         stripWidth = Math.min(width - Theme.px(this, 24),
                 Math.round(Theme.px(this, BADGE_MESSAGE_DP) * scale));
+        // PVP messages run from two characters to a sentence: the bubble takes the width of its text.
+        if (pvp) stripWidth = Math.min(width - Theme.px(this, 24), ballWidth
+                + Math.round(badgeLabel.getPaint().measureText(badgeText == null ? "" : badgeText)) + Theme.px(this, Math.round(PVP_MESSAGE_DP * scale)));
     }
 
     private int ballX(SharedPreferences prefs) {
@@ -1238,7 +2155,7 @@ public class CaptureService extends Service {
                 : text.contains("直接叠图") || text.contains("楼层") ? "floor" : null;
         if (glyph == null) badgeLabel.setCompoundDrawables(null, null, null, null);
         else LineIcon.set(badgeLabel, glyph, Theme.TEXT, 14);
-        if (badgeMessage) badgeLabel.setText(text);
+        if (badgeMessage && !pvp) badgeLabel.setText(text);
         else { badgeMessage = true; bubble(true); }
         main.removeCallbacks(hideBadgeMessage);
         main.postDelayed(hideBadgeMessage, 1800);
@@ -1277,13 +2194,9 @@ public class CaptureService extends Service {
             spin = android.animation.ObjectAnimator.ofFloat(badgeEmblem, "rotation", 0f, 360f);
             spin.setDuration(1500);
             spin.setRepeatCount(android.animation.ValueAnimator.INFINITE);
-            // Three 120° turns per revolution, each easing to a short rest,
-            // like the game's own loading mark rather than a steady spinner.
-            spin.setInterpolator(t -> {
-                float segments = t * 3f; int k = (int) Math.floor(segments); float u = segments - k;
-                float eased = u < .62f ? (1f - (float) Math.cos(Math.PI * u / .62f)) / 2f : 1f;
-                return Math.min(1f, (k + eased) / 3f);
-            });
+            // One steady turn after another: stopping and starting within a
+            // revolution read as the app stuttering, not as work in progress.
+            spin.setInterpolator(new android.view.animation.LinearInterpolator());
         }
         if (!spin.isStarted()) spin.start();
     }
@@ -1305,6 +2218,15 @@ public class CaptureService extends Service {
                 game.closeSession();
                 Toast.makeText(this,"正在保存并关闭小游戏及悬浮球",Toast.LENGTH_SHORT).show();
             }else stopSelf();
+            return;
+        }
+        if (pvp && pvpAsked != null && pvpPrediction != null && !pvpStopAfterAnswer) {
+            // A lobby is still owed its hunter: ask once more, then close whichever way it is settled.
+            // (A second long press while it is up closes without it.)
+            pvpStopAfterAnswer = true; pvpBarsForced = true; pvpHudFolded = false;
+            showPvpBars(pvpScanning);
+            badgeText = ""; setStatus(S_IDLE, "请选择上局的监管者");
+            if (pvpScanning) state = S_MATCHING;
             return;
         }
         stopRecognition();
@@ -1339,7 +2261,7 @@ public class CaptureService extends Service {
     private void sample() {
         if(destroyed)return;
         if(gameOnly){if(projection!=null&&MiniGameOverlayService.running)watchMiniGameScene();repoll(1500);return;}
-        if(!ready || recognitionIdle())return;
+        if(pvp || !ready || recognitionIdle())return;
         if(touchCapture.openingExpired(SystemClock.elapsedRealtime()) && !checking){
             clearOverlay();sleepRecognition();setStatus(S_IDLE,"未检测到地图，点击地图区域可重试");return;
         }
@@ -1470,7 +2392,7 @@ public class CaptureService extends Service {
 
     private void capture() {
         if(recognitionIdle())return;
-        if(gameOnly||!new MatchingModuleStore(this).installed())return;
+        if(gameOnly||pvp||!new MatchingModuleStore(this).installed())return;
         if (destroyed) return;
         if(MiniGameOverlayService.running){clearOverlay();setSpinning(false);repoll(500);return;}
         if (checking) { repoll(100); return; }
@@ -1493,6 +2415,7 @@ public class CaptureService extends Service {
         }
         // blink() guaranteed the layer is down, so this grab is a clean frame.
         // Nothing here may put it back up before the grab happens.
+        final long captureStartedAt = SystemClock.elapsedRealtime();
         Bitmap bitmap = grab();
         if (bitmap == null) { badge.setVisibility(View.VISIBLE); repoll(200); return; }
 
@@ -1527,12 +2450,14 @@ public class CaptureService extends Service {
         try {
             inspect.execute(() -> {
                 int viewedFloor=0;
+                long floorReadStarted=SystemClock.elapsedRealtime();
                 if(!verifyOnly){
                     try {
                         RawFrame header=encodeFloorHeader(bitmap);
                         if(header!=null)viewedFloor=bridge.callAttr("read_floor_header",header.bytes,sourceWidth,sourceHeight,header.width,header.height,header.stride).toInt();
                     }catch(Exception error){android.util.Log.w("CrypticNotes","Floor header reading failed",error);}
                 }
+                long nativeFloorMs=SystemClock.elapsedRealtime()-floorReadStarted;
                 if(captureSerial!=matchRequests.get()){
                     bitmap.recycle();main.post(()->{checking=false;if(!destroyed)repoll(0);});return;
                 }
@@ -1540,6 +2465,8 @@ public class CaptureService extends Service {
                 RawFrame frame = encode(bitmap);      // takes ownership, off the main thread
                 boolean ok = false, visible = false;
                 if (frame != null) {
+                    frame.captureStartedAt=captureStartedAt;
+                    frame.nativeFloorMs=nativeFloorMs;
                     try {
                         String inspection=bridge.callAttr("inspect", frame.bytes, excluded, frame.width, frame.height, frame.stride).toString();
                         lastGateResult=inspection;
@@ -1690,8 +2617,10 @@ public class CaptureService extends Service {
         final int forceFloor=pendingForceFloor;
         pendingForceFloor=0; // Consent is consumed by exactly this request.
         compute.execute(() -> {
+            final long computeStartedAt=SystemClock.elapsedRealtime();
             Bitmap layer = null;
             JSONObject offer=null;
+            boolean commitOnDisplay=false;
             String label = "识别失败，请重试";
             try {
                 File file = new File(getCacheDir(), "overlay.rgba");
@@ -1707,14 +2636,19 @@ public class CaptureService extends Service {
                     main.post(() -> { busy=false; if(!startPendingMatch() && !destroyed)repoll(0); });
                     return;
                 }
+                JSONObject timings=result.optJSONObject("timings");
+                if(timings==null)timings=new JSONObject();
+                timings.put("native_floor_ms",frame.nativeFloorMs);
+                timings.put("capture_to_match_ms",computeStartedAt-frame.captureStartedAt);
                 android.util.Log.i("CrypticNotes","Recognition result: request="+requestSerial+", token="+token
                         +", ok="+result.optBoolean("ok")+", map="+result.optString("map_id")
-                        +", floor="+result.optInt("floor")+", forced="+(forceFloor!=0));
+                        +", floor="+result.optInt("floor")+", forced="+(forceFloor!=0)+", timings="+timings);
                 offer=result.optJSONObject("manual_offer");
                 boolean ok = result.getBoolean("ok");
-                lastMatchResult="ok="+ok+", "+result.optString("message")+", map="+result.optString("map_id")+", floor="+result.optInt("floor");
+                lastMatchResult="ok="+ok+", "+result.optString("message")+", map="+result.optString("map_id")+", floor="+result.optInt("floor")+", ms="+timings;
                 if (ok) {
-                    if (!destroyed && requestEpoch == memoryEpoch && requestSerial == matchRequests.get()) {
+                    commitOnDisplay=result.optBoolean("commit_on_display");
+                    if (!commitOnDisplay && !destroyed && requestEpoch == memoryEpoch && requestSerial == matchRequests.get()) {
                         boolean committed=bridge.callAttr("commit_match", token).toBoolean();
                         if(committed) android.util.Log.i("CrypticNotes", "Recognition memory committed: token="+token+", epoch="+requestEpoch+", map="+result.optString("map_id")+", floor="+result.optInt("floor"));
                     }
@@ -1729,6 +2663,7 @@ public class CaptureService extends Service {
                 android.util.Log.e("CrypticNotes", "Recognition failed: token="+token,error);
             }
             final Bitmap decoded = layer;
+            final boolean rememberDisplayed=commitOnDisplay;
             final String text = label;
             final JSONObject proposedOffer=offer;
             main.post(() -> {
@@ -1773,8 +2708,13 @@ public class CaptureService extends Service {
                     repoll(WATCH_MS);
                     return;
                 }
-                android.util.Log.i("CrypticNotes","Overlay displayed: token="+token+", bitmap="+decoded.getWidth()+"x"+decoded.getHeight());
                 replaceLayer(decoded);
+                if(overlayAttached && !overlayHidden){
+                    long elapsed=SystemClock.elapsedRealtime()-frame.captureStartedAt;
+                    lastMatchResult+=", 取帧至挂上叠图="+elapsed+" ms";
+                    android.util.Log.i("CrypticNotes","Overlay displayed: token="+token+", bitmap="+decoded.getWidth()+"x"+decoded.getHeight()+", capture_to_overlay_ms="+elapsed);
+                    if(rememberDisplayed && requestEpoch==memoryEpoch)compute.execute(()->bridge.callAttr("commit_match",token));
+                }
                 setStatus(S_MATCHED, text);
                 repoll(WATCH_MS);
             });
@@ -1929,7 +2869,8 @@ public class CaptureService extends Service {
 
     private void refreshTapRegion() {
         if(tapRegion!=null){windows.removeView(tapRegion);tapRegion=null;}
-        scheduleIdleProbe();
+        if(automaticMapProbe())scheduleIdleProbe();
+        else{main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel();}
     }
 
     /**
@@ -1952,10 +2893,11 @@ public class CaptureService extends Service {
         DraggableHeader header = new DraggableHeader(this);
         header.setGravity(Gravity.CENTER_VERTICAL);
         header.setPadding(pad, 0, pad, 0);
-        DarkTab settingsTab=new DarkTab(this,"加页手记");settingsTab.select(true);
+        final String homeModule=pvp?"pvp":"notes";
+        DarkTab settingsTab=new DarkTab(this,pvp?"禁选辅助":"加页手记");settingsTab.select(true);
         DarkTab gamesTab=new DarkTab(this,"小游戏");
-        ActionIcon.set(settingsTab,ActionIcon.GEAR,false);
-        ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));
+        settingsTab.setUpdate(pvp?ModuleUpdates.flag(this,"pvp"):ModuleUpdates.flag(this,"notes")||ModuleUpdates.flag(this,"zhanshi")||ModuleUpdates.flag(this,"lianghapi"));
+        gamesTab.setUpdate(ModuleUpdates.flag(this,"games")||MiniGameUpdates.available(this));
         final boolean gamesOnlyMenu=gameOnly||MiniGameOverlayService.running;
         header.addView(settingsTab,new LinearLayout.LayoutParams(0,Theme.px(this,40),1));
         settingsTab.setVisibility(gamesOnlyMenu?View.GONE:View.VISIBLE);
@@ -1973,7 +2915,7 @@ public class CaptureService extends Service {
         FrameLayout pages=new FrameLayout(this);
         pages.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout gamePage=new LinearLayout(this);gamePage.setOrientation(1);gamePage.setPadding(pad,Theme.px(this,14),pad,pad);
-        for(String gameId:GameCatalog.ids(this)){
+        if(new MatchingModuleStore(this,"games").installed())for(String gameId:GameCatalog.ids(this)){
             MiniGameStore store=new MiniGameStore(this,gameId);
             LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);
             GameIcons.addTo(row,gameId);row.addView(label(store.title(),16,Theme.TITLE,0),new LinearLayout.LayoutParams(0,-2,1));
@@ -1983,13 +2925,13 @@ public class CaptureService extends Service {
                 closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("launch_game",gameId).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));
             });gamePage.addView(row);
         }
-        Theme.ChalkButton manage=button("小游戏设置 / 版本管理",false);gamePage.addView(manage);manage.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","games").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
+        if(gamePage.getChildCount()==0)gamePage.addView(label("暂无小游戏",14,Theme.MUTED,0));
         pages.addView(gamePage,new FrameLayout.LayoutParams(-1,-1));gamePage.setVisibility(View.GONE);
-        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);prefs.edit().putString("last_module","notes").apply();});
+        settingsTab.setOnClickListener(v->{scroll.setVisibility(View.VISIBLE);gamePage.setVisibility(View.GONE);settingsTab.select(true);gamesTab.select(false);prefs.edit().putString("last_module",homeModule).apply();});
         gamesTab.select(false);
         gamesTab.setOnClickListener(v->{scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);prefs.edit().putString("last_module","games").apply();});
         if(gamesOnlyMenu||prefs.getString("last_module","notes").equals("games")){scroll.setVisibility(View.GONE);gamePage.setVisibility(View.VISIBLE);settingsTab.select(false);gamesTab.select(true);}
-        MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)ActionIcon.set(gamesTab,ActionIcon.GAME,MiniGameUpdates.available(this));});
+        if(new MatchingModuleStore(this,"games").installed())MiniGameUpdates.check(this,()->{if(!destroyed&&quickSettings==shell)gamesTab.setUpdate(ModuleUpdates.flag(this,"games")||MiniGameUpdates.available(this));});
         shell.addView(pages,new LinearLayout.LayoutParams(-1,0,1));
         dismiss.setOnClickListener(v -> closeQuickSettings());
 
@@ -1997,12 +2939,11 @@ public class CaptureService extends Service {
         preparationLabel.setVisibility(initializing ? View.VISIBLE : View.GONE);
         panel.addView(preparationLabel);
 
-        String difficultyValue = prefs.getString("difficulty", "hard");
         String modeValue = prefs.getString("mode", "solo");
 
-        MapLibraryChoice libraryChoice=new MapLibraryChoice(this);panel.addView(libraryChoice);
+        MapLibraryChoice libraryChoice=new MapLibraryChoice(this);libraryChoice.detachProvider();panel.addView(libraryChoice);
         Theme.ChalkChoice difficulty = new Theme.ChalkChoice(this, new String[]{"困难", "噩梦"});
-        difficulty.setIndex(difficultyValue.equals("nightmare") ? 1 : 0);
+        libraryChoice.refreshDifficulty(difficulty);
         LinearLayout difficultyRow=new LinearLayout(this);difficultyRow.setGravity(Gravity.CENTER_VERTICAL);
         difficultyRow.addView(label("难度",14,Theme.MUTED,0),new LinearLayout.LayoutParams(Theme.px(this,56),-2));
         difficultyRow.addView(difficulty,new LinearLayout.LayoutParams(Theme.px(this,170),Theme.px(this,42)));panel.addView(difficultyRow);panel.addView(libraryChoice.detachRoute());
@@ -2020,83 +2961,42 @@ public class CaptureService extends Service {
         // The two choices above cost a matcher rebuild, so what is actually in
         // force needs a line of its own -- without it, closing the panel looks
         // like the change was dropped.
-        TextView applied = label("当前：" + difficultyLabel(difficultyValue, modeValue), 13, Theme.MUTED, 6);
+        TextView applied = label("当前：" + difficultyLabel(libraryChoice.selected(difficulty), modeValue), 13, Theme.MUTED, 6);
         panel.addView(applied);
         Theme.ChalkChoice.Listener apply = i -> {
-            boolean nightmare = difficulty.getIndex() == 1;
+            boolean nightmare = libraryChoice.selected(difficulty).equals("nightmare");
             difficultyRow.setVisibility(View.VISIBLE);
-            party.setVisibility(!libraryChoice.isLinguang()&&!libraryChoice.isZhanshi()&&nightmare ? View.VISIBLE : View.GONE);
+            party.setVisibility(libraryChoice.hasParty()&&nightmare ? View.VISIBLE : View.GONE);
             routeRow.setVisibility(party.getVisibility());
-            applyRecognition(libraryChoice.difficulty(nightmare ? "nightmare" : "hard"),
+            applyRecognition(libraryChoice.selected(difficulty),
                     libraryChoice.mode(party.getIndex() == 0 ? "solo" : "duo"), applied);
         };
         difficulty.setListener(apply);
         party.setListener(apply);
-        libraryChoice.changed=()->apply.onChanged(0);
+        libraryChoice.changed=()->{libraryChoice.refreshDifficulty(difficulty);apply.onChanged(0);};
         difficultyRow.setVisibility(View.VISIBLE);
-        if(libraryChoice.isZhanshi()||libraryChoice.isLinguang()){party.setVisibility(View.GONE);routeRow.setVisibility(View.GONE);}
-
-        // Overlay opacity. Live, because it is a display setting and the whole
-        // point is seeing the change; re-recognition is not needed for it.
-        final int startOpacity = Math.round(opacity * 100);
-        TextView opacityLabel = label("叠图不透明度 " + startOpacity + "%", 14, Theme.MUTED, 6);
-        panel.addView(opacityLabel);
-        Theme.ChalkSlider slider = new Theme.ChalkSlider(this, 65,
-                Math.max(0, Math.min(65, startOpacity - 5)));
-        panel.addView(slider, new LinearLayout.LayoutParams(-1, Theme.px(this, 40)));
-        slider.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
-            public void onProgressChanged(android.widget.SeekBar bar, int value, boolean fromUser) {
-                int percent = value + 5;
-                opacityLabel.setText("透明度 " + percent + "%");
-                applyOpacity(percent);
-            }
-            public void onStartTrackingTouch(android.widget.SeekBar bar) {}
-            public void onStopTrackingTouch(android.widget.SeekBar bar) {}
-        });
-
-        // Three actions, one row, outside the scroll area: stacked they are what
-        // pushed the panel past the bottom of a landscape phone, and pinned they
-        // cannot be scrolled away from either.
+        if(!libraryChoice.hasParty()||!libraryChoice.selected(difficulty).equals("nightmare")){party.setVisibility(View.GONE);routeRow.setVisibility(View.GONE);}
         LinearLayout actions = new LinearLayout(this);
-        actions.setPadding(pad, 0, pad, pad);
         LinearLayout.LayoutParams actionParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
         actionParams.topMargin = Theme.px(this, 10);
         actionParams.rightMargin = Theme.px(this, 6);
-        Theme.ChalkButton diagnostic = button("复制识图诊断", false);
-        diagnostic.setOnClickListener(v->copyRecognitionDiagnostic());
         Theme.ChalkButton retry = button("重新识别", true);
         actions.addView(retry, actionParams);
         retry.setOnClickListener(v -> retryFromBadge());
         LinearLayout.LayoutParams middleParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
         middleParams.topMargin = Theme.px(this, 10);
-        middleParams.rightMargin = Theme.px(this, 6);
         Theme.ChalkButton hideLayer = button(overlayHidden ? "显示叠图" : "隐藏叠图", false);
         actions.addView(hideLayer, middleParams);
         hideLayer.setOnClickListener(v -> {
             setOverlayHidden(!overlayHidden);
             hideLayer.setText(overlayHidden ? "显示叠图" : "隐藏叠图");
         });
-        LinearLayout.LayoutParams lastParams = new LinearLayout.LayoutParams(0, Theme.px(this, 42), 1f);
-        lastParams.topMargin = Theme.px(this, 10);
-        Theme.ChalkButton region = button(automaticMapProbe()?"自动检测地图：开":"自动检测地图：关", false);
-        LinearLayout.LayoutParams regionParams = new LinearLayout.LayoutParams(-1, Theme.px(this, 42));
-        regionParams.setMargins(pad, 0, pad, pad);
-        region.setOnClickListener(v -> {
-            boolean enabled=!automaticMapProbe();
-            getSharedPreferences("mobile",0).edit().putBoolean("automatic_map_probe",enabled).apply();
-            region.setText(enabled?"自动检测地图：开":"自动检测地图：关");
-            if(enabled)scheduleIdleProbe();
-            else{main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel();}
-        });
         actions.setPadding(0,0,0,Theme.px(this,8));
         int actionIndex=panel.indexOfChild(routeRow)+1;
         panel.addView(actions,actionIndex,new LinearLayout.LayoutParams(-1,-2));
-        panel.removeView(opacityLabel);panel.removeView(slider);
-        opacityLabel.setText("透明度 " + startOpacity + "%");
-        panel.addView(opacityLabel,actionIndex+1);panel.addView(slider,actionIndex+2,new LinearLayout.LayoutParams(-1,Theme.px(this,40)));
-        panel.addView(region,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
-        panel.addView(diagnostic,new LinearLayout.LayoutParams(-1,Theme.px(this,42)));
-        if(gameOnly||!new MatchingModuleStore(this).installed()){
+        if(pvp){
+            buildPvpPanel(panel,prefs);
+        }else if(gameOnly||!new MatchingModuleStore(this).installed()){
             panel.removeAllViews();panel.addView(label(gameOnly?"当前为小游戏专用悬浮窗，不进行地图识别":"请先下载加页手记模块",14,Theme.MUTED,8));
             Theme.ChalkButton maps=button("前往加页手记",true);panel.addView(maps);maps.setOnClickListener(v->{closeQuickSettings();startActivity(new Intent(this,MainActivity.class).putExtra("open_module","notes").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP));});
         }
@@ -2166,6 +3066,7 @@ public class CaptureService extends Service {
         compute.execute(() -> {
             String error = null;
             try {
+                if(!new MatchingModuleStore(this,provider).installed())throw new IOException("请在地图设置下载"+MapLibraryChoice.title(provider)+"地图库");
                 loadedMapCount=bridge.callAttr("initialize", getFilesDir().toString(), difficulty, mode, provider, applyScene).toInt();
             } catch (Exception e) {
                 error = e.getMessage();
@@ -2179,7 +3080,7 @@ public class CaptureService extends Service {
                 lastMatch = 0;
                 applied.setText(failure == null
                         ? "已应用：" + difficultyLabel(difficulty, mode)
-                        : "设置失败，请重试");
+                        : "设置失败："+failure);
                 repoll(100);
             });
         });
@@ -2189,6 +3090,7 @@ public class CaptureService extends Service {
     private volatile String scene="curse";
 
     private String difficultyLabel(String difficulty, String mode) {
+        if(MapLibraryChoice.providerOf(getSharedPreferences("mobile",0)).equals("original"))return "小布偶 · "+MapLibraryChoice.levelName(difficulty);
         if(scene.equals("linguang")) return "磷光症 · "+(!"full".equals(mode)?("nightmare".equals(difficulty)?"凉哈皮 · 噩梦":"凉哈皮 · 困难"):"nightmare".equals(difficulty)?"展十 · 噩梦 · 十四棺":"展十 · 困难 · 十六棺");
         return (difficulty.equals("nightmare") ? "噩梦" : "困难")
                 + " · " + (mode.equals("full") ? "展十全棺" : mode.equals("speed") ? "展十速刷" : mode.equals("duo") ? "多人路线" : "单人路线");
@@ -2291,6 +3193,11 @@ public class CaptureService extends Service {
         if (tapRegion != null) windows.removeView(tapRegion);
         if (calibration != null) windows.removeView(calibration);
         if (quickSettings != null) windows.removeView(quickSettings);
+        if (pvpPicker != null) windows.removeView(pvpPicker);
+        if (pvpHud != null) windows.removeView(pvpHud);
+        closePvpBars();
+        if (pvpEntry != null) windows.removeView(pvpEntry);
+        if (pvpTestReceiver != null) unregisterReceiver(pvpTestReceiver);
         compute.shutdownNow();
         inspect.shutdownNow();
         super.onDestroy();

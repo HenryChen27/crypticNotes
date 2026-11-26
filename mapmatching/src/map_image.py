@@ -21,7 +21,8 @@ def compact(image, data, suffix, *, max_side=MAX_SIDE, quality=WEBP_QUALITY):
         return data, suffix.lower(), image, (1., 1.)
     width, height = max(3, round(w*ratio)), max(3, round(h*ratio))
     resized = cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA) if ratio < 1. else image
-    ok, encoded = cv2.imencode('.webp', resized, [cv2.IMWRITE_WEBP_QUALITY, quality])
+    output_suffix='.webp' if cv2.haveImageWriter('.webp') else '.png'
+    ok, encoded = cv2.imencode(output_suffix, resized, [cv2.IMWRITE_WEBP_QUALITY, quality] if output_suffix=='.webp' else [])
     if not ok:
         raise ValueError('地图压缩失败，请重试')
     encoded = encoded.tobytes()
@@ -30,7 +31,7 @@ def compact(image, data, suffix, *, max_side=MAX_SIDE, quality=WEBP_QUALITY):
     decoded = cv2.imdecode(np.frombuffer(encoded, np.uint8), cv2.IMREAD_COLOR)
     if decoded is None or decoded.shape != resized.shape:
         raise ValueError('压缩地图校验失败，请重试')
-    return encoded, '.webp', decoded, (width/w, height/h)
+    return encoded, output_suffix, decoded, (width/w, height/h)
 
 
 def scale_entry_geometry(entry, ratios, size):

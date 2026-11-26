@@ -146,7 +146,7 @@ class FoldSection(W.QWidget):
                     from .line_icons import paint_icon
                     paint_icon(p, icon, 12, (self.height()-17)/2, 17, color='#d3dfe6')
                     left = 36
-                p.drawText(self.rect().adjusted(left, 0, -32, 0), C.Qt.AlignVCenter, title)
+                p.drawText(self.rect().adjusted(left, 0, -32, 0), C.Qt.AlignVCenter, self.text())
                 x, y = self.width()-18, self.height()/2
                 p.setPen(G.QPen(G.QColor('#aabfcd'), 1.5))
                 points = [(x-4,y-2),(x,y+2),(x+4,y-2)] if self.isChecked() else [(x-2,y-4),(x+2,y),(x-2,y+4)]
@@ -328,6 +328,23 @@ def install_font(app):
     font.setPixelSize(16)
     app.setFont(font)
     return family, bool(families)
+
+
+def apply_desktop_palette(app):
+    app.setStyle('Fusion')
+    palette=G.QPalette()
+    role=G.QPalette.ColorRole
+    for name,color in {
+        'Window':'#203241','WindowText':'#dbe5ec','Base':'#182936','AlternateBase':'#243948',
+        'Text':'#dbe5ec','PlaceholderText':'#a4b6c3','Button':'#344c5c','ButtonText':'#e3edf2',
+        'Highlight':'#abc2d0','HighlightedText':'#112330','ToolTipBase':'#253b4c',
+        'ToolTipText':'#e3edf2','Link':'#a4cfdf','LinkVisited':'#d3b5d5',
+        'Light':'#607989','Midlight':'#445d6d','Mid':'#354b5b','Dark':'#152632',
+        'Shadow':'#0d1a23','BrightText':'#eef4f8'}.items():
+        palette.setColor(getattr(role,name),G.QColor(color))
+    for text in (role.WindowText,role.Text,role.ButtonText):
+        palette.setColor(G.QPalette.Disabled,text,G.QColor('#9aadb9'))
+    app.setPalette(palette)
 
 
 def stylesheet(family):

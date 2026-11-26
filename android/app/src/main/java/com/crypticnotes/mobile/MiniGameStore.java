@@ -30,13 +30,19 @@ final class MiniGameStore {
     String hash(){try{return new JSONObject(read(new File(game,"package.json"))).optString("downloadSha256","");}catch(Exception e){return "";}}
 
     boolean installed(){return new File(game,"game/index.html").isFile();}
+    long downloadSize(){try{return new JSONObject(read(new File(game,"package.json"))).optLong("downloadSize");}catch(Exception ignored){return 0;}}
     String version(){try{return new JSONObject(read(new File(game,"package.json"))).optString("version","");}catch(Exception e){return "";}}
     static byte[] bytes(InputStream in,int limit)throws IOException{ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>limit)throw new IOException("文件过大");out.write(buf,0,n);}return out.toByteArray();}
     static String read(File f)throws IOException{try(InputStream in=new FileInputStream(f)){return new String(bytes(in,1024*1024),java.nio.charset.StandardCharsets.UTF_8);}}
     static HttpURLConnection connect(String address)throws IOException{
+        return connect(address,true);
+    }
+    static HttpURLConnection connect(String address,boolean followRedirects)throws IOException{
         if(!address.startsWith("https://"))throw new IOException("下载地址不安全");
         HttpURLConnection c=(HttpURLConnection)new URL(address).openConnection();c.setConnectTimeout(20000);c.setReadTimeout(30000);c.setRequestProperty("User-Agent","CrypticNotes-mini-games");
-        if(c.getResponseCode()!=200){c.disconnect();throw new IOException("下载失败，请稍后重试");}return c;
+        c.setInstanceFollowRedirects(followRedirects);
+        try{int code=c.getResponseCode();if(code!=200)throw new IOException(!followRedirects&&code==410?"本轮灰度下载已到期，请使用新测试包":"下载失败（HTTP "+code+"），请稍后重试");return c;}
+        catch(IOException error){c.disconnect();throw error;}
     }
     JSONObject catalogInfo()throws Exception{
         JSONObject info=collection().optJSONObject(id);
@@ -46,10 +52,12 @@ final class MiniGameStore {
         return info;
     }
     void download(Progress progress)throws Exception{
+        if(!new MatchingModuleStore(context,"games").installed())throw new IOException("请先下载小游戏主程序");
         root.mkdirs();progress.update("正在检查游戏更新…");
         JSONObject info=catalogInfo();String url=info.getString("url"),sha=info.getString("sha256"),version=info.getString("version");long size=info.getLong("size");
         HttpURLConnection c;
         if(installed()&&sha.equals(hash())){progress.update("游戏已是最新版");return;}
+        String previous=installed()?(hash().isEmpty()?version():hash()):"";
         File zip=new File(root,id+"-download.zip"),stage=new File(root,".install-"+UUID.randomUUID()),backup=new File(root,".previous-"+id);
         try {
             MessageDigest digest=MessageDigest.getInstance("SHA-256");long count=0;c=connect(url);
@@ -72,7 +80,9 @@ final class MiniGameStore {
             if(!id.equals(meta.optString("id"))||!"system-webview".equals(meta.optString("runtime"))||!new File(stage,"game/index.html").isFile())throw new IOException("游戏包结构不正确");
             meta.put("downloadSha256",sha);meta.put("downloadSize",size);try(OutputStream out=new FileOutputStream(new File(stage,"package.json"))){out.write(meta.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));}
             remove(backup);if(game.exists()&&!game.renameTo(backup))throw new IOException("旧游戏无法替换");
-            if(!stage.renameTo(game)){if(backup.exists())backup.renameTo(game);throw new IOException("游戏安装失败");}remove(backup);progress.update("游戏已安装");
+            if(!stage.renameTo(game)){if(backup.exists())backup.renameTo(game);throw new IOException("游戏安装失败");}
+            PackageEvents.installed(context,"game:"+id,previous,sha,version);
+            remove(backup);progress.update("游戏已安装");
         }finally{zip.delete();remove(stage);}
     }
     void delete()throws IOException{remove(game);}

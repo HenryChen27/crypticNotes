@@ -140,7 +140,7 @@ class ManualAlignmentTests(unittest.TestCase):
                         replace(self.confirmed,floor=2,retrieval_score=2),'insufficient')), \
                  patch('mapmatching.src.manual_alignment.blank_floor_offer',return_value={'map_id':self.confirmed.map_id,'floor':2}), \
                  patch('mapmatching.src.manual_alignment.cross_floor_candidate',return_value=(None,None)), \
-                 patch('mapmatching.src.reference.read_image',return_value=np.zeros((20,20,3),np.uint8)):
+                 patch('mapmatching.src.display_art.read_display_map',return_value=np.zeros((20,20,3),np.uint8)):
                 worker(connection,root,'hard',None)
         replies=[call.args[0][1] for call in connection.send.call_args_list if call.args[0][0]=='result']
         self.assertIsNone(replies[0][1]);self.assertIsNotNone(replies[1][1]);self.assertIsNone(replies[2][1])

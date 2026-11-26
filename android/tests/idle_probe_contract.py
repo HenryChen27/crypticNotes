@@ -45,8 +45,22 @@ class IdleProbeContractTests(unittest.TestCase):
     def test_switching_the_automatic_check_off_releases_the_mirror(self):
         tick=SERVICE.split('private final Runnable idleProbeTick=()->{',1)[1].split('\n    };',1)[0]
         self.assertIn('if(!automaticMapProbe())idleProbe.cancel();',tick)
-        toggle=SERVICE.split('putBoolean("automatic_map_probe",enabled)',1)[1].split('});',1)[0]
-        self.assertIn('idleProbe.cancel()',toggle)
+        home=(JAVA/'MainActivity.java').read_text(encoding='utf-8')
+        self.assertIn('putBoolean("automatic_map_probe",value).apply();pushDisplayPreferences()',home)
+        self.assertIn('refreshTapRegion()',SERVICE.split('void applyDisplayPreferences()',1)[1].split('\n    }',1)[0])
+        refresh=SERVICE.split('private void refreshTapRegion()',1)[1].split('\n    }',1)[0]
+        self.assertIn('if(automaticMapProbe())scheduleIdleProbe()',refresh)
+        self.assertIn('main.removeCallbacks(idleProbeTick);idleProbeScheduled=false;idleProbe.cancel()',refresh)
+
+    def test_overlay_only_has_match_actions_not_management(self):
+        panel=SERVICE.split('private void showQuickSettings()',1)[1].split('\n    }',1)[0]
+        for removed in ('地图设置','自动检测地图','复制识图诊断','版本管理','mapOptions'):
+            self.assertNotIn(removed,panel)
+        for kept in ('重新识别','隐藏叠图','屏幕录制','libraryChoice.detachProvider()','launch_game'):
+            self.assertIn(kept,panel)
+        home=(JAVA/'MainActivity.java').read_text(encoding='utf-8')
+        for setting in ('地图设置','复制识图诊断','自动展开检测','小游戏设置'):
+            self.assertIn(setting,home)
 
     def test_no_measurement_switch_is_left_in_the_service(self):
         self.assertNotIn('probe_mode',SERVICE)

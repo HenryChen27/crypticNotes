@@ -23,7 +23,7 @@ class ManualTests(unittest.TestCase):
         self.patches=[patch('mobile_bridge.decode',return_value=np.zeros((100,200,3),np.uint8)),
             patch('mobile_bridge.inspect_map_ui',return_value={'visible':True}),
             patch('mobile_bridge.selected_floor',return_value=2),
-            patch('mobile_bridge.read_image',return_value=np.zeros((100,50,3),np.uint8)),
+            patch('mobile_bridge.read_display_map',return_value=np.zeros((100,50,3),np.uint8)),
             patch('mobile_bridge.match_with_cache',return_value=(MatchResult(),None,'insufficient'))]
         for p in self.patches:p.start();self.addCleanup(p.stop)
 

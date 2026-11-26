@@ -5,6 +5,10 @@ ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT))
 BASE='https://github.com/HenryChen27/crypticNotes/releases/download/desktop-update-20260919-05738cf/'
 
 def build():
+ from build_module_payloads import build as build_cores
+ build_cores()
+ from build_pvp_package import build as build_pvp
+ build_pvp()
  from mapmatching.src.map_update import stamp
  from mapmatching.src.mapstore import write_json,build_index
  out=ROOT/'release';out.mkdir(exist_ok=True);source=ROOT/'maps'

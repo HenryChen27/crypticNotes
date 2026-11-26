@@ -1,8 +1,8 @@
 package com.crypticnotes.mobile;
 
 import android.app.Activity;
+import android.content.SharedPreferences;
 import android.app.Dialog;
-import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
@@ -23,18 +23,18 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import com.chaquo.python.PyObject;
+import com.chaquo.python.Python;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
-/** Read-only browser for the independently installed map library. */
+/** Read-only browser for all three libraries. */
 public class MapLibraryActivity extends Activity {
-    private static final String[][] FILTERS = {
-            {"全部", ""}, {"困难", "hard"}, {"噩梦·单人", "nightmare/solo"}, {"噩梦·双人", "nightmare/duo"}, {"展十全棺","nightmare/full"}, {"展十速刷","nightmare/speed"}};
-
     private final List<MapCatalog.Entry> all = new ArrayList<>();
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService decode = Executors.newSingleThreadExecutor();
@@ -42,10 +42,17 @@ public class MapLibraryActivity extends Activity {
     private LinearLayout list;
     private TextView summary;
     private EditText search;
-    private int filterIndex;
+    private String scene,provider,difficulty;
+    private String[] levels;
+    private boolean original,loading;
+    private int generation;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        SharedPreferences prefs=getSharedPreferences("mobile",0);
+        scene=MapLibraryChoice.sceneOf(prefs);provider=MapLibraryChoice.providerOf(prefs);original="original".equals(provider);
+        levels=MapLibraryChoice.levels(scene,provider);difficulty=prefs.getString("difficulty","hard");
+        if(!java.util.Arrays.asList(levels).contains(difficulty))difficulty="hard";
 
         FrameLayout root = new FrameLayout(this);
         View wallpaper = new View(this);
@@ -54,8 +61,28 @@ public class MapLibraryActivity extends Activity {
         root.addView(buildContent(), matchParent());
         setContentView(root);
 
-        all.addAll(MapCatalog.load(this));
-        render();
+        load();
+    }
+
+    private PyObject library(){MatchingModuleStore.python(this);return Python.getInstance().getModule("mobile_library");}
+    private void load(){
+        final int ticket=++generation;final String level=difficulty;
+        all.clear();loading=true;render();
+        decode.execute(()->{
+            List<MapCatalog.Entry> result=new ArrayList<>();
+            try{
+                if(original){
+                    JSONArray rows=new JSONArray(library().callAttr("catalog",getFilesDir().toString(),scene,level).toString());
+                    for(int pos=0;pos<rows.length();pos++){
+                        JSONObject row=rows.getJSONObject(pos);int layout=row.getInt("layout"),layer=row.getInt("layer");
+                        String name="布局 "+layout+" · "+(row.isNull("floor")?"单层":row.getInt("floor")+"F");
+                        MapCatalog.Entry entry=new MapCatalog.Entry(scene+"/original/"+level+"/"+layout+"/"+layer,name,level,null,"","");
+                        entry.provider=provider;entry.scene=scene;entry.layout=layout;entry.layer=layer;result.add(entry);
+                    }
+                }else for(MapCatalog.Entry entry:MapCatalog.load(this))if(entry.scene.equals(scene)&&entry.provider.equals(provider)&&entry.difficulty.equals(level))result.add(entry);
+                main.post(()->{if(ticket!=generation||isDestroyed())return;all.addAll(result);loading=false;render();});
+            }catch(Exception error){main.post(()->{if(ticket==generation&&!isDestroyed()){loading=false;render();summary.setText("读取失败："+error.getMessage());}});}
+        });
     }
 
     private View buildContent() {
@@ -67,7 +94,7 @@ public class MapLibraryActivity extends Activity {
         scroll.addView(content);
 
         TextView title = new TextView(this);
-        title.setText("地图管理");
+        title.setText(MapLibraryChoice.title(provider)+"地图库");
         content.addView(Theme.text(title, 29, Theme.TITLE));
 
         summary = Theme.muted(this, "");
@@ -80,16 +107,14 @@ public class MapLibraryActivity extends Activity {
         content.addView(back, backParams);
         back.setOnClickListener(v -> finish());
 
-        content.addView(Theme.helpLabel(this, "已安装地图", "显示独立下载的地图库。更新或重新下载请返回加页手记模块。"));
-
         content.addView(heading("筛选"));
         Theme.MistPanel filters = panel();
         content.addView(filters);
-        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, new String[]{"全部", "困难", "单人", "多人", "全棺", "速刷"});
+        Theme.ChalkChoice filter = new Theme.ChalkChoice(this, java.util.Arrays.stream(levels).map(MapLibraryChoice::levelName).toArray(String[]::new));
+        filter.setIndex(java.util.Arrays.asList(levels).indexOf(difficulty));
         filters.addView(filter, wrap());
         filter.setListener(index -> {
-            filterIndex = index;
-            render();
+            difficulty=levels[index];load();
         });
 
         content.addView(heading("搜索"));
@@ -119,14 +144,9 @@ public class MapLibraryActivity extends Activity {
     private void render() {
         if (list == null) return;
         list.removeAllViews();
-        String[] filter = FILTERS[Math.max(0, Math.min(FILTERS.length - 1, filterIndex))];
         String query = search == null ? "" : search.getText().toString().trim().toLowerCase();
         int shown = 0;
         for (MapCatalog.Entry entry : all) {
-            if (!filter[1].isEmpty()) {
-                String key = entry.difficulty + ("hard".equals(entry.difficulty) ? "" : "/" + entry.mode);
-                if (!filter[1].equals(key)) continue;
-            }
             if (!query.isEmpty() && !entry.name.toLowerCase().contains(query)
                     && !entry.mapId.toLowerCase().contains(query)) continue;
             list.addView(row(entry));
@@ -137,7 +157,7 @@ public class MapLibraryActivity extends Activity {
             empty.addView(Theme.muted(this, "没有符合条件的地图。"));
             list.addView(empty);
         }
-        summary.setText(all.isEmpty()?"未读到已安装地图，请返回加页手记检查下载是否完成":"已安装 " + all.size() + " 张 · 当前显示 " + shown + " 张 · 只读");
+        summary.setText(loading?"正在读取地图库…":MapLibraryChoice.levelName(difficulty)+" · "+shown+" / "+all.size()+(original?" 层":" 张")+" · 只读");
     }
 
     private View row(final MapCatalog.Entry entry) {
@@ -151,7 +171,7 @@ public class MapLibraryActivity extends Activity {
         card.addView(Theme.text(name, 16, Theme.TEXT));
 
         TextView meta = new TextView(this);
-        StringBuilder text = new StringBuilder(MapCatalog.contextText(entry.difficulty, entry.mode));
+        StringBuilder text = new StringBuilder(original?MapLibraryChoice.levelName(entry.difficulty):MapCatalog.contextText(entry.difficulty, entry.mode));
         String floors = MapCatalog.floorText(entry.floors);
         if (!floors.isEmpty()) text.append(" · ").append(floors);
         if (entry.width > 0) text.append(" · ").append(entry.width).append('×').append(entry.height);
@@ -204,9 +224,9 @@ public class MapLibraryActivity extends Activity {
         dialog.show();
 
         decode.execute(() -> {
-            final Bitmap bitmap = decodeAsset(entry.source, 1280);
+            final Bitmap bitmap = original?decodeFloor(entry):decodeAsset(entry.source, 1280);
             main.post(() -> {
-                if (isFinishing() || isDestroyed()) {
+                if (isFinishing() || isDestroyed() || !dialog.isShowing()) {
                     if (bitmap != null) bitmap.recycle();
                     return;
                 }
@@ -227,27 +247,29 @@ public class MapLibraryActivity extends Activity {
         });
     }
 
-    /** Bounds pass first so a 1000×3000 map is never decoded at full size for a preview. */
+    private Bitmap decodeFloor(MapCatalog.Entry entry){
+        try{byte[] bytes=library().callAttr("preview",getFilesDir().toString(),scene,entry.difficulty,entry.layout,entry.layer).toJava(byte[].class);return BitmapFactory.decodeByteArray(bytes,0,bytes.length);}
+        catch(Exception error){return null;}
+    }
+
+    /** Apply the same grain as the overlay before reducing the image for the dialog. */
     private Bitmap decodeAsset(String path, int maxDimension) {
         try (InputStream probe = MapCatalog.open(this,path)) {
             BitmapFactory.Options bounds = new BitmapFactory.Options();
             bounds.inJustDecodeBounds = true;
             BitmapFactory.decodeStream(probe, null, bounds);
-            int sample = 1;
-            while (Math.max(bounds.outWidth, bounds.outHeight) / sample > maxDimension * 2) sample *= 2;
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0 || (long) bounds.outWidth * bounds.outHeight > 16000000) return null;
+            byte[] bytes = library().callAttr("author_preview", getFilesDir().toString(), path, maxDimension).toJava(byte[].class);
             BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inSampleSize = sample;
-            options.inPreferredConfig = Bitmap.Config.RGB_565;
-            try (InputStream stream = MapCatalog.open(this,path)) {
-                return BitmapFactory.decodeStream(stream, null, options);
-            }
-        } catch (IOException | OutOfMemoryError error) {
+            options.inPreferredConfig = Bitmap.Config.ARGB_8888;
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.length, options);
+        } catch (Exception | OutOfMemoryError error) {
             return null;
         }
     }
 
     @Override protected void onDestroy() {
-        decode.shutdownNow();
+        decode.shutdown();
         super.onDestroy();
     }
 

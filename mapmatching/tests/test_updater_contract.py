@@ -105,6 +105,21 @@ class UpdaterContractTests(unittest.TestCase):
                 if "/releases'," in line and "'POST'" in line:
                     self.assertTrue(line.isascii(), name + ' 创建发布时又写了中文：旧版更新脚本会解析失败')
 
+    def test_gitcode_preserves_numbered_release_notes_for_legacy_clients(self):
+        import html
+        import json
+        import tempfile
+        from scripts.gitcode_release import RELEASE_BODY, release_body
+        from scripts.release_manager import read_notes
+        notes = read_notes(ROOT/'mapmatching/assets/update-news.json', {'windows', 'android'})
+        with tempfile.TemporaryDirectory() as directory:
+            job = Path(directory)/'release-job.json'
+            job.write_text(json.dumps({'notes': notes}), encoding='utf-8')
+            body = release_body([job, job])
+            self.assertTrue(body.isascii())
+            self.assertEqual(html.unescape(body), notes + '\n\n' + RELEASE_BODY)
+            self.assertEqual(release_body([]), RELEASE_BODY)
+
     def test_keeps_the_utf8_bom_and_crlf_dist_extras_requires(self):
         data = UPDATER.read_bytes()
         self.assertTrue(data.startswith(b'\xef\xbb\xbf'),

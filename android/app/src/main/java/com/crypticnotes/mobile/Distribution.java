@@ -30,9 +30,14 @@ final class Distribution {
             }
         }finally{c.disconnect();}
     }
-    static JSONObject release()throws Exception {
-        try {JSONObject r=json(PRIMARY,2000000);r.getJSONArray("assets");return r;}
-        catch(Exception e){JSONObject r=json(FALLBACK,2000000);r.getJSONArray("assets");return r;}
+    static JSONObject release(String... required)throws Exception {
+        String first=null;
+        for(String endpoint:new String[]{PRIMARY,FALLBACK})try{
+            JSONObject release=json(endpoint,2000000);release.getJSONArray("assets");
+            for(String name:required){JSONObject file=asset(release,name);if(file.optLong("size")<=0||!file.optString("digest").matches("sha256:[0-9a-fA-F]{64}"))throw new IOException("附件缺少校验信息："+name);}
+            return release;
+        }catch(Exception error){if(first==null)first=error.getMessage();else throw new IOException("正式下载源未就绪："+first+(java.util.Objects.equals(first,error.getMessage())?"":"；"+error.getMessage()),error);}
+        throw new IOException("无法连接更新服务器");
     }
     static JSONObject asset(JSONObject release,String name)throws Exception {
         JSONArray assets=release.getJSONArray("assets");JSONObject found=null;
@@ -40,7 +45,8 @@ final class Distribution {
             JSONObject a=assets.getJSONObject(i);
             if(name.equals(a.optString("name"))){if(found!=null)throw new IOException("发布附件重复");found=a;}
         }
-        if(found==null||!official(found.optString("browser_download_url")))throw new IOException("发布附件缺失或地址无效");
+        if(found==null)throw new IOException("尚未上架："+name);
+        if(!official(found.optString("browser_download_url")))throw new IOException("附件地址不属于官方发布源："+name);
         return found;
     }
     private static void remap(JSONObject spec,JSONObject release)throws Exception {

@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2
 from .src.matcher import MapMatcher
 from .src.reference import build, read_image
+from .src.display_art import read_display_map
 from .src.context import SessionContext
 from .src.preview import render_preview
 
@@ -60,7 +61,7 @@ def main() -> None:
         if args.output.suffix.lower() not in ('.png','.jpg','.jpeg'):
             parser.error('Preview output must be PNG or JPEG')
         try:
-            overlay, metadata = render_preview(pixels, read_image(args.root/reference.source), reference, candidate)
+            overlay, metadata = render_preview(pixels, read_display_map(args.root/reference.source)[:, :, :3], reference, candidate)
         except ValueError as error:
             parser.error(str(error))
         args.output.parent.mkdir(parents=True, exist_ok=True)

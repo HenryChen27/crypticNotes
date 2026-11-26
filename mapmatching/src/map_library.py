@@ -21,16 +21,16 @@ from .map_image import compact, scale_entry_geometry, POLICY
 SUFFIXES = ('.png', '.jpg', '.jpeg', '.webp', '.bmp')
 
 
-def validate_regions(regions, width, height, difficulty=None):
+def validate_regions(regions, width, height, difficulty=None, scene='curse'):
     if not regions:
         raise ValueError('请至少框选一个楼层')
     seen=set()
     for r in regions:
         floor=r['floor']
         box=r['bbox']
-        if floor == -1 and difficulty == 'hard':
+        if scene=='curse' and floor == -1 and difficulty == 'hard':
             raise ValueError('困难地图没有地下室，请选择一楼/二楼，或改为噩梦难度')
-        if floor not in (-1,1,2) or floor in seen:
+        if floor not in ((-1,-2,-3,-4) if scene=='linguang' else (-1,1,2)) or floor in seen:
             raise ValueError('每个楼层只能标注一次')
         seen.add(floor)
         if len(box)!=4 or any(type(v) is not int for v in box):
@@ -85,7 +85,7 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi',
     source=Path(source).resolve()
     original=read_image(source)
     h,w=original.shape[:2]
-    validate_regions(regions,w,h,difficulty)
+    validate_regions(regions,w,h,difficulty,scene)
     # 厄运之女 keeps its historical ids (identity, not path); other maps use the full path form.
     map_id=f'{difficulty}/'+(f'{mode}/' if mode else '')+name
     if provider == 'zhanshi':map_id='zhanshi/'+map_id
@@ -110,7 +110,7 @@ def add_map(root, source, name, difficulty, mode, regions, provider='lianghapi',
         if target.resolve()==source:
             target=directory/f'{name}.compact{suffix}'
     geometry=scale_entry_geometry(dict(regions=regions,include_regions=[r['bbox'] for r in regions]),ratios,(pixels.shape[1],pixels.shape[0]))
-    validate_regions(geometry['regions'],pixels.shape[1],pixels.shape[0],difficulty)
+    validate_regions(geometry['regions'],pixels.shape[1],pixels.shape[0],difficulty,scene)
     stored_pixel=hashlib.sha256(pixels.tobytes()).hexdigest()
     if stored_pixel in known_pixels:
         raise ValueError('这个模式下已有相同图片的地图，请勿重复录入')

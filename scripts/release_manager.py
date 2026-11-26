@@ -35,18 +35,24 @@ def validate_android_signing():
         '-storepass:env','JYSJ_CERT_CHECK_PASSWORD'],env=env,capture=True)
     if CERT not in output.lower().replace(':',''):raise RuntimeError('Android signing identity mismatch; release stopped')
 
+PVP_PACKAGE='IdentityVMapAssistant-PVP.zip'
+MODULE_PACKAGES=[PVP_PACKAGE,'IdentityVMapAssistant-Notes.zip','IdentityVMapAssistant-Games-Android.zip',
+                 'IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json']
 PACKAGES = {
     'android': ['IdentityVMapAssistant-Android-arm64.apk'],
     'windows': ['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json'],
     'mac': ['IdentityVMapAssistant-macOS-arm64.zip', 'IdentityVMapAssistant-macOS-x64.zip'],
 }
+for package_list in PACKAGES.values():package_list.extend(name for name in MODULE_PACKAGES if name not in package_list)
 
 def input_fingerprint(platform, root=None):
     """Hash release inputs, not timestamps, build output or automatic versions."""
     root = root or ROOT
     patterns = ['maps/curse/**', 'maps/linguang/**', 'maps/lianghapi/**', 'maps/zhanshi/**', 'maps/providers.json', 'maps/hard/**', 'maps/nightmare/**', 'maps/floors.json',
                 'mapmatching/src/**', 'mapmatching/config.py', 'mapmatching/paths.py',
-                'mapmatching/__init__.py']
+                'mapmatching/__init__.py','scripts/app_assets.py','scripts/build_pvp_package.py',
+                'mapmatching/pvp_package.py','mapmatching/module_payload.py','scripts/build_module_payloads.py',
+                'android/app/src/main/assets/*.js','mapmatching/assets/pvp/**','mapmatching/assets/update-news.json']
     if platform == 'android':
         patterns += ['android/app/src/**', 'android/*.gradle', 'android/app/*.gradle',
                      'android/gradle.properties', 'scripts/prepare_android.py',
@@ -123,6 +129,19 @@ def bump_android(text, remote_code=0, remote_name='0.0.0'):
     name=f'{base[0]}.{base[1]}.{base[2]+1}{match[4]}'
     text=re.sub(r'versionCode\s+\d+',f'versionCode {code}',text,count=1)
     return re.sub(r"versionName\s+'[^']+'",f"versionName '{name}'",text,count=1),code,name
+
+def read_notes(path,platforms):
+    text=path.read_text(encoding='utf-8')
+    if path.suffix.lower()!='.json':return text
+    news=json.loads(text)
+    important=news.get('important')
+    changes=([important] if important else [])+news['changes']
+    if platforms.intersection({'windows','mac'}) and news.get('desktop'):changes.append(news['desktop'])
+    if 'android' in platforms and news.get('android'):changes.append(news['android'])
+    lines=['### 小布偶插件 · 更新公告','']
+    for number,change in enumerate(changes,1):
+        lines.append(f'{number}. **{change}**' if number==1 and important else f'{number}. {change}')
+    return '\n'.join(lines)
 
 class Redirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl):
@@ -332,7 +351,7 @@ def main():
     stamp=dt.datetime.now().strftime('%Y%m%d-%H%M%S')
     directory=ROOT/'release/jobs'/stamp;directory.mkdir(parents=True)
     state={'id':stamp,'platforms':sorted(platforms),'ready':False,'files':{},
-        'notes':args.notes.read_text(encoding='utf-8') if args.notes else f'### {stamp} 更新\n平台：'+', '.join(sorted(platforms))}
+        'notes':read_notes(args.notes,platforms) if args.notes else f'### {stamp} 更新\n平台：'+', '.join(sorted(platforms))}
     if github:state['release_id']=release['id']
     if 'android' in platforms:
         old=github.manifest(github.api('/releases/latest'),'android-update.json') if github else {}
@@ -350,14 +369,14 @@ def main():
     wanted=set()
     if 'windows' not in platforms:
         run([sys.executable,'scripts/build_matching_module.py'])
-        for n in ('IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json'):
+        for n in [*MODULE_PACKAGES,'IdentityVMapAssistant-Matching.zip']:
             shutil.copy2(ROOT/'release'/n,directory/n);wanted.add(n)
     if 'windows' in platforms:
         run([sys.executable,'scripts/build_windows.py'])
         report=directory/'windows-smoke.json'
         run([ROOT/'dist/IdentityVMapAssistant/IdentityVMapAssistant.exe','--self-test',report],env={**os.environ,'JYSJ_SMOKE_MAP_ROOT':str(ROOT)})
         if not json.loads(report.read_text(encoding='utf-8')).get('ok'):raise RuntimeError('Windows smoke failed')
-        wanted.update(['IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','IdentityVMapAssistant-Maps-lianghapi.zip','IdentityVMapAssistant-Maps-zhanshi.zip','matching-module.json','windows-update.json','SHA256SUMS.txt'])
+        wanted.update([*MODULE_PACKAGES,'IdentityVMapAssistant-Windows-x64.zip','IdentityVMapAssistant-Matching.zip','windows-update.json','SHA256SUMS.txt'])
         shutil.copy2(ROOT/'scripts/update-client.ps1',directory/'update-client.ps1')
         for n in wanted:shutil.copy2(ROOT/'release'/n,directory/n)
         wanted.add('update-client.ps1')
@@ -368,8 +387,8 @@ def main():
         env.setdefault('ANDROID_USER_HOME',str(ROOT/'out/android-user'));env.setdefault('GRADLE_USER_HOME',str(ROOT/'out/android-gradle-local-test'))
         env.setdefault('JYSJ_BUILD_PYTHON',str(TOOLS/'python310-full/python.exe'))
         gradle=TOOLS/'gradle/gradle-8.13/bin/gradle.bat'
-        run([gradle,'-p','android','assembleDebug','-Pandroid.overridePathCheck=true','--console=plain','--no-problems-report'],env=env)
-        apk=ROOT/'android/app/build/outputs/apk/debug/app-debug.apk'
+        run([gradle,'-p','android','assembleRelease','-Pandroid.overridePathCheck=true','--console=plain','--no-problems-report'],env=env)
+        apk=ROOT/'android/app/build/outputs/apk/release/app-release.apk'
         cert=run([Path(env['JAVA_HOME'])/'bin/java.exe','-jar',TOOLS/'sdk/build-tools/35.0.0/lib/apksigner.jar',
             'verify','--print-certs',apk],env=env,capture=True)
         if CERT not in cert:raise RuntimeError('Android signing certificate changed; refuse incompatible update')

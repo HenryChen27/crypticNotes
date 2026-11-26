@@ -19,6 +19,8 @@ class GamePackageTests(unittest.TestCase):
         (launcher.folder/'package.json').write_text(json.dumps(metadata))
         self.assertTrue(launcher.matches_download({'version': '2.4.0', 'sha256': 'a' * 64}))
         self.assertFalse(launcher.matches_download({'version': '2.4.0', 'sha256': 'b' * 64}))
+        self.assertTrue(launcher.matches_download({'sha256': 'a'*64}))
+        self.assertFalse(launcher.matches_download({'sha256': 'b'*64}))
         metadata.pop('downloadSha256')
         (launcher.folder/'package.json').write_text(json.dumps(metadata))
         self.assertFalse(launcher.matches_download({'version': '2.4.0', 'sha256': 'a' * 64}))

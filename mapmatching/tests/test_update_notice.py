@@ -12,8 +12,8 @@ class UpdateNoticeTests(unittest.TestCase):
             root=Path(folder)
             (root/'windows-build.json').write_text(json.dumps({'build':100}),encoding='utf-8')
             release={'assets':[
-                {'name':'windows-update.json','browser_download_url':'https://example.com/manifest'},
-                {'name':'IdentityVMapAssistant-Windows-x64.zip','size':12,'digest':'sha256:abcd'}]}
+                {'name':'windows-update.json','browser_download_url':'https://github.com/HenryChen27/crypticNotes/releases/download/v1/windows-update.json'},
+                {'name':'IdentityVMapAssistant-Windows-x64.zip','browser_download_url':'https://github.com/HenryChen27/crypticNotes/releases/download/v1/host.zip','size':12,'digest':'sha256:abcd'}]}
             for build,size,digest,expected in ((101,12,'abcd',True),(100,12,'abcd',False),
                     (99,12,'abcd',False),(101,13,'abcd',False),(101,12,'efgh',False)):
                 fetch=Mock(side_effect=[release,{'build':build,'size':size,'sha256':digest}])

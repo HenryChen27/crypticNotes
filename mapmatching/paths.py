@@ -12,6 +12,6 @@ FROZEN=bool(getattr(sys,'frozen',False))
 if FROZEN and sys.platform == 'darwin':
     DATA_ROOT=Path.home()/'Library/Application Support/IdentityVMapAssistant'
 elif FROZEN:
-    DATA_ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/'IdentityVMapAssistant'
+    DATA_ROOT=Path(os.environ.get('LOCALAPPDATA',str(Path.home()/'AppData/Local')))/('IdentityVMapAssistant-Review' if (ROOT/'module-review.json').is_file() else 'IdentityVMapAssistant')
 else:
     DATA_ROOT=ROOT

@@ -1,58 +1,77 @@
-import io,json,tempfile,unittest,zipfile,hashlib
+import io
+import json
 from pathlib import Path
-from unittest.mock import patch
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+import zipfile
+
+from mapmatching import module_payload
+from mapmatching.desktop_modules import update_installed
 from mapmatching.matching_module import MatchingModule
-from mapmatching.minigames import read_collection,CollectionGameStore
+from mapmatching.minigames import read_collection, CollectionGameStore, GameStore, game_title
+
 
 class OptionalModulesTests(unittest.TestCase):
-    def test_uninstall_preserves_custom_map_and_leaves_source_alone(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);data=root/'data';source=root/'source';source.mkdir()
-            with patch('mapmatching.matching_module.DATA_ROOT',data),patch('mapmatching.matching_module.ROOT',source),patch('mapmatching.matching_module.FROZEN',False),patch('mapmatching.src.mapstore.build_index'):
-                store=MatchingModule();maps=store.folder/'maps';maps.mkdir(parents=True)
-                entries=[{'map_id':'official','source':'maps/official.jpg'},{'map_id':'custom','source':'maps/custom.jpg'}]
-                (maps/'floors.json').write_text(json.dumps({'references':entries}))
-                (maps/'disabled.json').write_text('{"records":[]}')
-                (maps/'official-library.json').write_text(json.dumps({'ids':['official'],'files':['official.jpg']}))
-                (maps/'official.jpg').write_bytes(b'official');(maps/'custom.jpg').write_bytes(b'personal')
-                self.assertTrue(store.enabled());store.delete();self.assertFalse(store.enabled())
-                self.assertFalse(store.folder.exists())
-                kept=data/'module-user-data/mapmatching/maps'
-                self.assertEqual((kept/'custom.jpg').read_bytes(),b'personal')
-                self.assertFalse((kept/'official.jpg').exists())
-                self.assertEqual(json.loads((kept/'floors.json').read_text())['references'],[entries[1]])
+    def setUp(self):
+        temp=tempfile.TemporaryDirectory();self.addCleanup(temp.cleanup);self.root=Path(temp.name)
+        for target in ('mapmatching.matching_module.DATA_ROOT','mapmatching.desktop_modules.DATA_ROOT'):
+            active=patch(target,self.root);active.start();self.addCleanup(active.stop)
 
-    def test_install_merges_preserved_maps_and_checks_hash(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);data=root/'data';source=root/'source';source.mkdir()
-            payload=io.BytesIO()
-            with zipfile.ZipFile(payload,'w') as z:
-                z.writestr('maps/floors.json','{"references":[]}');z.writestr('maps/disabled.json','{"records":[]}')
-            raw=payload.getvalue();spec={'url':'https://github.com/HenryChen27/crypticNotes/releases/download/v1/module.zip','size':len(raw),'sha256':hashlib.sha256(raw).hexdigest()}
-            with patch('mapmatching.matching_module.DATA_ROOT',data),patch('mapmatching.matching_module.ROOT',source):
-                store=MatchingModule()
-                with patch('mapmatching.matching_module.load_map_catalog',return_value=spec),patch('mapmatching.matching_module.urllib.request.urlopen',return_value=io.BytesIO(raw)):store.download(lambda *a:None)
-                self.assertTrue(store.enabled());self.assertEqual(store.root(),store.folder)
-                spec['sha256']='0'*64
-                with patch('mapmatching.matching_module.load_map_catalog',return_value=spec),patch('mapmatching.matching_module.urllib.request.urlopen',return_value=io.BytesIO(raw)),self.assertRaises(ValueError):store.download(lambda *a:None)
-                self.assertTrue(store.enabled())
+    def archive(self,key,files):
+        path=self.root/module_payload.ASSETS[key]
+        with zipfile.ZipFile(path,'w') as bundle:
+            for name,value in files.items():bundle.writestr(name,value)
+        return dict(url=path.as_uri(),sha256=module_payload.digest(path),size=path.stat().st_size)
+
+    def core(self):
+        spec=self.archive('notes',{name:b'fixture' for name in module_payload.FILES['notes']})
+        store=MatchingModule()
+        with patch('mapmatching.matching_module.module_info',return_value=spec):store.download(lambda *_:None)
+        return store,spec
+
+    def test_author_requires_notes_and_original_is_not_an_optional_pack(self):
+        self.assertFalse(MatchingModule('original').enabled())
+        with self.assertRaisesRegex(ValueError,'主程序'):MatchingModule('zhanshi').download(None)
+        store,_=self.core();original=MatchingModule('original')
+        self.assertTrue(store.author_enabled('original'));self.assertFalse(store.author_enabled('lianghapi'))
+        self.assertEqual(original.root(),self.root/'modules/notes')
+        with self.assertRaises(ValueError):original.delete()
+        (store.root()/'maps/curse/original/easy/art.npz').unlink();self.assertFalse(original.enabled())
+
+    def test_delete_notes_removes_both_authors_but_preserves_personal_maps(self):
+        core,_=self.core();maps=MatchingModule('lianghapi').root()/'maps';maps.mkdir(parents=True)
+        custom={'map_id':'custom','source':'maps/custom.png'};(maps/'custom.png').write_bytes(b'personal')
+        (maps/'floors.json').write_text(json.dumps({'references':[custom]}))
+        with patch('mapmatching.src.provider_packages.build_index'):
+            for author in ('lianghapi','zhanshi'):
+                entry=dict(map_id=author,source='maps/'+author+'.jpg',provider=author)
+                spec=self.archive(author,{'maps/floors.json':json.dumps({'references':[entry]}),entry['source']:b'official'})
+                with patch('mapmatching.matching_module.module_info',return_value=spec):MatchingModule(author).download(lambda *_:None)
+                self.assertTrue(core.author_enabled(author))
+            core.delete()
+        self.assertFalse(core.enabled());self.assertFalse(core.root().exists())
+        self.assertTrue(all(not MatchingModule(author).receipt() for author in ('lianghapi','zhanshi')))
+        self.assertEqual((maps/'custom.png').read_bytes(),b'personal');self.assertFalse((maps/'zhanshi.jpg').exists())
+        self.assertEqual(json.loads((maps/'floors.json').read_text())['references'],[custom])
+
+    def test_bad_update_keeps_installed_version(self):
+        store,good=self.core();self.assertEqual(store.version(),good['sha256'][:12])
+        for bad in (dict(good,sha256='0'*64),self.archive('notes',{'unknown.txt':'wrong'})):
+            with patch('mapmatching.matching_module.module_info',return_value=bad), self.assertRaises(ValueError):store.download(lambda *_:None)
+            self.assertEqual(store.receipt()['sha256'],good['sha256'])
+            self.assertTrue(store.enabled())
+
+    def test_batch_only_downloads_installed_outdated_modules(self):
+        missing,latest,old=(Mock() for _ in range(3));missing.enabled.return_value=False;latest.update_available.return_value=False
+        update_installed([('missing',missing),('latest',latest),('old',old)],Mock())
+        missing.update_available.assert_not_called();missing.download.assert_not_called();latest.download.assert_not_called();old.download.assert_called_once()
 
     def test_kitchen_title_does_not_fall_back_to_english_id(self):
-        from mapmatching.minigames import game_title,GameStore
-        with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(game_title('mini-kitchen','mini-kitchen'),'邦邦小厨房')
-            self.assertEqual(GameStore(tmp,'mini-kitchen').title,'邦邦小厨房')
-            self.assertEqual(CollectionGameStore(tmp,{'id':'mini-kitchen','name':'Mini Kitchen'}).title,'邦邦小厨房')
-            self.assertEqual(game_title('new-game','新游戏'),'新游戏')
-
-    def test_library_version_reads_installed_module(self):
-        with tempfile.TemporaryDirectory() as tmp,patch('mapmatching.matching_module.DATA_ROOT',Path(tmp)):
-            store=MatchingModule();store.folder.mkdir(parents=True)
-            (store.folder/'maps').mkdir();(store.folder/'maps/floors.json').write_text('{"references":[]}')
-            (store.folder/'module.json').write_text(json.dumps({'sha256':'abc123456789'+'0'*52}))
-            self.assertEqual(store.version(),'库-abc123456789')
-            (store.folder/'module.json').write_text(json.dumps({'version':'1.2.3'}))
-            self.assertEqual(store.version(),'1.2.3')
+        self.assertEqual(game_title('mini-kitchen','mini-kitchen'),'邦邦小厨房')
+        self.assertEqual(GameStore(self.root,'mini-kitchen').title,'邦邦小厨房')
+        self.assertEqual(CollectionGameStore(self.root,{'id':'mini-kitchen','name':'Mini Kitchen'}).title,'邦邦小厨房')
+        self.assertEqual(game_title('new-game','新游戏'),'新游戏')
 
     def test_collection_rejects_untrusted_package(self):
         spec={'id':'jellyfish','runtime':'system-webview','entry':'game/index.html','url':'https://evil.example/game.zip','size':1,'sha256':'a'*64}
@@ -60,8 +79,7 @@ class OptionalModulesTests(unittest.TestCase):
         with patch('mapmatching.minigames.urllib.request.urlopen',return_value=io.BytesIO(raw)),self.assertRaises(ValueError):read_collection()
 
     def test_games_have_separate_install_identity_and_hash_updates(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            a=CollectionGameStore(tmp,{'id':'jellyfish','sha256':'a'*64});b=CollectionGameStore(tmp,{'id':'minesweeper','sha256':'b'*64})
-            self.assertNotEqual(a.folder,b.folder)
-            a.folder.mkdir();(a.folder/'package.json').write_text(json.dumps({'downloadSha256':'a'*64}))
-            self.assertFalse(a.update_available());self.assertTrue(b.update_available())
+        first=CollectionGameStore(self.root,{'id':'jellyfish','sha256':'a'*64});second=CollectionGameStore(self.root,{'id':'minesweeper','sha256':'b'*64})
+        self.assertNotEqual(first.folder,second.folder)
+        first.folder.mkdir();(first.folder/'package.json').write_text(json.dumps({'downloadSha256':'a'*64}))
+        self.assertFalse(first.update_available());self.assertTrue(second.update_available())

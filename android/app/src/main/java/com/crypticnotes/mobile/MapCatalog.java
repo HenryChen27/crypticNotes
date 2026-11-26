@@ -22,6 +22,8 @@ final class MapCatalog {
         final List<Integer> floors = new ArrayList<>();
         int width, height;
         String provider="lianghapi";
+        String scene="curse";
+        int layout,layer;
 
         Entry(String mapId, String name, String difficulty, String mode, String source, String review) {
             this.mapId = mapId;
@@ -78,6 +80,7 @@ final class MapCatalog {
                         item.optString("difficulty"), item.optString("mode", null),
                         item.optString("source"), item.optString("review"));
                 entry.provider=item.optString("provider","lianghapi");
+                entry.scene=item.optString("scene","curse");
                 JSONArray size = item.optJSONArray("size");
                 if (size != null && size.length() >= 2) {
                     entry.width = size.optInt(0);

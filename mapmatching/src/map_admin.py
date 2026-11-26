@@ -12,7 +12,7 @@ FLOOR_TEXT = {1: '1F', 2: '2F', -1: '地下室', -2: '负二层', -3: '负三层
 def floor_label(floor, scene='curse'):
     """磷光症全是地下楼层，游戏里叫负一/二/三层；厄运之女的 -1 仍叫地下室。"""
     if scene == 'linguang' and floor is not None and floor < 0:
-        return {-1: '负一层', -2: '负二层', -3: '负三层'}.get(floor, f'负{-floor}层')
+        return {-1: '负一层', -2: '负二层', -3: '负三层', -4: '负四层'}.get(floor, f'负{-floor}层')
     return FLOOR_TEXT.get(floor, f'{floor}F')
 MODE_TEXT = {None: '', 'solo': '单人', 'duo': '多人', 'full':'展十全棺', 'speed':'展十速刷'}
 
@@ -21,14 +21,14 @@ def maps_dir(root):
     return mapstore.maps_dir(root)
 
 
-def floor_text(floors):
-    return '·'.join(FLOOR_TEXT.get(f, f'{f}F') for f in floors)
+def floor_text(floors, scene='curse'):
+    return '·'.join(floor_label(floor,scene) for floor in floors)
 
 
 def context_text(difficulty, mode):
     if difficulty == 'hard':
         return '困难'+('·'+MODE_TEXT[mode] if mode in ('full','speed') else '')
-    return f'噩梦·{MODE_TEXT.get(mode, "")}'
+    return '噩梦'+('·'+MODE_TEXT[mode] if mode in MODE_TEXT and mode is not None else '')
 
 
 def _floors(regions):
@@ -61,6 +61,7 @@ def _row(entry, state, writable, stale):
     map_id = str(entry.get('map_id', ''))
     return dict(map_id=map_id, name=entry.get('name') or map_id.split('/')[-1],
                 difficulty=entry.get('difficulty'), mode=entry.get('mode'),
+                provider=entry.get('provider','lianghapi'), scene=mapstore.entry_scene(entry),
                 floors=_floors(entry.get('regions')), state=state, stale=stale,
                 writable=writable, source=entry.get('source'),
                 regions=entry.get('regions') or [])

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 # 游戏里的两张地图。`curse`=厄运之女（原有全部图库），`linguang`=磷光症。
 SCENES = ('curse', 'linguang')
 SCENE_NAMES = {'curse': '厄运之女', 'linguang': '磷光症'}
+DIFFICULTY_NAMES = {'easy': '简单', 'normal': '普通', 'hard': '困难', 'nightmare': '噩梦'}
 # 磷光症目前：凉哈皮有困难和噩梦（各一套，不分单人/多人），展十有困难（十六棺）和噩梦（十四棺）。
 SCENE_CONTEXTS = {
     'linguang': {
@@ -12,8 +13,14 @@ SCENE_CONTEXTS = {
 }
 
 
-def scene_options(scene, provider):
+def scene_options(scene, provider, maps=None):
     """(difficulties, modes) an author currently offers for a map; None = unrestricted."""
+    if provider == 'original':
+        from ..paths import ROOT
+        from .layout_library import offered
+        available = offered(ROOT/'maps' if maps is None else maps).get(scene, ())
+        choices = tuple(key for key in DIFFICULTY_NAMES if key in available)
+        return choices, (None,) if choices else ()
     limits = SCENE_CONTEXTS.get(scene)
     if limits is None:
         return None

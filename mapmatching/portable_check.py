@@ -6,7 +6,7 @@ import time
 import os
 import cv2
 import numpy as np
-from .paths import ROOT,DATA_ROOT
+from .paths import ROOT,DATA_ROOT,FROZEN
 from .src.reference import load,read_image
 from .src.live import worker
 
@@ -15,12 +15,13 @@ def run(output):
     from .ui import W,font_stack
     app=W.QApplication([]); fonts=font_stack()
     library_root=Path(os.environ.get('JYSJ_SMOKE_MAP_ROOT',str(ROOT)))
+    from .src.layout_library import LayoutLibrary, floor_catalog
+    from .pvp_package import PvpPackage
+    if FROZEN:assert not list((ROOT/'maps').glob('*/original/*/art.npz')) and not (ROOT/'mapmatching/assets/pvp/pvp-roster.json').exists()
+    if (library_root/'maps/curse/original/hard/layouts.npz').is_file():assert len(floor_catalog(library_root,'curse','hard'))==60
     if not (library_root/'maps/floors.json').is_file():
-        from .ui import Companion
-        ui=Companion();ui.module_tabs.setCurrentIndex(1)
-        assert not ui.matching_available() and ui.process is None
-        Path(output).write_text(json.dumps({'ok':True,'optional_matching':True,'fonts':fonts}),encoding='utf-8')
-        ui.shutdown();return
+        Path(output).write_text(json.dumps({'ok':True,'builtin_maps':0,'pvp_installed':PvpPackage().enabled(),'fonts':fonts}),encoding='utf-8')
+        return
     references=load(library_root/'maps')
     ref=next(r for r in references if r.map_id=='hard/北-T门')
     original=read_image(library_root/ref.source)

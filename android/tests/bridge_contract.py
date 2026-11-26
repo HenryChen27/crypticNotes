@@ -32,7 +32,7 @@ sys.path.insert(0, str(ROOT))
 
 import mobile_bridge  # noqa: E402  (path set up above)
 
-ASSETS = ROOT / 'android/generated/assets'
+ASSETS = ROOT
 SAMPLES = ROOT / 'out/android-samples'
 CLOSED = ['closed-0', 'closed-1', 'closed-2']
 OPEN = ['open-0', 'open-1', 'open-2']
@@ -67,7 +67,7 @@ def main():
     if not SAMPLES.exists():
         raise SystemExit(f'{SAMPLES} missing -- the sample frames are required')
 
-    print('references:', mobile_bridge.initialize(str(ASSETS), 'hard', 'solo'))
+    print('references:', mobile_bridge.initialize(str(ASSETS), 'hard', 'solo','lianghapi'))
     failures = []
 
     for name in CLOSED + OPEN:

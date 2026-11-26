@@ -1,12 +1,14 @@
 """Android transport/cache with mobile-only acceptance and retrieval policy."""
 import json
+import time
 from pathlib import Path
 import cv2
 import numpy as np
 from mobile_matching import MobileMatcher as MapMatcher, selected_floor
 from mapmatching.src.floor_tabs import inspect_basement_tabs
 from mapmatching.src.live import match_with_cache, raw_layer, MultiplayerFallback
-from mobile_images import read_image
+from mapmatching.src.display_art import read_display_map
+from mobile_images import decode_art
 from mobile_cancellation import checkpoint, request_scope, Superseded
 from mapmatching.src.manual_alignment import reliable_memory, automatic_cross_floor_reliable
 from mapmatching.src.live import centered_floor_layer
@@ -22,7 +24,7 @@ _names = {}
 _originals = {}
 _scene = 'curse'
 
-def initialize(root, difficulty, mode, provider='lianghapi', scene='curse'):
+def initialize(root, difficulty, mode, provider='original', scene='curse'):
     global _matcher, _cached, _confirmed, _root, _names, _pending_candidate, _scene
     cv2.setNumThreads(1)
     cv2.setRNGSeed(0)
@@ -32,6 +34,12 @@ def initialize(root, difficulty, mode, provider='lianghapi', scene='curse'):
     _confirmed = None
     _pending_candidate = None
     _originals.clear()
+    if provider=='original':
+        from mobile_library import builtin_root
+        from mapmatching.src.layout_library import LayoutLibrary
+        _matcher=LayoutLibrary(builtin_root(_root),scene,difficulty,decode_art=decode_art)
+        _names={}
+        return len(_matcher.pack.layers)
     if scene!='curse':
         # 磷光症等其他地图：只有自己的图集，没有第二作者的地形库可借身份。
         _matcher=MapMatcher(_root/'maps',difficulty=difficulty,mode=mode,provider=provider,scene=scene)
@@ -121,6 +129,16 @@ def commit_match(token):
     return False
 
 
+def _remember_candidate(candidate, remember, token):
+    global _cached, _confirmed, _pending_candidate
+    if remember:
+        _cached = candidate
+        if reliable_memory(candidate, {}):
+            _confirmed = candidate
+    elif token is not None:
+        _pending_candidate = (token, candidate)
+
+
 def match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0,
           request_counter=None, request_serial=0, width=0, height=0, stride=0, layer_format='png'):
     try:
@@ -138,11 +156,22 @@ def premultiplied_rgba(layer):
     is the same conversion done here (Skia's round-to-nearest), so the bitmap
     the overlay window draws is unchanged.
     """
-    rgba=cv2.cvtColor(np.ascontiguousarray(layer),cv2.COLOR_BGRA2RGBA)
-    alpha=rgba[:,:,3:4].astype(np.uint32)
-    rgb=rgba[:,:,:3].astype(np.uint32)
-    rgba[:,:,:3]=((rgb*alpha+128)*257>>16).astype(np.uint8)
-    return rgba
+    rgba=cv2.cvtColor(layer,cv2.COLOR_BGRA2RGBA)
+    return cv2.cvtColor(rgba,cv2.COLOR_RGBA2mRGBA)
+
+
+def write_layer(layer, output, layer_format):
+    if layer_format=='raw':
+        encoded=premultiplied_rgba(layer)
+        size=dict(layer_width=int(layer.shape[1]),layer_height=int(layer.shape[0]))
+    else:
+        ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
+        if not ok:raise ValueError('Overlay encoding failed')
+        size={}
+    checkpoint()
+    Path(output).write_bytes(memoryview(encoded).cast('B'))
+    checkpoint()
+    return size
 
 
 def _match(data, output, gated=False, remember=True, token=None, force_floor=0, viewed_floor=0,
@@ -150,14 +179,32 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     """Register the open map. `gated=True` when the caller already ran the
     map-panel gate on this exact frame, which saves a second decode and a
     second gate pass (~40-80ms) on the hot re-registration path."""
-    global _cached, _confirmed, _pending_candidate
+    global _pending_candidate
     checkpoint()
+    _pending_candidate = None
+    started=time.perf_counter()
     pixels=decode(data,width,height,stride)
     checkpoint()
     if not gated:
         visibility=inspect_map_ui(pixels)
         if not visibility['visible']:
             return json.dumps(dict(ok=False,message='未确认地图展开',details=visibility))
+    from mapmatching.src.layout_library import LayoutLibrary
+    if isinstance(_matcher, LayoutLibrary):
+        decoded=time.perf_counter()
+        details,candidate,message,layer=_matcher.propose(pixels,platform='phone',viewed_floor=viewed_floor or None, previous=_cached)
+        checkpoint()
+        diag=details['diagnostics']
+        timings={key:diag[key] for key in ('floor_ms','fit_ms','render_ms') if key in diag}
+        timings['decode_ms']=round((decoded-started)*1000,1)
+        if 'layout_match' in diag:timings['search']=diag['layout_match'].get('search_scope','library')
+        if candidate is None:return json.dumps(dict(ok=False,message=message,details=details,timings=timings))
+        rendered=time.perf_counter()
+        size=write_layer(layer,output,layer_format)
+        _remember_candidate(candidate, remember, token)
+        timings['write_ms']=round((time.perf_counter()-rendered)*1000,1)
+        return json.dumps(dict(ok=True,message=message,map_id=candidate.map_id,name='布局 '+_label(candidate.map_id),
+                               floor=candidate.floor,commit_on_display=True,timings=timings,**size))
     # Phone HUD and live 3-D scene remain visible to the left of the map.
     # Keep coordinates unchanged, but exclude them from geometric evidence.
     h,w=pixels.shape[:2]
@@ -234,28 +281,13 @@ def _match(data, output, gated=False, remember=True, token=None, force_floor=0, 
     reference=next(r for r in _matcher.references if r.map_id==candidate.map_id)
     if reference.source not in _originals:
         _originals.clear()  # Bound decoded-image memory to the currently used map.
-        _originals[reference.source] = read_image(_root/reference.source)
+        _originals[reference.source] = read_display_map(_root/reference.source, decode_art)
     checkpoint()
     layer=(centered_floor_layer(pixels.shape,_originals[reference.source],reference,floor,scale=_confirmed.pose.scale)
            if centered else raw_layer(pixels.shape,_originals[reference.source],reference,candidate,full_view=True))
-    layer_size={}
-    if layer_format=='raw':
-        encoded=premultiplied_rgba(layer)
-        layer_size=dict(layer_width=int(layer.shape[1]),layer_height=int(layer.shape[0]))
-    else:
-        ok,encoded=cv2.imencode('.png',layer,[cv2.IMWRITE_PNG_COMPRESSION,1])
-        if not ok:raise ValueError('Overlay encoding failed')
-    checkpoint()
-    Path(output).write_bytes(encoded.tobytes())
-    checkpoint()
-    if force_floor:
-        _pending_candidate=None
-    elif remember:
-        _cached=candidate
-        if reliable_memory(candidate,{}):
-            _confirmed=candidate
-    else:
-        _pending_candidate=(token,candidate)
+    layer_size=write_layer(layer,output,layer_format)
+    if not force_floor:
+        _remember_candidate(candidate, remember, token)
     if candidate.mode=='solo' and _matcher.__class__ is MultiplayerFallback:
         message='多人暂无专用路线'
     return json.dumps(dict(ok=True,message=_phone(message),map_id=candidate.map_id,

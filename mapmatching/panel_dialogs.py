@@ -6,6 +6,7 @@
 from pathlib import Path
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .theme import MistPanel
+from .src.display_art import read_display_map
 
 # 缩略图最长边。再大就只是白占屏幕边上的地方 —— 这里要的是「认出是哪张图」。
 THUMBNAIL = 260
@@ -18,6 +19,19 @@ FLOOR_COLOR = {1: '#d8e8f1', 2: '#8fbdcc', -1: '#c0afd2'}
 
 def screen_area():
     return W.QApplication.primaryScreen().availableGeometry()
+
+
+def pixel_picture(pixels):
+    height, width, channels = pixels.shape
+    fmt = G.QImage.Format_ARGB32 if channels == 4 else G.QImage.Format_BGR888
+    return G.QImage(pixels.data, width, height, pixels.strides[0], fmt)
+
+
+def map_picture(source):
+    try:
+        return pixel_picture(read_display_map(source))
+    except (OSError, ValueError):
+        return G.QImage()
 
 
 def own_dialog_open():
@@ -167,33 +181,19 @@ class ThumbnailPopup(W.QWidget):
         return rect if rect.width() > 4 and rect.height() > 4 else None
 
     def render(self, source, regions):
-        """按缩略图尺寸**解码**，而不是整张读完再缩。
-
-        原图动辄 4000 px 宽：整张解码要几十 MB 和几百毫秒，QImageReader 直接
-        按目标尺寸解码则只付缩略图的代价。所以这里不用 QPixmap(path)。
-
-        **只画 1F**：这些原图是「三条楼层竖着拼起来」的长图（829x1915 那种），
-        整张缩出来只有一根细条，谁也认不出是哪张。裁到 1F 之后既好认、弹窗也小。
-        裁的是 1F 的框（不是「图的上半部分」），所以框画歪了这里就跟着歪 ——
-        看到不对就说明录入的框需要改。没有 1F 的图（当前一张都没有）退回整张。
-        """
+        """裁出加噪显示图的 1F 再缩小；没有 1F 时预览整张。"""
         boxes, first = self._boxes(regions)
-        reader = G.QImageReader(str(source))
-        reader.setAutoTransform(True)
-        size = reader.size()
-        if not size.isValid() or not size.width() or not size.height():
+        image = map_picture(source)
+        if image.isNull():
             return G.QPixmap()
+        size = image.size()
         clip = self._clip_rect(first, size) if first else None
         shown = clip.size() if clip else size
         if clip:
-            reader.setClipRect(clip)
+            image = image.copy(clip)
         scale = min(THUMBNAIL/shown.width(), THUMBNAIL/shown.height(), 1.0)
         if scale < 1.0:
-            reader.setScaledSize(C.QSize(max(1, int(shown.width()*scale)),
-                                         max(1, int(shown.height()*scale))))
-        image = reader.read()
-        if image.isNull():
-            return G.QPixmap()
+            image = image.scaled(THUMBNAIL, THUMBNAIL, C.Qt.KeepAspectRatio, C.Qt.SmoothTransformation)
         pixmap = G.QPixmap.fromImage(image)
         sx, sy = pixmap.width()/shown.width(), pixmap.height()/shown.height()
         painter = G.QPainter(pixmap)

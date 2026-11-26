@@ -4,14 +4,14 @@ import cv2
 import numpy as np
 
 
-def _android_png(path):
+def _android_png(path=None, data=None):
     # The Android OpenCV wheel may omit libwebp. Use the OS decoder only on
     # that path; references are cached by mobile_bridge, not decoded per frame.
     from java import jclass
     BitmapFactory = jclass('android.graphics.BitmapFactory')
     CompressFormat = jclass('android.graphics.Bitmap$CompressFormat')
     OutputStream = jclass('java.io.ByteArrayOutputStream')
-    bitmap = BitmapFactory.decodeFile(str(path))
+    bitmap = BitmapFactory.decodeFile(str(path)) if data is None else BitmapFactory.decodeByteArray(data,0,len(data))
     if bitmap is None:
         raise ValueError(f'Android cannot decode image: {path}')
     stream = OutputStream()
@@ -35,3 +35,10 @@ def read_image(path):
         if image is not None:
             return image
     raise ValueError(f'Cannot decode image: {path}')
+
+
+def decode_art(data, flags=cv2.IMREAD_UNCHANGED):
+    image = cv2.imdecode(data,flags)
+    if image is None:
+        image = cv2.imdecode(np.frombuffer(_android_png(data=data.tobytes()),np.uint8),flags)
+    return image

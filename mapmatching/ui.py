@@ -12,6 +12,7 @@ import sys
 import time
 
 from .paths import ROOT, DATA_ROOT
+from . import release_news
 _venv_deps = ROOT/'.venv/Lib/site-packages'
 _fallback_deps = ROOT/'.ui-deps'
 # Prefer the real virtualenv even when an older bundled dependency directory
@@ -23,6 +24,7 @@ elif _fallback_deps.exists():
 
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .src.live import ToggleState, worker
+from .src.context import DIFFICULTY_NAMES, SCENE_NAMES, scene_options
 if sys.platform == 'darwin':
     from .src import macos as native
     from .macos_input import MouseWatcher, KeyboardWatcher
@@ -49,17 +51,17 @@ FONT_CACHE = []
 ARROW = (Path(__file__).resolve().parent/'assets/chevron.png').as_posix()
 
 
-def exclude_from_capture(window):
-    """Keep `window` on screen but out of every screen grab (Windows 10 2004+).
+def set_capture_exclusion(window, on):
+    """Keep `window` on screen but out of every screen grab (Windows 10 2004+), or put it back.
     Returns False where unsupported, and the caller hides before capturing."""
     if sys.platform != 'win32':
         return False
-    # 录制桌宠素材时设置 JYSJ_RECORD_PET=1：不排除采集，OBS 等录屏软件才拍得到布偶；
+    # JYSJ_RECORD_PET=1：任何时候都不排除（录素材时连识图那一下也要拍到布偶）；
     # 识图前会退回「截图时短暂隐藏」。
-    if os.environ.get('JYSJ_RECORD_PET'):
+    if on and os.environ.get('JYSJ_RECORD_PET'):
         return False
     try:
-        return bool(native.exclude_from_capture(int(window.winId())))
+        return bool(native.set_capture_exclusion(int(window.winId()), on))
     except Exception:
         return False
 
@@ -132,10 +134,16 @@ QWidget { color: #dbe5ec; font-family: __FONT__; font-size: 16px; }
 QFrame#panel { background: rgba(20,28,37,234); border: 1px solid rgba(154,180,200,60); border-radius: 10px; }
 QLabel#title { color: #eef4f8; font-size: 24px; }
 QLabel#muted { color: #acbdca; font-size: 14px; }
-QPushButton, QComboBox { background: rgba(203,215,223,92); border: 1px solid rgba(219,230,237,110); border-radius: 6px; padding: 7px; color: #101b25; }
-QPushButton:hover, QComboBox:hover { background: rgba(219,230,237,140); border-color: rgba(238,245,250,175); }
-QPushButton:pressed { background: rgba(236,243,248,190); }
-QComboBox::drop-down { border: none; width: 22px; }
+QPushButton, QComboBox { background: #344c5c; border: 1px solid #566c7d; border-radius: 6px; padding: 7px; color: #e3edf2; }
+QPushButton:hover, QComboBox:hover { background: #405b6e; border-color: #869daa; }
+QPushButton:pressed { background: #293f50; }
+QPushButton:disabled, QComboBox:disabled { background: #253744; color: #9aadb9; }
+QMessageBox, QFileDialog, QInputDialog { background: #203241; color: #dbe5ec; }
+QAbstractItemView, QLineEdit, QAbstractSpinBox, QTextEdit, QPlainTextEdit { background: #182936; color: #dbe5ec;
+    alternate-background-color: #243948; selection-background-color: #abc2d0; selection-color: #112330; }
+QAbstractItemView::item:selected { background: #abc2d0; color: #112330; }
+QHeaderView::section, QToolTip { background: #253b4c; color: #e3edf2; }
+QComboBox::drop-down { border: none; background: #9fb6c6; border-radius: 4px; margin: 4px; width: 20px; }
 /* Qt 不支持 CSS 画三角形的写法（会渲染成实心方块），必须用图片。 */
 QComboBox::down-arrow { image: url(__ARROW__); width: 11px; height: 7px; }
 QComboBox QAbstractItemView { background: #1b2530; color: #dbe5ec; border: 1px solid rgba(154,180,200,70);
@@ -931,6 +939,9 @@ class DraggableGear(GearButton):
         its trick (the lantern climbs and spits its fire) and the panel opens.
         While the trick is still playing the panel still toggles, but the
         trick is not restarted."""
+        pvp=getattr(self.window,'pvp',None)
+        if pvp is not None and pvp.scanning:
+            pvp.entry();return
         if not self.matching and not self.heart_playing():
             self.pet.play('heart')
         self.window.toggle_panel()
@@ -975,7 +986,7 @@ class DraggableGear(GearButton):
             if self.game_background and games is not None:
                 games.restore_game()
             else:
-                self.window.retry()
+                self.window.retry()          # the map, or the bans of the lobby on the PVP tab
             event.accept()
             return
         super().mouseDoubleClickEvent(event)
@@ -1046,12 +1057,18 @@ class DraggableGear(GearButton):
         """Right-click: the usual pet menu. Quitting is a menu item, never a click."""
         window=self.window
         menu=W.QMenu(self)
-        menu.addAction('重新识别',window.retry)
-        opened=getattr(window,'state',None) is not None and window.state.opened
-        menu.addAction('隐藏叠图' if opened else '显示叠图',
-                       (lambda: window.close_map(background=True)) if opened else (lambda: window.open_map('hide_hotkey_restore')))
+        mode=window.mode() if callable(getattr(window,'mode',None)) else 'notes'
+        if mode=='pvp' and window.pvp is not None:
+            menu.addAction('停止识别' if window.pvp.scanning else '识别禁用位',window.retry)
+        elif mode=='notes':
+            menu.addAction('重新识别',window.retry)
+            opened=getattr(window,'state',None) is not None and window.state.opened
+            menu.addAction('隐藏叠图' if opened else '显示叠图',
+                           (lambda: window.close_map(background=True)) if opened else (lambda: window.open_map('hide_hotkey_restore')))
         menu.addAction('小游戏',lambda: window.show_module(1))
-        menu.addAction('设置',window.toggle_panel)
+        menu.addAction('禁选辅助',lambda: window.show_module(3))
+        menu.addAction('一键更新',window.update_installed_modules)
+        menu.addAction('通用设置',lambda:window.show_module(2))
         menu.addSeparator()
         menu.addAction('退出',W.QApplication.instance().quit)
         menu.exec(point)
@@ -1187,8 +1204,9 @@ class Companion(W.QWidget):
             self.settings = json.loads(self.settings_path.read_text(encoding='utf-8'))
         except (OSError,ValueError):
             pass
+        release_news.migrate(self.settings, self.settings_path)
         self.last_module=self.settings.get('last_module','notes')
-        if self.last_module not in ('notes','games'):self.last_module='notes'
+        if self.last_module not in ('notes','games','pvp'):self.last_module='notes'
         self.font_mode = self.settings.get('font_mode','game')
         self.apply_font(self.font_mode)
         self.hotkey, self.hide_hotkey = resolve_hotkeys(self.settings)
@@ -1229,49 +1247,46 @@ class Companion(W.QWidget):
         box.setAlignment(C.Qt.AlignTop)
         from .module_ui import MatchingControls,application_version
         self.matching_controls=MatchingControls(self)
-        # Section names and order follow the phone: 游戏设置 (always open),
-        # then 辅助设置, 界面设置 and 应用更新 under 「更多」.
-        self.setting_sections = [FoldSection(name, i == 0) for i, name in
-                                 enumerate(('游戏设置', '地图设置', '地图库', '小游戏', '辅助设置'))]
-        self.general_section=FoldSection('界面设置',True)
+        self.ban_versions=MatchingControls(self,'pvp');self.games_versions=MatchingControls(self,'games')
+        self.module_versions={0:self.matching_controls,1:self.games_versions,3:self.ban_versions}
+        self.batch_task=None
+        self.game_section=FoldSection('游戏设置',True)
+        self.map_section=FoldSection('地图设置')
+        self.games_section=FoldSection('小游戏',True)
+        self.more_section=FoldSection('其他设置')
+        self.general_section=FoldSection('系统设置')
+        self.pet_section=FoldSection('桌宠设置')
         self.map_shortcuts=FoldSection('快捷键')
-        self.version_section=FoldSection('应用更新')
-        self.setting_sections.extend([self.general_section,self.map_shortcuts,self.version_section])
+        self.version_section=FoldSection('版本')
+        self.pvp_section=FoldSection('禁选辅助',True)
+        self.pvp_section.header.hide()
+        from .mailbox import Mailbox
+        from .review_delivery import read_delivery
+        from .mailbox_ui import MailboxSection,MailBadge,client_id,gear_spot
+        self.mail_section=MailboxSection(Mailbox(None,delivery=read_delivery()),lambda:client_id(self))
+        from .shortcut_row import BanShortcuts
+        self.ban_shortcuts=BanShortcuts(self)
+        self.mail_badges=[MailBadge(self.gear,gear_spot),MailBadge(self.module_tabs.buttons[2],lambda tab:(tab.width()/2+13,tab.height()/2-13,1.,1.),number=False)]
+        self.mail_section.unread.connect(lambda count:[badge.set_count(count) for badge in self.mail_badges])
+        self.mail_section.rebuild()
         # Wrapped and width-ignoring: no version text may widen the page
         # beyond the scroll viewport (horizontal scrolling is off, so the
         # overflow would silently clip every row on the right).
-        app_version=W.QLabel('主程序（含识图程序）\n版本 '+application_version())
+        app_version=W.QLabel('插件主程序 · '+application_version())
         app_version.setWordWrap(True)
         app_version.setSizePolicy(W.QSizePolicy.Ignored,W.QSizePolicy.Preferred)
         self.version_section.body.addWidget(app_version)
-        self.version_section.body.addWidget(self.matching_controls)
         self.matching_controls.changed.connect(self.refresh_matching_module)
-        for i in (3,5):self.setting_sections[i].hide()
-        self.setting_sections[3].header.hide()
-        self.setting_sections[3].header.setChecked(True)
+        self.games_section.header.hide()
         groups = W.QWidget()
         group_layout = W.QVBoxLayout(groups)
         group_layout.setContentsMargins(0, 0, 0, 0)
         group_layout.setSpacing(8)
         group_layout.setAlignment(C.Qt.AlignTop)
-        # The per-match group is a card that is always open, titled under a
-        # hand-drawn rule; everything reached less often folds under one
-        # 「更多」, as on the phone.
-        card=self.setting_sections[0]
+        card=self.game_section
         card.header.hide();card.header.setChecked(True)
         card_title=W.QLabel('游戏设置');card_title.setObjectName('card_title')
         card.body.insertWidget(0,card_title);card.body.insertWidget(1,HandRule())
-        self.more_section=FoldSection('更多')
-        self.more_section.body.setContentsMargins(6,8,6,10)
-        group_layout.addWidget(card)
-        group_layout.addWidget(self.setting_sections[3])
-        group_layout.addWidget(self.more_section)
-        for index in (1,2,4,6,7):
-            self.more_section.body.addWidget(self.setting_sections[index])
-        # 界面设置 (pet, font) is the settings tab itself, not a fold of 「更多」.
-        group_layout.addWidget(self.setting_sections[5])
-        for section in self.setting_sections+[self.more_section]:
-            section.changed.connect(lambda: C.QTimer.singleShot(0, self.resize_settings))
         self.settings_scroll = W.QScrollArea()
         self.settings_scroll.setWidgetResizable(True)
         self.settings_scroll.setVerticalScrollBar(FrostScrollBar())
@@ -1282,10 +1297,23 @@ class Companion(W.QWidget):
         self.settings_scroll.setStyleSheet('QScrollArea, QScrollArea > QWidget > QWidget {background:transparent;}')
         self.settings_scroll.setWidget(groups)
         box.addWidget(self.settings_scroll)
-        game, preferences, library, minigames, debug = [s.body for s in self.setting_sections[:5]]
+        game, preferences = self.game_section.body,self.map_section.body
+        more = self.more_section.body
         from .minigames_ui import GameControls
         self.minigames = GameControls(self)
-        minigames.addWidget(self.minigames)
+        self.games_section.body.addWidget(self.minigames)
+        self.sections_by_tab={0:(card,self.map_section,self.more_section,self.map_shortcuts),
+                             1:(self.games_section,self.minigames.shortcut_section),
+                             3:(self.pvp_section,self.ban_shortcuts),
+                             2:(self.mail_section,self.general_section,self.pet_section,self.version_section)}
+        for tab,sections in self.sections_by_tab.items():
+            for section in sections:
+                group_layout.addWidget(section)
+                section.changed.connect(lambda: C.QTimer.singleShot(0,self.resize_settings))
+            if tab in self.module_versions:group_layout.addWidget(self.module_versions[tab])
+        self.games_versions.fold.body.addWidget(self.minigames.version_section)
+        self.games_versions.fold.header.toggled.connect(lambda opened:self.minigames.probe_catalog() if opened else None)
+        self.minigames.version_section.header.setChecked(True);self.minigames.version_section.header.hide()
         # Which game map the player queued for. 磷光症 has 凉哈皮's hard and
         # 展十's hard/nightmare atlases, so choosing it narrows the rows below
         # to what the chosen author offers (see context.SCENE_CONTEXTS).
@@ -1295,21 +1323,22 @@ class Companion(W.QWidget):
         scene_label=W.QLabel('地图');scene_label.setFixedWidth(62)
         scene_row.addWidget(scene_label);scene_row.addWidget(self.scene,1)
         game.addLayout(scene_row)
-        self.map_provider = ChalkChoice([('凉哈皮','lianghapi'),('展十','zhanshi')])
-        self.map_provider.setCurrentIndex(1 if self.settings.get('map_provider') == 'zhanshi' else 0)
+        self.map_provider = ChalkChoice([('小布偶','original'),('凉哈皮','lianghapi'),('展十','zhanshi')])
+        self.map_provider.setCurrentIndex({'lianghapi':1,'zhanshi':2}.get(self.settings.get('map_provider'),0))
         self.author_row=W.QWidget();author_row=W.QHBoxLayout(self.author_row)
         author_row.setContentsMargins(0,0,0,0)
         author_label=W.QLabel('地图版本');author_label.setFixedWidth(62)
         author_row.addWidget(author_label);author_row.addWidget(self.map_provider,1)
-        game.addWidget(self.author_row)
+        preferences.insertWidget(0,self.author_row)
         self.zhanshi_route = ChalkChoice([('全棺','full'),('速刷','speed')])
         self.zhanshi_route.setCurrentIndex(1 if self.settings.get('zhanshi_route') == 'speed' else 0)
         self.zhanshi_row=W.QWidget();route_layout=W.QHBoxLayout(self.zhanshi_row)
         route_layout.setContentsMargins(0,0,0,0)
         route_label=W.QLabel('参考路线');route_label.setFixedWidth(62)
         route_layout.addWidget(route_label);route_layout.addWidget(self.zhanshi_route,1)
-        self.difficulty = ChalkChoice([('困难','hard'),('噩梦','nightmare')])
-        self.difficulty.setCurrentIndex(1 if self.settings.get('difficulty') == 'nightmare' else 0)
+        self.difficulty = ChalkChoice([(name, key) for key, name in DIFFICULTY_NAMES.items()])
+        saved = self.settings.get('difficulty')
+        self.difficulty.setCurrentIndex(tuple(DIFFICULTY_NAMES).index(saved if saved in DIFFICULTY_NAMES else 'hard'))
         self.difficulty_row=W.QWidget()
         difficulty_row=W.QHBoxLayout(self.difficulty_row)
         difficulty_row.setContentsMargins(0,0,0,0)
@@ -1370,12 +1399,13 @@ class Companion(W.QWidget):
         self.bound_label.hide()
         local = ChalkButton('本地截图')
         local.clicked.connect(self.choose_screenshot)
-        enroll = ChalkButton('管理地图')
-        enroll.clicked.connect(self.manage_maps)
+        manage = ChalkButton('管理地图')
+        manage.clicked.connect(self.manage_maps)
+        preferences.addWidget(manage)
         self.return_game = ChalkButton('返回屏幕')
         self.return_game.clicked.connect(self.leave_demo)
         self.return_game.hide()
-        debug.addWidget(self.return_game)
+        more.addWidget(self.return_game)
         buttons = W.QHBoxLayout()
         retry = ChalkButton('重新识别',keycap=keycap_text(self.hotkey));self.retry_button=retry
         retry.clicked.connect(self.retry)
@@ -1457,17 +1487,13 @@ class Companion(W.QWidget):
         label=W.QLabel('偷鼠标：'); label.setStyleSheet('font-size:14px;'); row.addWidget(label)
         row.addWidget(self.pet_heist); row.addStretch()
         self.pet_heist_row.setVisible(skin_name(self.settings)=='puppet')
-        library.addWidget(enroll)
-        import_button = ChalkButton('录入新地图')
-        import_button.clicked.connect(self.import_map)
-        library.addWidget(import_button)
-        debug.addWidget(local)
+        more.addWidget(local)
         records_row = W.QHBoxLayout()
         self.power_saving=FrostCheckBox('省电模式')
         self.power_saving.setChecked(self.settings.get('power_saving',False))
         self.power_saving.setToolTip('降低状态检查和布偶动画频率；地图关闭检测最多稍慢，不改变匹配分辨率和判定')
         self.power_saving.toggled.connect(lambda _:self.save())
-        debug.addWidget(self.power_saving)
+        self.general_section.body.addWidget(self.power_saving)
         self.record_failures = FrostCheckBox('记录识别案例')
         self.record_failures.setChecked(self.settings.get('record_failures', True))
         self.record_failures.setToolTip('保存成功与失败截图及诊断数据，每个分类各保留最近20条，自动删除最早记录；仅保存在本机，分享前请检查私人信息')
@@ -1476,14 +1502,14 @@ class Companion(W.QWidget):
         records_button = ChalkButton('打开记录')
         records_button.clicked.connect(self.open_failure_records)
         records_row.addWidget(records_button)
-        debug.addLayout(records_row)
+        more.addLayout(records_row)
         self.records_path = W.QLabel()
         self.records_path.setWordWrap(True)
         self.records_path.setObjectName('muted')
-        debug.addWidget(self.records_path)
+        more.addWidget(self.records_path)
         change_folder = ChalkButton('更改存储文件夹')
         change_folder.clicked.connect(self.choose_records_folder)
-        debug.addWidget(change_folder)
+        more.addWidget(change_folder)
         self.update_records_path()
         box.addWidget(self.status)
         quit_button = W.QPushButton('退出')
@@ -1491,19 +1517,20 @@ class Companion(W.QWidget):
         quit_button.clicked.connect(W.QApplication.instance().quit)
         box.addWidget(quit_button)
         self.general_section.body.addLayout(font_row)
+        self.pvp_controls=self.ban_versions.core
         size_row=W.QHBoxLayout();size_row.addWidget(W.QLabel('字号'),1)
         self.font_size=W.QSpinBox();self.font_size.setRange(12,22);self.font_size.setSuffix(' px')
         self.font_size.setStyleSheet('QSpinBox {background:rgba(17,33,46,180);color:#dbe5ec;border:1px solid rgba(160,185,204,65);padding:3px 6px;}')
         self.font_size.setValue(int(self.settings.get('font_size',16)))
         self.font_size.valueChanged.connect(lambda _:self.font_changed())
         size_row.addWidget(self.font_size);self.general_section.body.addLayout(size_row)
-        self.general_section.body.addLayout(pet_row)
-        self.general_section.body.addLayout(skin_row)
-        self.general_section.body.addWidget(self.pet_size_label)
-        self.general_section.body.addWidget(self.pet_size)
+        self.pet_section.body.addLayout(pet_row)
+        self.pet_section.body.addLayout(skin_row)
+        self.pet_section.body.addWidget(self.pet_size_label)
+        self.pet_section.body.addWidget(self.pet_size)
         for row in self.pet_rows:
-            self.general_section.body.addLayout(row)
-        self.general_section.body.addWidget(self.pet_heist_row)
+            self.pet_section.body.addLayout(row)
+        self.pet_section.body.addWidget(self.pet_heist_row)
         update_button = ChalkButton('检查更新')
         self.update_button = update_button
         update_button.clicked.connect(self.check_update)
@@ -1527,7 +1554,8 @@ class Companion(W.QWidget):
         self.timer.timeout.connect(self.tick)
         self.timer.start(20)
         self.scene.currentIndexChanged.connect(self.context_changed)
-        self.map_provider.currentIndexChanged.connect(self.context_changed)
+        self.map_provider.currentIndexChanged.connect(self.provider_changed)
+        if self.provider()!='original' and not self.matching_controls.store.author_enabled(self.provider()):self.select_original(save=False)
         self.zhanshi_route.currentIndexChanged.connect(self.context_changed)
         self.difficulty.currentIndexChanged.connect(self.context_changed)
         self.party.currentIndexChanged.connect(self.context_changed)
@@ -1571,20 +1599,88 @@ class Companion(W.QWidget):
             self.tray.setContextMenu(self.tray_menu)
             self.tray.show()
         W.QApplication.instance().aboutToQuit.connect(self.shutdown)
-        # The pet, its bubble and the drop slot stay on screen during a screen
-        # grab: Windows leaves them out of the capture, so nothing has to hide.
-        self._capture_excluded = all(exclude_from_capture(w) for w in (self, self.toast, self.gear.exit_zone))
+        # The pet shows in the player's own screenshots and recordings. It is left out of
+        # screen grabs only while this program takes its own (see capture_shield).
+        self._capture_shielded = False
+        # PVP mode (mapmatching/pvp): reads the ranked lobby on a double-click when switched on.
+        # Its own windows, settings and threads; nothing above depends on it.
+        self.pvp=None;self.pvp_content=None
+        self.pvp_controls.changed.connect(self.refresh_pvp)
+        for versions in (self.ban_versions,self.games_versions):versions.changed.connect(self.refresh_package_pages)
+        self.refresh_pvp()
         # Prepare the filtered index while the gear is idle, before the first G.
-        self.module_tabs.setCurrentIndex(1 if self.last_module=='games' else 0)
+        self.module_tabs.setCurrentIndex({'games':1,'pvp':3}.get(self.last_module,0))
         C.QTimer.singleShot(0,self.refresh_matching_module)
+        C.QTimer.singleShot(1200,self.probe_modules)
 
         from .update_notice import watch_once
         def update_notice(available):
             self.update_button.set_update_available(available)
             self.version_section.header.set_update_available(available)
-            self.more_section.header.set_update_available(available)
+            self.module_tabs.buttons[2].set_update_available(available)
+            self.update_button.setText('更新' if available else '检查更新')
             self.update_button.setToolTip('发现新版本，点击更新' if available else '')
-        watch_once(self, ROOT, update_notice)
+        if not (ROOT/'module-review.json').is_file():watch_once(self, ROOT, update_notice)
+
+    def refresh_pvp(self):
+        if self.pvp_controls.task is not None:return
+        version=self.pvp_controls.store.version() if self.pvp_controls.store.enabled() else None
+        if self.pvp is not None and self._pvp_version==version:return
+        self._pvp_version=version
+        if self.pvp is not None:
+            self.pvp.shutdown();self.pvp.deleteLater();self.pvp=None
+            from .pvp import reader,store
+            reader._matcher=None;store._roster=None
+        if self.pvp_content is not None:
+            self.pvp_section.body.removeWidget(self.pvp_content);self.pvp_content.deleteLater();self.pvp_content=None
+        if version is not None:
+            from .pvp.controller import PvpController
+            self.pvp_content=W.QWidget();self.pvp_section.body.addWidget(self.pvp_content)
+            self.pvp=PvpController(self)
+            try:
+                self.pvp.build_section(W.QVBoxLayout(self.pvp_content))
+                self.update_ban_keycaps()
+            except Exception as error:
+                self.pvp.shutdown();self.pvp.deleteLater();self.pvp=None
+                self.pvp_controls.status.setText('禁选辅助无法加载：'+str(error));self.pvp_controls.status.show()
+
+    def packages_busy(self):
+        return bool(getattr(self,'batch_task',None) or getattr(getattr(self,'minigames',None),'task',None) or any(section.task for section in getattr(self,'module_versions',{}).values()))
+
+    def package_badges(self):
+        for index,section in getattr(self,'module_versions',{}).items():
+            updated=any(row.available for row in section.providers) or (index==1 and getattr(getattr(self,'minigames',None),'game_updates',False))
+            updated=bool(updated and section.store.enabled());section.fold.header.set_update_available(updated);self.module_tabs.buttons[index].set_update_available(updated)
+
+    def probe_modules(self):
+        if self.packages_busy():return
+        for section in self.module_versions.values():section.probe()
+
+    def refresh_package_pages(self):
+        for section in self.module_versions.values():section.refresh()
+        self.minigames.refresh();self.package_badges();self.switch_module(self.module_tabs.currentIndex())
+
+    def update_installed_modules(self):
+        if self.packages_busy() or self.minigames.running() or any(row.check_task for section in self.module_versions.values() for row in section.providers):
+            self.notify('请先结束当前下载、检查或小游戏');return
+        from .minigames_ui import DownloadTask
+        from .desktop_modules import update_installed
+        from functools import partial
+        from types import SimpleNamespace
+        self.close_map(silent=True);self.stop_worker()
+        if self.pvp is not None:self.pvp.leave()
+        cores=[(row.name,row.store) for section in self.module_versions.values() for row in section.providers]
+        self.batch_task=DownloadTask(SimpleNamespace(download=partial(update_installed,cores)),self)
+        self.batch_message='';self.batch_task.progress.connect(lambda percent,text:setattr(self,'batch_message',text));self.batch_task.result.connect(lambda error:setattr(self,'batch_message',error or self.batch_message))
+        self.batch_task.finished.connect(self.batch_finished);self.batch_task.start();self.notify('正在检查已安装的包…')
+
+    def batch_finished(self):
+        task,self.batch_task=self.batch_task,None;task.deleteLater()
+        for section in self.module_versions.values():
+            for row in section.providers:row.last_check=None
+        self.refresh_pvp();self.refresh_matching_module();self.probe_modules()
+        if self.games_versions.store.enabled():self.minigames.sync_catalog()
+        self.notify(self.batch_message)
 
     def event(self,event):
         """点到游戏/桌面时把展开的设置面板收回成齿轮。
@@ -1612,28 +1708,67 @@ class Companion(W.QWidget):
             row.set_key(label,keycap_text(key))
         if hasattr(self,'retry_button'):
             self.retry_button.set_keycap(keycap_text(self.hotkey));self.hide_button.set_keycap(keycap_text(self.hide_hotkey))
+            self.update_ban_keycaps()
         if persist:self.save()
+
+    def update_ban_keycaps(self):
+        if getattr(self,'pvp',None) is not None:
+            self.pvp.set_keycap(*(keycap_text(key) if key else None for key in (self.ban_shortcuts.binding('scan'),self.ban_shortcuts.binding('manual'))))
 
     def refresh_matching_module(self):
         available=self.matching_available()
-        for i in (1,2,4,6):self.setting_sections[i].setEnabled(available)
+        for section in (self.more_section,self.map_shortcuts):section.setEnabled(available)
         self.cached_candidate=None;self.confirmed_candidate=None
-        self.switch_module(self.module_tabs.currentIndex())
+        self.refresh_map_provider();self.refresh_package_pages()
         if available:self.start_worker()
 
+    def mode(self):
+        """What the pet is doing now, and so what a recognise request means - one thing at a time:
+        'games' while a mini-game runs (only its own similarity check), 'pvp' on the PVP tab
+        (only the bans of the ranked lobby), otherwise 'notes' (only the map)."""
+        games=getattr(self,'minigames',None)
+        if games is not None and games.running():return 'games'
+        return getattr(self,'last_module','notes')
+
+    def capture_shield(self, on):
+        """Leave the pet, its bubble and the drop slot out of screen grabs (`on`), or let them show again.
+
+        They stay on screen either way. The shield goes up for the length of a recognition in either
+        mode (a map request, a PVP read), and `tick` takes it down once that is over, so the player's
+        screenshots and recordings show the pet the rest of the time. Returns whether the windows are out of grabs now; False (an old
+        Windows, a recording run) sends the caller back to hiding before it captures.
+        """
+        if bool(on) == getattr(self,'_capture_shielded',False):
+            return bool(on)
+        try:
+            done = all([set_capture_exclusion(w, on) for w in (self, self.toast, self.gear.exit_zone)])
+        except Exception:
+            done = False
+        self._capture_shielded = bool(on) and done
+        trace('capture_shield',on=self._capture_shielded)
+        return self._capture_shielded
+
     def switch_module(self,index):
-        if index in (0,1):self.last_module='games' if index==1 else 'notes'
-        available=self.matching_controls.store.enabled()
+        entering=index!=getattr(self,'_visible_tab',None)
+        self._visible_tab=index
+        before=self.last_module
+        if index in (0,1,3):self.last_module={1:'games',3:'pvp'}.get(index,'notes')
+        if self.last_module!=before:
+            # Map recognition and ban reading never run side by side: leaving one mode ends its work.
+            if before=='notes' and hasattr(self,'state') and self.state.opened:self.close_map(silent=True)
+            if before=='pvp' and getattr(self,'pvp',None) is not None:self.pvp.leave()
+            trace('module_mode',mode=self.last_module)
+        available=self.matching_controls.store.enabled();games=self.games_versions.store.enabled()
         if hasattr(self,'status'):self.status.setVisible(index==0 and available)
-        for i,section in enumerate(self.setting_sections):
-            section.setVisible(i in ({0,1,2,4,6,7} if index==0 and available else {7} if index==0 else {3} if index==1 else {5}))
-        self.more_section.setVisible(index==0)
-        if index==0 and not available:self.more_section.header.setChecked(True)
-        self.version_section.header.setVisible(available)
-        if not available:self.version_section.header.setChecked(True)
-        self.settings_scroll.verticalScrollBar().setValue(0)
+        accessible={0:available,1:games,3:self.pvp is not None,2:True}
+        for tab,sections in self.sections_by_tab.items():
+            for section in sections:section.setVisible(index==tab and accessible[tab])
+        for key,section in self.module_versions.items():section.setVisible(key==index)
+        if entering:
+            if index==2:self.mail_section.header.setChecked(True)
+            self.settings_scroll.verticalScrollBar().setValue(0)
         self.resize_settings()
-        if index==1:self.minigames.sync_catalog()
+        if index==1 and games and entering:self.minigames.probe_catalog()
 
     def set_panel_above(self, above):
         """面板挪到桌宠上面或放回下面：在同一个竖排布局里换先后。"""
@@ -1670,9 +1805,15 @@ class Companion(W.QWidget):
             section.setFixedHeight(head+max(0,body))
             section.updateGeometry()
             section.layout().invalidate();section.layout().activate()
-        self.settings_scroll.widget().layout().invalidate()
-        self.settings_scroll.widget().layout().activate()
-        wanted = self.settings_scroll.widget().sizeHint().height()
+        groups = self.settings_scroll.widget()
+        for versions in self.module_versions.values():
+            versions.layout().invalidate()
+            versions.layout().activate()
+            versions.updateGeometry()
+        groups.layout().invalidate()
+        groups.layout().activate()
+        wanted = groups.layout().sizeHint().height()
+        groups.setMinimumHeight(wanted)
         area = self.screen().availableGeometry()
         overhead = self.gear.height()+8+6+36+30+60
         shown = self.panel.isVisible()
@@ -1724,7 +1865,9 @@ class Companion(W.QWidget):
         if not self.panel.isVisible():
             games_only=self.minigames.running()
             self.module_tabs.buttons[0].setVisible(not games_only)
+            self.module_tabs.buttons[3].setVisible(not games_only)
             if games_only:self.module_tabs.setCurrentIndex(1)
+            if self.module_tabs.currentIndex()==2:self.mail_section.header.setChecked(True)
             self.settings_scroll.verticalScrollBar().setValue(0)
         opening = not self.panel.isVisible()
         if self.panel.isVisible():self.panel.hide()
@@ -1803,44 +1946,75 @@ class Companion(W.QWidget):
         return 'linguang' if getattr(self,'scene',None) is not None and self.scene.currentIndex() == 1 else 'curse'
 
     def provider(self):
-        return 'zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi'
+        return self.map_provider.currentData()
+
+    def select_original(self,save=True):
+        with C.QSignalBlocker(self.map_provider):self.map_provider.setCurrentIndex(0)
+        if save:self.context_changed()
+
+    def provider_changed(self):
+        if not self.matching_controls.store.author_enabled(self.provider()):
+            previous=self.settings.get('map_provider','original')
+            if not self.matching_controls.store.author_enabled(previous):previous='original'
+            with C.QSignalBlocker(self.map_provider):self.map_provider.setCurrentIndex({'lianghapi':1,'zhanshi':2}.get(previous,0))
+            self.matching_controls.fold.header.setChecked(True);self.notify('请先到加页手记 → 版本下载对应地图库');return
+        self.context_changed()
 
     def refresh_map_provider(self):
-        from .src.context import scene_options
+        options = scene_options(self.scene_id(), self.provider(), self.map_root()/'maps')
         is_zhanshi = self.provider() == 'zhanshi'
-        options = scene_options(self.scene_id(), self.provider())
         self.author_row.setVisible(True)
         self.difficulty_row.setVisible(True)
-        if options is not None:
-            # The author offers only some difficulties for this map: with one,
-            # show it fixed; with several, the player picks among them.
-            difficulties, _ = options
-            if len(difficulties) == 1 or self.context()[0] not in difficulties:
-                self.difficulty.setCurrentIndex(1 if 'nightmare' in difficulties else 0)
-        self.difficulty.setEnabled(options is None or len(options[0]) > 1)
-        self.party_row.setVisible(options is None and not is_zhanshi and self.difficulty.currentIndex() == 1)
+        difficulties = options[0] if options is not None else ('hard', 'nightmare')
+        selected = self.difficulty.currentData()
+        if not difficulties:
+            self.difficulty.setEnabled(False)
+            self.party_row.hide();self.zhanshi_row.hide()
+            return
+        if selected not in difficulties:
+            selected = 'hard' if 'hard' in difficulties else difficulties[0]
+        self.difficulty.items = [(DIFFICULTY_NAMES[key], key) for key in difficulties]
+        self.difficulty.index = difficulties.index(selected)
+        self.difficulty.update()
+        self.difficulty.setEnabled(len(difficulties) > 1)
+        self.party_row.setVisible(options is None and not is_zhanshi and selected == 'nightmare')
         self.zhanshi_row.setVisible(options is None and is_zhanshi)
 
+    def map_root(self):
+        from .matching_module import MatchingModule
+        return MatchingModule(self.provider()).root()
+
     def context(self):
-        from .src.context import scene_options
+        chosen = self.difficulty.currentData()
+        if self.provider() == 'original':
+            return chosen, None
         options = scene_options(self.scene_id(), self.provider())
-        if options is not None:
-            difficulties, modes = options
-            chosen = 'hard' if self.difficulty.currentIndex() == 0 else 'nightmare'
-            return (chosen if chosen in difficulties else difficulties[0], modes[0])
-        if self.map_provider.currentIndex() == 1:
-            return ('hard' if self.difficulty.currentIndex()==0 else 'nightmare','full' if self.zhanshi_route.currentIndex() == 0 else 'speed')
-        return ('hard',None) if self.difficulty.currentIndex() == 0 else ('nightmare','solo' if self.party.currentIndex() == 0 else 'duo')
+        if options is not None and options[0]:
+            return chosen, options[1][0]
+        if self.provider() == 'zhanshi':
+            return chosen, self.zhanshi_route.currentData()
+        return chosen, self.party.currentData() if chosen == 'nightmare' else None
 
     def save(self):
         if hasattr(self,"map_key_rows"):self.update_map_keys(False)
         difficulty,mode = self.context()
         point = self.gear_pos()
         self.settings_path.parent.mkdir(parents=True,exist_ok=True)
-        self.settings_path.write_text(json.dumps(dict(scene=self.scene_id(),map_provider='zhanshi' if self.map_provider.currentIndex() == 1 else 'lianghapi',zhanshi_route='speed' if self.zhanshi_route.currentIndex() == 1 else 'full',last_module=self.last_module,difficulty='nightmare' if self.difficulty.currentIndex() == 1 else 'hard',mode='duo' if self.party.currentIndex() == 1 else 'solo',opacity=self.opacity.value(),delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),confirm_key_enabled=self.confirm_key_enabled.isChecked(),confirm_hotkey=self.confirm_hotkey,hotkey=self.hotkey,hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_skin=self.gear.pet.skin_id,pet_scale=self.pet_size.value()/100 if hasattr(self,'pet_size') else float(self.settings.get('pet_scale',1.)),pet_fade=self.pet_fade.isChecked() if hasattr(self,'pet_fade') else True,pet_quiet=self.pet_quiet.isChecked() if hasattr(self,'pet_quiet') else False,pet_locked=self.pet_locked.isChecked() if hasattr(self,'pet_locked') else False,pet_heist=self.pet_heist.isChecked() if hasattr(self,'pet_heist') else True,pet_heist_pity=dict(self.heist.pity) if hasattr(self,'heist') else self.settings.get('pet_heist_pity',{}),power_saving=self.power_saving.isChecked(),record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])),encoding='utf-8')
+        self.settings.update(scene=self.scene_id(),map_provider=self.provider(),zhanshi_route=self.zhanshi_route.currentData(),
+            last_module=self.last_module,difficulty=difficulty,mode=self.party.currentData(),opacity=self.opacity.value(),
+            delay=self.delay.value(),font_mode=self.font_mode,font_size=self.font_size.value(),open_key_enabled=self.enabled.isChecked(),
+            close_key_enabled=self.close_key_enabled.isChecked(),hide_key_enabled=self.hide_key_enabled.isChecked(),
+            confirm_key_enabled=self.confirm_key_enabled.isChecked(),confirm_hotkey=self.confirm_hotkey,hotkey=self.hotkey,
+            hide_hotkey=self.hide_hotkey,close_hotkey=self.close_hotkey,pet_enabled=self.gear.pet.enabled,pet_skin=self.gear.pet.skin_id,
+            pet_scale=self.pet_size.value()/100,pet_fade=self.pet_fade.isChecked(),pet_quiet=self.pet_quiet.isChecked(),
+            pet_locked=self.pet_locked.isChecked(),pet_heist=self.pet_heist.isChecked(),power_saving=self.power_saving.isChecked(),
+            record_failures=self.record_failures.isChecked(),records_directory=str(self.records_directory()),pos=[point.x(),point.y()])
+        if hasattr(self,'heist'):self.settings['pet_heist_pity']=dict(self.heist.pity)
+        from .src.mapstore import write_json
+        write_json(self.settings_path,self.settings)
 
     def show_module(self, index):
-        """Open the panel on a module tab (0 notes, 1 mini-games)."""
+        """Open the panel on a module tab (0 notes, 1 mini-games, 3 PVP)."""
         self.module_tabs.setCurrentIndex(index)
         if not self.panel.isVisible():
             self.toggle_panel()
@@ -1981,6 +2155,8 @@ class Companion(W.QWidget):
         self.close_map()
         dialog=HotkeyDialog(self.close_hotkey,self,default='ESC',allow_escape=True)
         if dialog.exec()==W.QDialog.Accepted:
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.hide_hotkey]:
+                self.notify('关闭地图与隐藏叠图的快捷键不能相同');return
             if HOTKEYS[dialog.selected] == HOTKEYS[self.hotkey]:
                 self.notify('开启与关闭地图快捷键不能相同')
                 return
@@ -1996,6 +2172,8 @@ class Companion(W.QWidget):
     def edit_hide_hotkey(self):
         dialog=HotkeyDialog(self.hide_hotkey,self,default='BACKSPACE')
         if dialog.exec():
+            if HOTKEYS[dialog.selected] == HOTKEYS[self.close_hotkey]:
+                self.notify('隐藏叠图与关闭地图的快捷键不能相同');return
             if dialog.selected == self.hotkey:
                 self.notify('快捷键冲突：不能与地图开关快捷键相同')
                 return
@@ -2086,15 +2264,12 @@ class Companion(W.QWidget):
 
     def import_map(self):
         from .map_import_ui import MapImportDialog
+        if self.provider() == 'original':
+            self.notify('小布偶地图库只支持查看');return
         self.close_map()
-        # 传 ROOT 而不是 DATA_ROOT：`maps/` 是**唯一**一个地图库，原图、特征、
-        # 登记表都在里面（见 mapstore）。旧版把自建图写进 LocalAppData 是因为
-        # 内置图只读、两者本来就是两棵树；现在没有内置/自建之分，只留一棵，
-        # 免得「管理界面改的那份」和「匹配实际读的那份」不是同一份。
-        if self.scene_id() != 'curse':
-            self.notify('磷光症地图目前由内置图集提供，暂不支持手动录入');return
-        dialog=MapImportDialog(self.matching_controls.store.root(),*self.context(),self,provider=self.provider())
+        dialog=MapImportDialog(self.map_root(),*self.context(),self,provider=self.provider(),scene=self.scene_id())
         if dialog.exec()==W.QDialog.Accepted:
+            self.matching_controls.refresh()
             self.cached_candidate=None
             self.stop_worker()
             self.start_worker()
@@ -2102,6 +2277,10 @@ class Companion(W.QWidget):
             self.notify(f'已录入：{record["name"]}\n在对应难度 / 人数下自动参与匹配')
 
     def manage_maps(self):
+        if self.provider() == 'original':
+            from .map_manage_ui import LayoutBrowser
+            LayoutBrowser(self.map_root(),self.scene_id(),self.context()[0],self).exec()
+            return
         from .map_manage_ui import MapManageDialog
         self.close_map()
         # 停 worker 是**必需的**，不是保险：它只在启动时 load() 一次，把 references
@@ -2111,7 +2290,7 @@ class Companion(W.QWidget):
         # 可能持有句柄 —— Windows 上 os.replace / rmtree 撞上未关闭的句柄会 WinError 32。
         # 代价是关框后重建一次 worker（约 1 秒），和切难度同量级。
         self.stop_worker()
-        dialog=MapManageDialog(self.matching_controls.store.root(),*self.context(),self)
+        dialog=MapManageDialog(self.map_root(),*self.context(),self,provider=self.provider(),scene=self.scene_id())
         dialog.exec()
         # 看 changed 而不是 exec() 的返回值：用户完全可能改完再点「关闭」，
         # 那时 exec() 返回 Rejected，但库确实变了。
@@ -2213,6 +2392,8 @@ class Companion(W.QWidget):
 
     def check_update(self):
         import subprocess
+        if (ROOT/'module-review.json').is_file():
+            self.notify('本地审查版请使用新的审查包更新');return
         if getattr(self,'_update_starting',False):
             self.notify('更新中，请稍候…')
             return
@@ -2304,7 +2485,13 @@ class Companion(W.QWidget):
             return
         if self.panel.isVisible():
             self.toggle_panel()
-        self.cached_candidate = None
+        if Companion.mode(self)=='pvp':
+            if self.packages_busy():return
+            if self.pvp is not None:self.pvp.toggle_scan()
+            else:self.show_module(3)
+            return
+        if Companion.mode(self)=='games':self.show_module(1);return
+        if not getattr(getattr(self,'cached_candidate',None),'layout_memory',None):self.cached_candidate = None
         if self.demo:
             self.demo_window.raise_()
             self.demo_window.activateWindow()
@@ -2321,10 +2508,13 @@ class Companion(W.QWidget):
 
     def open_map(self, reason="map_hotkey", force_floor=None, target_override=None):
         if getattr(self,'_startup_waiting',False):return
+        if Companion.mode(self)!='notes':return
         if not Companion.matching_available(self):
             self.notify("请先下载加页手记地图识别模块");return
         games=getattr(self,'minigames',None)
         if games is not None and games.running():return
+        # While a recognition runs the pet stays out of every grab, whichever way the picture is taken.
+        Companion.capture_shield(self,True)
         trace("open_requested",trigger=reason,raw_keyboard=getattr(self.keys,"raw_keyboard",False))
         self.capture_trigger = reason
         self.close_map(silent=True)
@@ -2370,7 +2560,7 @@ class Companion(W.QWidget):
             window_capture = find_game_window(getattr(self, 'target', None)) is not None
         if self.demo_window is None and sys.platform == 'win32' and not window_capture and self.isVisible():
             self._capture_exclusion = native.client_rect(int(self.winId()))
-            if not getattr(self,'_capture_excluded',False):
+            if not Companion.capture_shield(self,True):
                 # Only where Windows cannot leave us out of the grab itself.
                 self._capture_hidden = True
                 self.hide()
@@ -2489,7 +2679,7 @@ class Companion(W.QWidget):
         if self.process is None:
             parent,child = mp.Pipe()
             self.connection = parent
-            self.process = mp.Process(target=worker,args=(child,str(self.matching_controls.store.root()),*self.context(),self.provider(),self.scene_id()),daemon=True)
+            self.process = mp.Process(target=worker,args=(child,str(self.map_root()),*self.context(),self.provider(),self.scene_id()),daemon=True)
             self.process.start()
             self.worker_deadline = time.monotonic() + 60
             child.close()
@@ -2827,7 +3017,7 @@ class Companion(W.QWidget):
             bound = find_game_window(getattr(self, 'target', None)) is not None
         # Only a screen grab needs the pet out of the frame; a bound game window
         # is captured by itself, pet or no pet.
-        if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and not bound and not getattr(self,'_capture_excluded',False) and getattr(self,'visibility_clean_next',False):
+        if sys.platform != 'darwin' and not getattr(self, '_capture_window_hwnd', None) and not bound and not Companion.capture_shield(self,True) and getattr(self,'visibility_clean_next',False):
             self.visibility_clean_next=False
             self._visibility_hidden=True
             self.hide()
@@ -2877,6 +3067,16 @@ class Companion(W.QWidget):
                 or (hasattr(self,'minigames') and self.minigames.running()))
         if hasattr(self,'timer'):
             self.timer.setInterval((40 if saving else 20) if active else (80 if saving else 60))
+        if getattr(self,'_capture_shielded',False):
+            pvp=getattr(self,'pvp',None)
+            # Recognising: either mode, from the request to its result. After that only an open map
+            # that is watched through whole-screen grabs (no game window bound) still needs the shield.
+            reading=(getattr(self,'busy',False) or getattr(self,'_capturing',False)
+                     or getattr(self,'opening',False) or getattr(self,'pending',None) is not None
+                     or (self.state.opened and not getattr(self,'_capture_window_hwnd',None))
+                     or (pvp is not None and pvp.scanning))
+            # Nothing of ours is reading the screen any more: the pet may be photographed again.
+            if not reading:Companion.capture_shield(self,False)
         # Capture cancellation must never leave only a tray icon behind.
         if not self.state.opened and not getattr(self,'_shutdown_done',False):
             if getattr(self,'_capture_hidden',False):self.restore_capture_companion()
@@ -2889,16 +3089,18 @@ class Companion(W.QWidget):
         # capture/template work off the UI thread so it cannot lose more keys.
         if sys.platform == 'win32' and hasattr(self,'visibility_watch'):
             self.visibility_watch()
-        offer_keys=Companion.manual_offer_keys(self)
-        extra=self.minigames.shortcut_keys() if hasattr(self,"minigames") else ()
-        self.keys.extra_keys={*extra,*offer_keys} if offer_keys else extra
+        active_module=Companion.mode(self)
+        offer_keys=Companion.manual_offer_keys(self) if active_module=='notes' else ()
+        extra=self.minigames.shortcut_keys() if active_module=='games' else ()
+        ban_keys=self.ban_shortcuts.active() if active_module=='pvp' and getattr(self,'pvp',None) is not None and not self.packages_busy() else {}
+        self.keys.extra_keys={*extra,*offer_keys,*ban_keys}
         edges = self.keys.edges()
         if edges:
             trace('shortcut_edge',keys=sorted(edges),enabled=self.enabled.isChecked(),
                   modal=W.QApplication.activeModalWidget() is not None)
         if W.QApplication.activeModalWidget() is not None:
             edges = set()
-        if hasattr(self,"minigames"):self.minigames.handle_shortcuts(edges)
+        if active_module=='games':self.minigames.handle_shortcuts(edges)
         foreground = win32gui.GetForegroundWindow()
         if sys.platform == 'win32' and hasattr(getattr(self,'keyboard',None),'report'):
             self.keyboard.report(foreground)
@@ -2928,7 +3130,12 @@ class Companion(W.QWidget):
                     and (self.is_game(foreground) or self.demo_window is not None)):
                 edges=edges-{offer_keys[0]}
                 self.accept_manual_alignment()
-        if getattr(self.keys,'close_key',0x1B) in edges:
+        if active_module!='notes':
+            if ban_keys and self.is_game(foreground):
+                for key,action in ban_keys.items():
+                    if key in edges:
+                        (self.pvp.toggle_scan if action=='scan' else self.pvp.entry)();break
+        elif getattr(self.keys,'close_key',0x1B) in edges:
             self.close_map(background=True)
         else:
             if getattr(self.keys,'hide_key',0) and self.keys.hide_key in edges:
@@ -3001,7 +3208,7 @@ class Companion(W.QWidget):
                               candidates=(details.get('candidates') or [])[:3])
                         if (not self.state.opened and token == getattr(self,'background_token',None)):
                             self.background_token = None
-                            if (candidate is not None and layer is not None and not no_map_evidence(details)
+                            if (candidate is not None and not getattr(candidate,'layout_memory',None) and layer is not None and not no_map_evidence(details)
                                     and not details.get('diagnostics',{}).get('manual_alignment')):
                                 self.cached_candidate = candidate
                                 from .src.manual_alignment import reliable_memory
@@ -3133,11 +3340,14 @@ class Companion(W.QWidget):
         if getattr(self, '_shutdown_done', False):
             return
         self._shutdown_done = True
+        if getattr(self, 'pvp', None) is not None:
+            self.pvp.shutdown()
         if hasattr(self, 'heist'):
             self.heist.abort()      # the position saved below is the puppet's own place
             for extra in (self.heist.sprite, self.heist.sack):
                 if extra is not None:extra.close()
-        for control in (getattr(self,'minigames',None),getattr(self,'matching_controls',None)):
+        if getattr(self,'batch_task',None):self.batch_task.requestInterruption();self.batch_task.wait()
+        for control in (getattr(self,'minigames',None),*getattr(self,'module_versions',{}).values()):
             if control is not None:control.shutdown()
         tray = getattr(self, 'tray', None)
         if tray is not None:
@@ -3181,7 +3391,10 @@ def main():
     import cv2
     cv2.setNumThreads(1)
     trace('desktop_compute_policy',opencv_threads=cv2.getNumThreads())
+    if sys.platform=='win32':C.QCoreApplication.setAttribute(C.Qt.AA_DontUseNativeDialogs)
     app = W.QApplication(sys.argv[:1])
+    from .theme import apply_desktop_palette
+    apply_desktop_palette(app)
     watch_for_stalls(app)
     if sys.platform == 'darwin':
         native.dpi_aware()  # Qt may reset the application activation policy.
@@ -3214,6 +3427,10 @@ def main():
         if not (ready or failed or time.monotonic()-startup_started>65):return
         startup_timer.stop();startup.close()
         ui._startup_waiting=False;ui.setEnabled(True);show_floating(ui)
+        if not args.startup_smoke and not args.demo:
+            from . import package_stats
+            package_stats.launched(ui.settings.get('seen_update_news'))
+        release_news.show(ui)
     startup_timer.timeout.connect(finish_startup)
     startup_timer.start(50)
     app.aboutToQuit.connect(startup.close)

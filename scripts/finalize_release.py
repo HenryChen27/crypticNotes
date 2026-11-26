@@ -14,10 +14,9 @@ from dist_extras import inject
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def finalize():
+def finalize(product=ROOT/'dist/IdentityVMapAssistant', release=ROOT/'release', *, write_manifests=True):
     for directory in (ROOT/'.ui-deps',ROOT/'.build-deps'):
         if directory.exists():sys.path.insert(0,str(directory))
-    product=ROOT/'dist/IdentityVMapAssistant'
     sys.path.insert(0, str(ROOT))
     from mapmatching.src.map_update import stamp
     if (product/'maps/floors.json').is_file():stamp(product/'maps')
@@ -51,17 +50,18 @@ def finalize():
     inject(product)
     build = time.time_ns()
     (product/'windows-build.json').write_text(json.dumps({'build': build}), encoding='utf-8')
-    release=ROOT/'release'; release.mkdir(exist_ok=True)
+    release.mkdir(parents=True,exist_ok=True)
     archive=release/'IdentityVMapAssistant-Windows-x64.zip'
-    with zipfile.ZipFile(archive,'w',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
+    with zipfile.ZipFile(archive,'w' if write_manifests else 'x',zipfile.ZIP_DEFLATED,compresslevel=6) as z:
         for path in sorted(product.rglob('*')):
             if path.is_file():z.write(path,path.relative_to(product.parent).as_posix())
-    digest=hashlib.sha256(archive.read_bytes()).hexdigest()
-    (release/'SHA256SUMS.txt').write_text(f'{digest}  {archive.name}\n',encoding='ascii')
-    (release/'windows-update.json').write_text(json.dumps({
-        'build': build, 'asset': archive.name, 'sha256': digest,
-        'size': archive.stat().st_size,
-    }), encoding='utf-8')
+    if write_manifests:
+        digest=hashlib.sha256(archive.read_bytes()).hexdigest()
+        (release/'SHA256SUMS.txt').write_text(f'{digest}  {archive.name}\n',encoding='ascii')
+        (release/'windows-update.json').write_text(json.dumps({
+            'build': build, 'asset': archive.name, 'sha256': digest,
+            'size': archive.stat().st_size,
+        }), encoding='utf-8')
     print(f'Portable ZIP: {archive.stat().st_size/1024**2:.1f} MiB')
 
 

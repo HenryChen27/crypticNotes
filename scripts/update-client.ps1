@@ -340,6 +340,10 @@ try {
             }
             $candidate = $task.GetAwaiter().GetResult() | ConvertFrom-Json
             if (-not $candidate.assets) { throw '更新信息无效' }
+            foreach ($required in @('IdentityVMapAssistant-Windows-x64.zip','windows-update.json','SHA256SUMS.txt')) {
+                $matching = @($candidate.assets | Where-Object name -eq $required)
+                if ($matching.Count -ne 1 -or $matching[0].browser_download_url -notmatch '^https://(github\.com/HenryChen27/crypticNotes|gitcode\.com/weixin_51917701/crypticNotes)/releases/download/') { throw "发布附件未就绪：$required" }
+            }
             $release = $candidate
             break
         } catch {

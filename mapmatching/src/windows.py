@@ -88,6 +88,16 @@ def keep_floating(_window):
     return True
 
 
+def set_capture_exclusion(hwnd, on):
+    """打开或撤掉「不进截图」。平时撤掉，玩家自己的截图和录屏才拍得到布偶；
+    只在我们自己要整屏截图的那一段打开。成功返回 True。"""
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.SetWindowDisplayAffinity(int(hwnd), 0x11 if on else 0))
+    except Exception:
+        return False
+
+
 def exclude_from_capture(hwnd):
     """让这个窗口留在屏幕上、却不出现在任何截图里（BitBlt、PrintWindow、
     桌面复制都不含它）。Windows 10 2004 起支持；成功返回 True，老系统返回

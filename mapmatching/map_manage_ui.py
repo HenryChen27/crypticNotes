@@ -2,10 +2,14 @@
 from pathlib import Path
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .theme import MistPanel, ChalkButton, ChalkChoice, chalk_texture
-from .panel_dialogs import PanelDialog, ThumbnailPopup
+from .panel_dialogs import PanelDialog, ThumbnailPopup, pixel_picture
 from .src.map_admin import context_text, floor_text, list_maps, delete_map
 
-FILTERS = [('全部', ''), ('困难', 'hard'), ('噩梦·单人', 'nightmare/solo'), ('噩梦·双人', 'nightmare/duo'), ('展十·全棺','nightmare/full'), ('展十·速刷','nightmare/speed')]
+def filters(scene, provider):
+    common=[('全部',''),('困难','hard')]
+    if scene=='linguang':return common+[('噩梦','nightmare')]
+    if provider=='zhanshi':return common+[('噩梦·全棺','nightmare/full'),('噩梦·速刷','nightmare/speed')]
+    return common+[('噩梦·单人','nightmare/solo'),('噩梦·双人','nightmare/duo')]
 SECTIONS = [('active', '可用'), ('disabled', '已停用')]
 
 
@@ -59,9 +63,44 @@ class ConfirmDialog(PanelDialog):
         layout.addLayout(row)
 
 
-class MapManageDialog(PanelDialog):
-    def __init__(self, root, difficulty, mode, parent=None):
+class LayoutBrowser(PanelDialog):
+    def __init__(self, root, scene, difficulty, parent=None):
+        from .src.context import SCENE_NAMES, DIFFICULTY_NAMES, scene_options
+        from .src.layout_library import floor_catalog, floor_pixels
         super().__init__(parent, 780, 620)
+        outer=W.QVBoxLayout(self);panel=MistPanel();outer.addWidget(panel)
+        body=W.QVBoxLayout(panel)
+        body.addWidget(W.QLabel(f'小布偶地图库 · {SCENE_NAMES[scene]}（只读）'))
+        choices=W.QComboBox();body.addWidget(choices)
+        for key in scene_options(scene,'original',root/'maps')[0]:choices.addItem(DIFFICULTY_NAMES[key],key)
+        choices.setCurrentIndex(max(0,choices.findData(difficulty)))
+        split=W.QHBoxLayout();body.addLayout(split,1)
+        floors=W.QListWidget();floors.setMaximumWidth(180);split.addWidget(floors)
+        picture=W.QLabel();picture.setAlignment(C.Qt.AlignCenter);split.addWidget(picture,1)
+        def preview(index):
+            if index<0:return
+            record=floors.item(index).data(C.Qt.UserRole)
+            try:
+                pixels=floor_pixels(root,scene,choices.currentData(),record['layout'],record['layer'])
+                pix=G.QPixmap.fromImage(pixel_picture(pixels))
+                picture.setPixmap(pix.scaled(490,430,C.Qt.KeepAspectRatio,C.Qt.SmoothTransformation))
+            except (OSError, ValueError, KeyError):picture.setText('楼层图片读取失败')
+        def populate():
+            floors.clear();picture.setText('没有这个难度的地图')
+            if choices.currentData() is None:return
+            for record in floor_catalog(root,scene,choices.currentData()):
+                floor=record['floor'];label=f'{floor}F' if floor is not None else '单层'
+                item=W.QListWidgetItem(f'布局 {record["layout"]} · {label}');item.setData(C.Qt.UserRole,record);floors.addItem(item)
+            floors.setCurrentRow(0)
+        floors.currentRowChanged.connect(preview);choices.currentIndexChanged.connect(populate);populate()
+        close=ChalkButton('关闭');close.clicked.connect(self.accept);body.addWidget(close)
+
+
+class MapManageDialog(PanelDialog):
+    def __init__(self, root, difficulty, mode, parent=None, provider='lianghapi', scene='curse'):
+        super().__init__(parent, 780, 620)
+        if provider not in ('lianghapi','zhanshi'):raise ValueError('这套地图库只支持查看')
+        self.provider,self.scene=provider,scene
         self.root = root
         self.context = (difficulty, mode)
         self.changed = False
@@ -77,7 +116,7 @@ class MapManageDialog(PanelDialog):
         panel = MistPanel(); panel.setObjectName('panel'); outer.addWidget(panel)
         box = W.QVBoxLayout(panel); box.setContentsMargins(22, 18, 22, 18); box.setSpacing(10)
         title = W.QLabel('管理地图'); title.setObjectName('title'); box.addWidget(title)
-        self.filter = ChalkChoice(FILTERS)
+        self.filter = ChalkChoice(filters(scene,provider))
         self.filter.currentIndexChanged.connect(lambda _: self.rebuild())
         box.addWidget(self.filter)
         self.summary = W.QLabel(''); self.summary.setObjectName('muted'); box.addWidget(self.summary)
@@ -92,7 +131,7 @@ class MapManageDialog(PanelDialog):
         self.rows.addStretch(1)
         self.scroll.setWidget(self.body)
         box.addWidget(self.scroll, 1)
-        self.status = W.QLabel('移除只是从匹配里摘掉，原图和楼层信息都会保留，随时可以恢复。')
+        self.status = W.QLabel('点击地图可预览原图。删除无法撤销。')
         self.status.setWordWrap(True); self.status.setObjectName('muted'); box.addWidget(self.status)
         row = W.QHBoxLayout()
         add = ChalkButton('新增地图'); add.clicked.connect(self.add_map); row.addWidget(add)
@@ -103,7 +142,7 @@ class MapManageDialog(PanelDialog):
 
     # ---- data -----------------------------------------------------------
     def reload(self):
-        self.records = list_maps(self.root)
+        self.records = [row for row in list_maps(self.root) if row['scene']==self.scene and row['provider']==self.provider]
         self.total = len(self.records)
         # total 把「已停用」也算进去了，所以它不能拿去当「能匹配几张」报给用户。
         self.active = sum(1 for r in self.records if r['state'] == 'active')
@@ -143,7 +182,8 @@ class MapManageDialog(PanelDialog):
             difficulty, mode = record['difficulty'], record['mode']
         key = f'{difficulty}/{mode}' if mode else difficulty
         # setCurrentIndex 会发 currentIndexChanged，那边接着 rebuild，_reveal 还在。
-        self.filter.setCurrentIndex(next((i for i, (_, data) in enumerate(FILTERS) if data == key), 0))
+        options=[data for _,data in self.filter.items]
+        self.filter.setCurrentIndex(options.index(key) if key in options else options.index(difficulty) if difficulty in options else 0)
 
     def reveal_row(self):
         """把 `_reveal` 那一行滚进视野；没找到就留着，等筛选变了再试。
@@ -216,7 +256,7 @@ class MapManageDialog(PanelDialog):
             context += ' · 只读'
         quality = W.QLabel(context); quality.setObjectName('muted'); quality.setFixedWidth(104)
         line.addWidget(quality)
-        floors = W.QLabel(floor_text(record['floors']) or '—')
+        floors = W.QLabel(floor_text(record['floors'],self.scene) or '—')
         floors.setObjectName('muted'); floors.setFixedWidth(104)
         line.addWidget(floors)
         if record['stale']:
@@ -266,7 +306,7 @@ class MapManageDialog(PanelDialog):
                 # 改了 objectName 必须重新 polish，否则 QSS 里那条选中样式不会生效。
                 row.style().unpolish(row); row.style().polish(row)
         source = Path(self.root)/str(record.get('source') or '')
-        caption = f'{record["name"]}  ·  {floor_text(record["floors"]) or "未标注楼层"}'
+        caption = f'{record["name"]}  ·  {floor_text(record["floors"],self.scene) or "未标注楼层"}'
         self.popup.show_map(source, record.get('regions'), caption,
                             widget.mapToGlobal(C.QPoint(0, 0)), self.geometry())
 
@@ -311,7 +351,7 @@ class MapManageDialog(PanelDialog):
     def add_map(self):
         from .map_import_ui import MapImportDialog
         difficulty, mode = self.context
-        dialog = MapImportDialog(self.root, difficulty, mode, self,provider='zhanshi' if mode in ('full','speed') else 'lianghapi')
+        dialog = MapImportDialog(self.root, difficulty, mode, self,provider=self.provider,scene=self.scene)
         if dialog.exec() == W.QDialog.Accepted:
             self.changed = True
             self.status.setText(f'已录入：{dialog.result_record["name"]}')

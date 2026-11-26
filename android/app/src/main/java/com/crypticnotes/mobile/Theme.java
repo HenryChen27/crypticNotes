@@ -341,6 +341,9 @@ public final class Theme {
         }
 
         private LineIcon icon;
+        private boolean updateDot;
+        public void setUpdateDot(boolean value){updateDot=value;invalidate();}
+        @Override public void draw(Canvas canvas){super.draw(canvas);if(updateDot){Paint marker=new Paint(Paint.ANTI_ALIAS_FLAG);marker.setColor(0xffe44b4b);canvas.drawCircle(getWidth()-px(getContext(),9),px(getContext(),9),px(getContext(),4),marker);}}
         private int iconSize, iconGap;
         /** Legend icon drawn before the (still centred) label, as the game lists its landmarks. */
         public ChalkButton setIcon(String name) {
@@ -408,7 +411,8 @@ public final class Theme {
     public static class SectionHeading extends View {
         @Override public boolean performClick() { TouchFeedback.click(this); return super.performClick(); }
         private final ChalkDrawable surface = new ChalkDrawable(getContext(), Chalk.DEEP, .7f, "rounded", true, true);
-        private final String label;
+        private String label;
+        private int heightDp = 32;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Path arrow = new Path();
         private final Paint arrowPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -437,6 +441,19 @@ public final class Theme {
             return this;
         }
 
+        /** For a heading that carries a count, as the mailbox does: 邮箱（2）. */
+        public void setLabel(String value) {
+            label = value;
+            invalidate();
+        }
+
+        /** The standard bar is 32dp; one that has to be an easy touch target can ask for more. */
+        public SectionHeading setHeightDp(int value) {
+            heightDp = value;
+            requestLayout();
+            return this;
+        }
+
         /** Mark the heading foldable and record which way it currently points. */
         public void setExpanded(boolean value) {
             foldable = true;
@@ -447,7 +464,7 @@ public final class Theme {
         public boolean isExpanded() { return expanded; }
 
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
-            setMeasuredDimension(resolveSize(0, widthSpec), px(getContext(), 32));
+            setMeasuredDimension(resolveSize(0, widthSpec), px(getContext(), heightDp));
         }
 
         @Override protected void onDraw(Canvas canvas) {
@@ -493,7 +510,7 @@ public final class Theme {
     public static class ChalkChoice extends View {
         public interface Listener { void onChanged(int index); }
 
-        private final String[] labels;
+        private String[] labels;
         private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private int index;
         private Listener listener;
@@ -521,6 +538,12 @@ public final class Theme {
         public void setListener(Listener value) { listener = value; }
 
         public int getIndex() { return index; }
+
+        public void setOptions(String[] values, int selected) {
+            labels = values;
+            index = selected;
+            invalidate();
+        }
 
         @Override protected void onMeasure(int widthSpec, int heightSpec) {
             setMeasuredDimension(resolveSize(px(getContext(), 220), widthSpec),

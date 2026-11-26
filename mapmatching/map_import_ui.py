@@ -3,7 +3,7 @@ from pathlib import Path
 import math
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 from .theme import MistPanel, ChalkButton, ChalkChoice
-from .panel_dialogs import PanelDialog
+from .panel_dialogs import PanelDialog, map_picture
 from .src.map_library import add_map
 
 
@@ -143,7 +143,7 @@ class FloorCanvas(W.QWidget):
         if self.drag is not None:
             boxes[self.floor]=[self.drag.left(),self.drag.top(),self.drag.right(),self.drag.bottom()]
         for floor,(x,y,X,Y) in boxes.items():
-            color=G.QColor({1:'#d8e8f1',2:'#8fbdcc',-1:'#c0afd2'}[floor])
+            color=G.QColor({1:'#d8e8f1',2:'#8fbdcc',-1:'#c0afd2'}.get(floor,'#93c8cb'))
             p.setPen(G.QPen(color,2))
             fill=G.QColor(color); fill.setAlpha(28); p.setBrush(fill)
             rect=C.QRectF(r.x()+x*sx,r.y()+y*sy,(X-x)*sx,(Y-y)*sy)
@@ -182,10 +182,11 @@ class ImportJob(C.QThread):
 
 
 class MapImportDialog(PanelDialog):
-    def __init__(self,root,difficulty,mode,parent=None,provider='lianghapi'):
+    def __init__(self,root,difficulty,mode,parent=None,provider='lianghapi',scene='curse'):
         super().__init__(parent,880,720)     # 右对齐主窗口、点到框外自动关，见 panel_dialogs
         self.root=root
         self.provider=provider
+        self.scene=scene
         self._basement_box=None
         self.path=None
         self.job=None
@@ -203,6 +204,7 @@ class MapImportDialog(PanelDialog):
         row=W.QHBoxLayout()
         self.provider_choice=ChalkChoice([('凉哈皮','lianghapi'),('展十','zhanshi')])
         self.provider_choice.setCurrentIndex(int(provider=='zhanshi'))
+        self.provider_choice.setEnabled(False)
         row.addWidget(self.provider_choice)
         self.difficulty=ChalkChoice([('困难','hard'),('噩梦','nightmare')])
         self.difficulty.setCurrentIndex(int(difficulty=='nightmare'))
@@ -235,13 +237,14 @@ class MapImportDialog(PanelDialog):
         self.provider=self.provider_choice.currentData()
         nightmare=self.difficulty.currentData()=='nightmare'
         self.party.items=([('全棺','full'),('速刷','speed')] if self.provider=='zhanshi' else [('单人','solo'),('多人','duo')])
-        self.party.update();self.party.setVisible(nightmare or self.provider=='zhanshi')
+        self.party.update();self.party.setVisible(self.scene=='curse' and (nightmare or self.provider=='zhanshi'))
         current=self.floor.currentData()
-        if not nightmare and -1 in self.canvas.boxes:
+        if self.scene=='curse' and not nightmare and -1 in self.canvas.boxes:
             self._basement_box=self.canvas.boxes.pop(-1)
         elif nightmare and self._basement_box is not None:
             self.canvas.boxes[-1]=self._basement_box;self._basement_box=None
         self.floor.items=[('1F',1),('2F',2)]+([('地下室',-1)] if nightmare else [])
+        if self.scene=='linguang':self.floor.items=[(f'负{n}层',-n) for n in (1,2,3,4)]
         self.floor.index=next((i for i,(_,f) in enumerate(self.floor.items) if f==current),0)
         self.floor.update();self.floor_changed(self.floor.index)
         self.summary()
@@ -252,7 +255,7 @@ class MapImportDialog(PanelDialog):
         path,_=W.QFileDialog.getOpenFileName(self,'选择完整地图原图',str(self.root),'地图图片 (*.png *.jpg *.jpeg *.bmp *.webp)')
         if not path:
             return
-        pixmap=G.QPixmap(path)
+        pixmap=G.QPixmap.fromImage(map_picture(path))
         if pixmap.isNull():
             self.status.setText('无法读取这张图片')
             return
@@ -288,7 +291,9 @@ class MapImportDialog(PanelDialog):
             self.status.setText('请先选择原图'); return
         regions=[dict(floor=f,bbox=b) for f,b in self.canvas.boxes.items()]
         difficulty=self.difficulty.currentData()
-        args=(self.root,self.path,self.name.text(),difficulty,self.party.currentData() if difficulty=='nightmare' or self.provider=='zhanshi' else None,regions,self.provider)
+        mode=self.party.currentData() if difficulty=='nightmare' or self.provider=='zhanshi' else None
+        if self.scene=='linguang':mode='full' if self.provider=='zhanshi' else None
+        args=(self.root,self.path,self.name.text(),difficulty,mode,regions,self.provider,self.scene)
         self.job=ImportJob(args,self)
         self.job.completed.connect(self.saved)
         self.job.failed.connect(self.failed)

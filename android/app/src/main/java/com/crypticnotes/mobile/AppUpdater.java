@@ -57,13 +57,14 @@ final class AppUpdater implements UpdateService.Listener {
     }
     void checkSilently() { check(true); }
     private void check(boolean silent) {
+        if(BuildConfig.LOCAL_REVIEW){available(false);if(!silent)message("本地审查版不覆盖正式版，请使用新的审查包更新。");return;}
         if (running) { if(!silent) pendingManual=true; return; }
         running=true;
         if(!silent) { message("正在检查安卓更新…"); progress(true); }
         new Thread(() -> {
             boolean handedOff=false;
             try {
-                JSONObject release=Distribution.release();
+                JSONObject release=Distribution.release(ASSET,"android-update.json");
                 HttpURLConnection c;
                 JSONArray assets=release.getJSONArray("assets"); JSONObject asset=null;
                 for(int i=0;i<assets.length();i++) if(ASSET.equals(assets.getJSONObject(i).getString("name"))) asset=assets.getJSONObject(i);

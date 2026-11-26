@@ -71,11 +71,18 @@ def anonymous_digest(url):
 RELEASE_BODY='Windows, Android and macOS packages plus the lianghapi and zhanshi map libraries.'
 def release_title(tag):return 'crypticNotes '+tag.removeprefix('v')
 
+def release_body(jobs):
+    notes=[]
+    for job in jobs:
+        text=(json.loads(job.read_text(encoding='utf-8')).get('notes') or '').strip()
+        if text and text not in notes:notes.append(text)
+    return '\n\n'.join([*notes,RELEASE_BODY]).encode('ascii','xmlcharrefreplace').decode('ascii')
+
 def publish(jobs,tag,prepared=None):
     prepared=prepared or plan(jobs);client=GitCode();base=client.repository
     releases=client.api(base+'/releases?per_page=100')
     release=next((r for r in releases if r.get('tag_name')==tag),None)
-    title=release_title(tag);body=RELEASE_BODY
+    title=release_title(tag);body=release_body(jobs)
     if release is None:
         release=client.api(base+'/releases',dict(tag_name=tag,name=title+' (uploading)',body=body,target_commitish='main',release_status='pre'),'POST')
         print('Created GitCode release:',tag,flush=True)

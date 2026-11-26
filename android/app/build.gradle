@@ -7,13 +7,34 @@ android {
     namespace 'com.crypticnotes.mobile'
     compileSdk 35
     buildFeatures { buildConfig true }
-    buildFeatures { buildConfig true }
     defaultConfig {
         applicationId 'com.crypticnotes.mobile.v2'
         minSdk 26
         targetSdk 35
-        versionCode 65
-        versionName '0.6.57-preview'
+        versionCode 70
+        versionName '0.6.62'
+        def pvpUrl = '', pvpSha = '', pvpSize = 0L
+        if (project.hasProperty('grayLabel')) {
+            def label = project.property('grayLabel')
+            if (!(label ==~ /[0-9]+(\.[0-9]+)*/)) throw new GradleException('Invalid gray build label')
+            versionNameSuffix ".gray.${label}"
+            def token = project.findProperty('grayPvpToken')
+            if (!(token instanceof String && token ==~ /[A-Za-z0-9_-]{43}/)) throw new GradleException('A 32-byte base64url grayPvpToken is required')
+            def pack = rootProject.file('../release/IdentityVMapAssistant-PVP.zip')
+            pvpSize = pack.length()
+            if (!pack.isFile() || pvpSize <= 0 || pvpSize > 32L*1024*1024) throw new GradleException('Missing or invalid gray PVP asset')
+            pvpSha = java.security.MessageDigest.getInstance('SHA-256').digest(pack.bytes).encodeHex().toString()
+            pvpUrl = "https://smgfxyjq.cfd/jysj-gray/${token}/${pack.name}"
+        } else if (project.hasProperty('localLabel')) {
+            def label = project.property('localLabel')
+            if (!(label ==~ /[0-9]+(\.[0-9]+)*/)) throw new GradleException('Invalid local build label')
+            applicationIdSuffix '.review'
+            versionNameSuffix ".local.${label}"
+        }
+        buildConfigField 'String', 'GRAY_PVP_URL', '"' + pvpUrl + '"'
+        buildConfigField 'boolean', 'LOCAL_REVIEW', project.hasProperty('localLabel').toString()
+        buildConfigField 'String', 'GRAY_PVP_SHA256', '"' + pvpSha + '"'
+        buildConfigField 'long', 'GRAY_PVP_BYTES', pvpSize.toString() + 'L'
         ndk { abiFilters 'arm64-v8a' }
     }
     signingConfigs {
@@ -24,7 +45,8 @@ android {
             keyPassword signingData.keyPassword
         }
     }
-    sourceSets { main { assets.srcDir '../generated/assets' } }
+    buildTypes.release.signingConfig signingConfigs.debug
+    sourceSets { main { assets.setSrcDirs(['../generated/base-assets','../generated/assets']) } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
 }
 chaquopy {
@@ -34,5 +56,5 @@ chaquopy {
         pip { install 'numpy==1.23.3'; install 'scipy==1.8.1'; install 'opencv-python==4.5.1.48' }
         extractPackages 'mapmatching', 'mobile_templates'
     }
-    sourceSets { main { srcDir '../generated/python' } }
+    sourceSets { main { srcDir '../generated/python'; exclude 'mobile_pvp_templates/**' } }
 }

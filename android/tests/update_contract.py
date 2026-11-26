@@ -7,6 +7,9 @@ the loop and a real install cannot be simulated here.
 """
 from pathlib import Path
 import unittest
+import shutil
+import subprocess
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 JAVA = ROOT / 'app/src/main/java/com/crypticnotes/mobile'
@@ -14,6 +17,32 @@ MANIFEST = (ROOT / 'app/src/main/AndroidManifest.xml').read_text(encoding='utf-8
 
 
 class UpdateContract(unittest.TestCase):
+    def test_small_package_labels_keep_the_theme_typeface(self):
+        caption=(JAVA/'PackageCaption.java').read_text(encoding='utf-8')
+        self.assertIn('detail=Theme.text(',caption)
+        self.assertNotIn('setTypeface(',caption)
+
+    def test_package_button_states_in_jvm(self):
+        compiler=shutil.which('javac') or next((ROOT.parent/'out/android-tools/jdk').glob('*/bin/javac.exe'),None)
+        if not compiler:self.skipTest('JDK not available')
+        with tempfile.TemporaryDirectory() as classes:
+            subprocess.run([compiler,'-encoding','UTF-8','-d',classes,JAVA/'PackageState.java',ROOT/'tests/PackageStateTest.java'],check=True)
+            subprocess.run([Path(compiler).with_stem('java'),'-cp',classes,'com.crypticnotes.mobile.PackageStateTest'],check=True)
+
+    def test_review_modules_use_apk_pins_even_without_staged_archives(self):
+        store = (JAVA / 'MatchingModuleStore.java').read_text(encoding='utf-8')
+        info = store.split('JSONObject info()throws Exception {', 1)[1].split('boolean updateAvailable()', 1)[0]
+        review, online = info.split('if("pvp".equals(provider)', 1)
+        self.assertIn('if(BuildConfig.LOCAL_REVIEW){', review)
+        self.assertIn('c.getAssets().open("module-review.json")', review)
+        self.assertIn('spec.put("review",true);return latest;', review)
+        self.assertNotIn('getExternalFilesDir', review)
+        self.assertNotIn('Distribution.release', review)
+        self.assertIn('Distribution.release(name)', online)
+        self.assertIn('local?null:MiniGameStore.connect(', store)
+        self.assertIn('local?openReviewArchive():conn.getInputStream()', store)
+        self.assertIn('无法读取本地审查附件：', store)
+
     def test_service_is_declared_as_data_sync(self):
         self.assertIn('FOREGROUND_SERVICE_DATA_SYNC', MANIFEST)
         self.assertIn('android.permission.WAKE_LOCK', MANIFEST)

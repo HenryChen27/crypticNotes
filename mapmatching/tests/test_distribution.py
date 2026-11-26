@@ -24,3 +24,11 @@ class DistributionTests(unittest.TestCase):
         self.assertTrue(official_download('https://github.com/HenryChen27/crypticNotes/releases/download/v1/app.zip'))
         for url in ('http://gitcode.com/weixin_51917701/crypticNotes/releases/download/v1/app.zip',BASE+'../../elsewhere.zip',BASE+'%2e%2e/elsewhere.zip','https://gitcode.com.evil.test/weixin_51917701/crypticNotes/releases/download/v1/app.zip','https://gitcode.com/other/repo/releases/download/v1/app.zip'):
             self.assertFalse(official_download(url),url)
+
+    def test_missing_or_unverified_requested_attachment_uses_the_second_mirror(self):
+        name='IdentityVMapAssistant-PVP.zip'
+        good=dict(name=name,size=22,browser_download_url=BASE+name,digest='sha256:'+'a'*64)
+        for assets in ([],[dict(good,digest=None)],[dict(good,browser_download_url='https://other.example/file')]):
+            fallback={'assets':[good]};fetch=Mock(side_effect=[{'assets':assets},fallback])
+            self.assertIs(load_release(fetch,(name,),verified=True),fallback)
+            self.assertEqual([call.args[0] for call in fetch.call_args_list],[PRIMARY_RELEASE,FALLBACK_RELEASE])
